@@ -1,0 +1,259 @@
+-- Spaces table
+CREATE TABLE spaces (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    idPrefix TEXT NOT NULL UNIQUE
+);
+
+-- Note: idx_spaces_prefix removed as redundant with UNIQUE constraint on idPrefix
+
+-- Tasks table with proper indexes
+CREATE TABLE tasks (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL,
+    dueDate INTEGER,
+    priority INTEGER,
+    estimatedTimeJson TEXT,
+    tagsJson TEXT NOT NULL,
+    notificationsJson TEXT NOT NULL,
+    spaceId TEXT NOT NULL,
+    recurrenceRuleJson TEXT NOT NULL,
+    recurrenceStateJson TEXT NOT NULL,
+    resetStatusOnRecurrenceJson TEXT NOT NULL,
+    autoUpdateStatusFromSubtasks INTEGER NOT NULL DEFAULT 0,
+    isRecurring INTEGER NOT NULL DEFAULT 0,
+    isBlocked INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_tasks_spaceId ON tasks(spaceId);
+CREATE INDEX idx_tasks_isBlocked ON tasks(isBlocked);
+-- Composite index for getRecurringTasksDueBefore query (isRecurring = 1 AND dueDate <= ?)
+CREATE INDEX idx_tasks_recurring_dueDate ON tasks(isRecurring, dueDate);
+-- Note: idx_tasks_dueDate and idx_tasks_priority removed (filtering done in Kotlin, not SQL)
+
+-- Task connections
+CREATE TABLE task_connections (
+    sourceTaskId TEXT NOT NULL,
+    targetTaskId TEXT NOT NULL,
+    type TEXT NOT NULL,
+    PRIMARY KEY (sourceTaskId, targetTaskId, type),
+    FOREIGN KEY (sourceTaskId) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (targetTaskId) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_connections_source_type ON task_connections(sourceTaskId, type);
+CREATE INDEX idx_connections_target ON task_connections(targetTaskId);
+
+-- Status changes timeline
+CREATE TABLE status_changes (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    taskId TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    previousStatusJson TEXT,
+    newStatusJson TEXT NOT NULL,
+    automaticChangeReasonJson TEXT,
+    FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+-- Note: Single-column idx_status_changes_taskId removed as redundant with composite index below
+CREATE INDEX idx_status_changes_taskId_timestamp ON status_changes(taskId, timestamp);
+
+-- Space next ID tracking
+CREATE TABLE space_next_ids (
+    spaceId TEXT NOT NULL PRIMARY KEY,
+    nextId INTEGER NOT NULL,
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+-- Tags
+CREATE TABLE tags (
+    name TEXT NOT NULL PRIMARY KEY
+);
+
+-- Filter states per space
+CREATE TABLE filter_states (
+    spaceId TEXT NOT NULL PRIMARY KEY,
+    criteriaJson TEXT NOT NULL,
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+-- View modes per space
+CREATE TABLE view_modes (
+    spaceId TEXT NOT NULL PRIMARY KEY,
+    viewMode TEXT NOT NULL,
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+-- Filter panel states per space
+CREATE TABLE filter_panel_states (
+    spaceId TEXT NOT NULL PRIMARY KEY,
+    isOpen INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+-- Space queries
+getAllSpaces:
+SELECT * FROM spaces;
+
+getSpaceById:
+SELECT * FROM spaces WHERE id = ?;
+
+prefixExists:
+SELECT COUNT(*) > 0 FROM spaces WHERE idPrefix = ?;
+
+insertSpace:
+INSERT INTO spaces(id, name, idPrefix) VALUES (?, ?, ?);
+
+updateSpace:
+UPDATE spaces SET name = ? WHERE id = ?;
+
+deleteSpace:
+DELETE FROM spaces WHERE id = ?;
+
+getAllPrefixes:
+SELECT idPrefix FROM spaces;
+
+filterSpaces:
+SELECT * FROM spaces
+WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%')
+   OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%');
+
+-- Task queries
+getTasksBySpace:
+SELECT * FROM tasks WHERE spaceId = ?;
+
+getTasksBySpaceExcept:
+SELECT * FROM tasks WHERE spaceId = ? AND id != ?;
+
+getTaskById:
+SELECT * FROM tasks WHERE id = ?;
+
+getTasksByIds:
+SELECT * FROM tasks WHERE id IN ?;
+
+insertTask:
+INSERT INTO tasks(id, title, description, status, dueDate, priority, estimatedTimeJson,
+                   tagsJson, notificationsJson, spaceId, recurrenceRuleJson, recurrenceStateJson,
+                   resetStatusOnRecurrenceJson, autoUpdateStatusFromSubtasks, isRecurring, isBlocked)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateTask:
+UPDATE tasks SET
+    title = ?,
+    description = ?,
+    status = ?,
+    dueDate = ?,
+    priority = ?,
+    estimatedTimeJson = ?,
+    tagsJson = ?,
+    notificationsJson = ?,
+    spaceId = ?,
+    recurrenceRuleJson = ?,
+    recurrenceStateJson = ?,
+    resetStatusOnRecurrenceJson = ?,
+    autoUpdateStatusFromSubtasks = ?,
+    isRecurring = ?,
+    isBlocked = ?
+WHERE id = ?;
+
+deleteTask:
+DELETE FROM tasks WHERE id = ?;
+
+-- Note: deleteTasksBySpace removed (CASCADE on spaces handles this)
+-- Note: deleteConnectionsBySpace and deleteStatusChangesBySpace removed as CASCADE handles this
+-- Note: getRecurringTasks removed (unused - only getRecurringTasksDueBefore is needed)
+
+getRecurringTasksDueBefore:
+SELECT * FROM tasks
+WHERE isRecurring = 1 AND dueDate IS NOT NULL AND dueDate <= ?;
+
+getBlockedTasks:
+SELECT * FROM tasks WHERE isBlocked = 1;
+
+-- Connection queries
+getConnectionsForTask:
+SELECT * FROM task_connections WHERE sourceTaskId = ?;
+
+insertConnection:
+INSERT OR REPLACE INTO task_connections(sourceTaskId, targetTaskId, type)
+VALUES (?, ?, ?);
+
+deleteConnection:
+DELETE FROM task_connections
+WHERE sourceTaskId = ? AND targetTaskId = ? AND type = ?;
+
+getParentTasks:
+SELECT t.* FROM tasks t
+INNER JOIN task_connections c ON t.id = c.targetTaskId
+WHERE c.sourceTaskId = ? AND c.type = 'SubtaskOf';
+
+getSubtasks:
+SELECT t.* FROM tasks t
+INNER JOIN task_connections c ON t.id = c.targetTaskId
+WHERE c.sourceTaskId = ? AND c.type = 'ParentOf';
+
+-- Status change queries
+getStatusTimeline:
+SELECT * FROM status_changes WHERE taskId = ? ORDER BY timestamp ASC;
+
+getStatusTimelinesForTasks:
+SELECT * FROM status_changes WHERE taskId IN ? ORDER BY taskId, timestamp ASC;
+
+insertStatusChange:
+INSERT INTO status_changes(taskId, timestamp, previousStatusJson, newStatusJson, automaticChangeReasonJson)
+VALUES (?, ?, ?, ?, ?);
+
+getStatusChangesBySpaceAndDateRange:
+SELECT sc.* FROM status_changes sc
+INNER JOIN tasks t ON sc.taskId = t.id
+WHERE t.spaceId = ? AND sc.timestamp >= ? AND sc.timestamp < ?;
+
+-- Space next ID queries
+getNextId:
+SELECT nextId FROM space_next_ids WHERE spaceId = ?;
+
+setNextId:
+INSERT OR REPLACE INTO space_next_ids(spaceId, nextId) VALUES (?, ?);
+
+-- Note: incrementNextId and deleteNextIdForSpace removed (unused, CASCADE handles deletion)
+
+-- Tag queries
+getAllTags:
+SELECT name FROM tags;
+
+insertTag:
+INSERT OR IGNORE INTO tags(name) VALUES (?);
+
+deleteTag:
+DELETE FROM tags WHERE name = ?;
+
+-- Filter state queries
+getFilterState:
+SELECT criteriaJson FROM filter_states WHERE spaceId = ?;
+
+setFilterState:
+INSERT OR REPLACE INTO filter_states(spaceId, criteriaJson) VALUES (?, ?);
+
+-- Note: deleteFilterStateForSpace removed (CASCADE handles deletion)
+
+-- View mode queries
+getViewMode:
+SELECT viewMode FROM view_modes WHERE spaceId = ?;
+
+setViewMode:
+INSERT OR REPLACE INTO view_modes(spaceId, viewMode) VALUES (?, ?);
+
+-- Note: deleteViewModeForSpace removed (CASCADE handles deletion)
+
+-- Filter panel state queries
+getFilterPanelState:
+SELECT isOpen FROM filter_panel_states WHERE spaceId = ?;
+
+setFilterPanelState:
+INSERT OR REPLACE INTO filter_panel_states(spaceId, isOpen) VALUES (?, ?);
+
+-- Note: deleteFilterPanelStateForSpace removed (CASCADE handles deletion)
+-- Note: app_state table and queries removed (current space is managed by UI layer)
