@@ -179,7 +179,7 @@ fun NewTaskScreen(
                     getTaskById = viewModel::getTaskById,
                     getAllTags = viewModel::getAllTags,
                     getAvailableTasks = viewModel::getAvailableTasks,
-                    wouldCreateCycle = viewModel::wouldCreateCycle,
+                    searchTasksForConnection = viewModel::searchTasksForConnection,
                     getCalculatedStatusFromSubtasks = viewModel::getCalculatedStatusFromSubtasks,
                     currentSpaceIdPrefix = currentSpaceIdPrefix,
                     allSpacePrefixes = allSpacePrefixes

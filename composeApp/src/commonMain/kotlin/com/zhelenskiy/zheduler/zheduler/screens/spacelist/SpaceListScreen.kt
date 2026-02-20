@@ -209,6 +209,7 @@ fun SpaceListScreen(
                 ) {
                     EmptySearchResults(
                         message = "No spaces match your search",
+                        clearButtonText = "Clear filter",
                         onClearFilters = { viewModel.clearSearchQuery() }
                     )
                 }

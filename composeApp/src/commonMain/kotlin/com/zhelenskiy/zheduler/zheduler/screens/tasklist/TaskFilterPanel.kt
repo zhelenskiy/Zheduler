@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DatePickerDialog
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.allStatusDefaultValues
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
 import kotlin.time.ExperimentalTime
@@ -199,13 +200,7 @@ fun TaskFilterPanel(
                                         modifier = Modifier.height(28.dp)
                                     )
 
-                                    listOf(
-                                        TaskStatus.Open,
-                                        TaskStatus.InProgress,
-                                        TaskStatus.Blocked(emptySet()),
-                                        TaskStatus.Done,
-                                        TaskStatus.Declined("")
-                                    ).forEach { status ->
+                                    allStatusDefaultValues.forEach { status ->
                                         val isSelected = filterState.statusFilters.any { it::class == status::class }
                                         FilterChip(
                                             selected = isSelected,

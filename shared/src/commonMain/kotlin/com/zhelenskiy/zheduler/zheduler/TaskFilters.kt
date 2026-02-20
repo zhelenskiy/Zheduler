@@ -69,14 +69,13 @@ enum class TagMatchMode {
 }
 
 enum class RecurrenceFilter {
-    Any, NoRecurrence, HasRecurrence, Once, AfterInterval, FixedDaysOfWeek, FixedDayOfMonth, NthDayOfWeek, Yearly;
+    Any, NoRecurrence, HasRecurrence, AfterTimeout, FixedDaysOfWeek, FixedDayOfMonth, NthDayOfWeek, Yearly;
 
     val displayName: String get() = when (this) {
         Any -> "Any"
         NoRecurrence -> "No Recurrence"
         HasRecurrence -> "Has Recurrence"
-        Once -> "Once"
-        AfterInterval -> "After Interval"
+        AfterTimeout -> "After Timeout"
         FixedDaysOfWeek -> "Weekly"
         FixedDayOfMonth -> "Monthly"
         NthDayOfWeek -> "Monthly (weekday)"

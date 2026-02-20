@@ -5,12 +5,10 @@ package com.zhelenskiy.zheduler.zheduler.screens.tasklist
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -35,7 +33,6 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewMode
 import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
 
 /**
  * Creates a TaskFilterState that loads from repository and saves on every change.
@@ -298,10 +295,6 @@ fun TaskListScreen(
                                     TaskCard(
                                         taskWithTotals = taskWithTotals,
                                         onClick = { onTaskClick(taskWithTotals.task.id) },
-                                        onStatusChange = { newStatus ->
-                                            viewModel.updateTaskStatus(taskWithTotals.task.id, newStatus)
-                                            onRefresh()
-                                        },
                                         onDelete = {
                                             taskToDelete = taskWithTotals
                                         },
@@ -418,9 +411,6 @@ private fun LazyListScope.priorityViewTaskGroup(
         TaskCard(
             taskWithTotals = taskWithTotals,
             onClick = { onTaskClick(taskWithTotals.task.id) },
-            onStatusChange = { newStatus ->
-                onStatusChange(taskWithTotals.task.id, newStatus)
-            },
             onDelete = { onDelete(taskWithTotals) },
             onCopy = { onCopy(taskWithTotals.task.id) },
             modifier = Modifier.animateItem()

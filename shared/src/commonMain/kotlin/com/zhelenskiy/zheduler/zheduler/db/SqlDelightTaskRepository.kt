@@ -82,11 +82,6 @@ class SqlDelightTaskRepository(
 
         handleCrossSpaceRelationshipsOnSpaceDeletion(taskIdsInSpace)
 
-        // Manually delete all tasks in the space before deleting the space
-        taskIdsInSpace.forEach { taskId ->
-            queries.deleteTask(taskId)
-        }
-
         queries.deleteSpace(spaceId)
 
         true
@@ -107,6 +102,41 @@ class SqlDelightTaskRepository(
     override suspend fun getAllExcept(spaceId: String, excludeTaskId: String): List<Task> =
         queries.getTasksBySpaceExcept(spaceId, excludeTaskId).awaitAsList()
             .map { loadTaskWithConnections(it) }
+
+    /**
+     * Search tasks for connection dialog with SQL filtering and cycle detection.
+     * Filters by spaceId, excludes current task, optionally filters by search query,
+     * and checks for cycles. Uses SQL indexes for efficient search on id and title fields.
+     *
+     * @param spaceId The space to search in
+     * @param excludeTaskId The current task ID to exclude
+     * @param searchQuery Optional search query to filter by id or title (case-insensitive)
+     * @param excludeTaskIds Additional task IDs to exclude (e.g., already connected tasks)
+     * @param connectionType The type of connection being created (for cycle detection)
+     * @param existingConnections Existing connections to check for cycles
+     * @return List of tasks matching the criteria that won't create cycles
+     */
+    override suspend fun searchTasksForConnection(
+        spaceId: String,
+        excludeTaskId: String,
+        searchQuery: String,
+        excludeTaskIds: Set<String>,
+        connectionType: ConnectionType,
+        existingConnections: Set<TaskConnection>
+    ): List<Task> {
+        // First, use SQL to filter by space, search query, and excluded task
+        val sqlResults = queries.searchTasksForConnection(
+            spaceId = spaceId,
+            id = excludeTaskId,
+            searchQuery = searchQuery
+        ).awaitAsList().map { loadTaskWithConnections(it) }
+
+        // Then filter in memory for: additional excluded IDs and cycle detection
+        return sqlResults.filter { task ->
+            task.id !in excludeTaskIds &&
+            !wouldCreateCycle(excludeTaskId, task.id, connectionType, existingConnections)
+        }
+    }
 
     override suspend fun getAllSpacePrefixes(): List<String> =
         queries.getAllPrefixes().awaitAsList()
@@ -206,7 +236,7 @@ class SqlDelightTaskRepository(
             connections = connections,
             notifications = entity.notificationsJson.toNotificationList(),
             spaceId = entity.spaceId,
-            recurrenceRule = entity.recurrenceRuleJson.toRecurrenceRule(),
+            recurrenceRule = entity.recurrenceRuleJson?.toRecurrenceRule(),
             recurrenceState = entity.recurrenceStateJson.toRecurrenceState(),
             resetStatusOnRecurrence = entity.resetStatusOnRecurrenceJson.toTaskStatus(),
             autoUpdateStatusFromSubtasks = entity.autoUpdateStatusFromSubtasks != 0L
@@ -257,7 +287,7 @@ class SqlDelightTaskRepository(
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
         customId: String?,
-        recurrenceRule: RecurrenceRule,
+        recurrenceRule: RecurrenceRule?,
         resetStatusOnRecurrence: TaskStatus,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
@@ -280,11 +310,11 @@ class SqlDelightTaskRepository(
             tagsJson = task.tags.toJson(),
             notificationsJson = task.notifications.toJson(),
             spaceId = task.spaceId,
-            recurrenceRuleJson = task.recurrenceRule.toJson(),
+            recurrenceRuleJson = task.recurrenceRule?.toJson(),
             recurrenceStateJson = task.recurrenceState.toJson(),
             resetStatusOnRecurrenceJson = task.resetStatusOnRecurrence.toJson(),
             autoUpdateStatusFromSubtasks = if (task.autoUpdateStatusFromSubtasks) 1 else 0,
-            isRecurring = if (task.recurrenceRule !is RecurrenceRule.None) 1 else 0,
+            isRecurring = if (task.recurrenceRule != null) 1 else 0,
             isBlocked = if (task.status is TaskStatus.Blocked) 1 else 0,
             id = task.id
         )
@@ -598,14 +628,14 @@ class SqlDelightTaskRepository(
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
         customId: String?,
-        recurrenceRule: RecurrenceRule,
+        recurrenceRule: RecurrenceRule?,
         resetStatusOnRecurrence: TaskStatus,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
         val recurrenceState = RecurrenceService.initializeRecurrence(recurrenceRule)
-        val effectiveDueDate = (dueDate ?: recurrenceState.nextOccurrenceDate)?.let {
+        val effectiveDueDate = dueDate?.let {
             Instant.fromEpochMilliseconds(it.toEpochMilliseconds())
         }
 
@@ -638,11 +668,11 @@ class SqlDelightTaskRepository(
             tagsJson = tags.toJson(),
             notificationsJson = notifications.toJson(),
             spaceId = spaceId,
-            recurrenceRuleJson = recurrenceRule.toJson(),
+            recurrenceRuleJson = recurrenceRule?.toJson(),
             recurrenceStateJson = recurrenceState.toJson(),
             resetStatusOnRecurrenceJson = resetStatusOnRecurrence.toJson(),
             autoUpdateStatusFromSubtasks = if (autoUpdateStatusFromSubtasks) 1 else 0,
-            isRecurring = if (recurrenceRule !is RecurrenceRule.None) 1 else 0,
+            isRecurring = if (recurrenceRule != null) 1 else 0,
             isBlocked = if (status is TaskStatus.Blocked) 1 else 0
         )
 

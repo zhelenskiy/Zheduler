@@ -285,7 +285,7 @@ class TaskModelsTest {
             id = "TEST-1",
             title = "Test",
             spaceId = "space-1",
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = Clock.System.now()
             )

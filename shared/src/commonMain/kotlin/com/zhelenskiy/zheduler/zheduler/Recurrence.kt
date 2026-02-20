@@ -260,26 +260,20 @@ data class TimeOfDay(
 }
 
 /**
- * Termination condition for recurrence
+ * Single termination condition for recurrence
  */
 @Serializable
-sealed class RecurrenceTermination {
-    /**
-     * Never terminates (infinite recurrence)
-     */
-    @Serializable
-    data object Never : RecurrenceTermination()
-    
+sealed class RecurrenceTerminationCondition {
     /**
      * Terminates after a specific number of occurrences
      */
     @Serializable
-    data class AfterOccurrences(val count: Int) : RecurrenceTermination() {
+    data class AfterOccurrences(val count: Int) : RecurrenceTerminationCondition() {
         init {
             require(count > 0) { "Occurrence count must be positive" }
         }
     }
-    
+
     /**
      * Terminates after a specific date/time
      */
@@ -287,7 +281,36 @@ sealed class RecurrenceTermination {
     data class OnDate(
         @Serializable(with = InstantSerializer::class)
         val endDate: Instant
-    ) : RecurrenceTermination()
+    ) : RecurrenceTerminationCondition()
+}
+
+/**
+ * Termination conditions for recurrence.
+ * Can contain 0, 1, or 2 conditions. Recurrence terminates when ANY condition is met.
+ * Empty list means never terminates.
+ */
+@Serializable
+data class RecurrenceTermination(
+    val afterOccurrences: RecurrenceTerminationCondition.AfterOccurrences? = null,
+    val onDate: RecurrenceTerminationCondition.OnDate? = null,
+): Presentable {
+    val maxOccurrences: Int? get() = afterOccurrences?.count
+
+    val endDate: Instant? get() = onDate?.endDate
+    override fun toBriefString(): String = toFullString()
+    override fun toFullString(): String {
+        if (afterOccurrences == null && onDate == null) return "Repeats forever"
+        return listOfNotNull(
+            afterOccurrences?.count?.let { "after $it occurrence${if (it > 1) "s" else ""}" },
+            onDate?.endDate?.let { "on ${formatDate(it)}" }
+        ).joinToString(" or ", prefix = "Stops ")
+    }
+
+    companion object {
+        val Never = RecurrenceTermination()
+        fun afterOccurrences(count: Int) = RecurrenceTermination(afterOccurrences = RecurrenceTerminationCondition.AfterOccurrences(count))
+        fun onDate(endDate: Instant) = RecurrenceTermination(onDate = RecurrenceTerminationCondition.OnDate(endDate))
+    }
 }
 
 /**
@@ -302,7 +325,7 @@ data class RecurrencePeriod(
     val hours: Int = 0,
     val minutes: Int = 0,
     val seconds: Int = 0
-) {
+): Presentable {
     init {
         require(years >= 0 && months >= 0 && weeks >= 0 && days >= 0 && hours >= 0 && minutes >= 0 && seconds >= 0) {
             "All period components must be non-negative"
@@ -349,6 +372,27 @@ data class RecurrencePeriod(
 
         return newInstant.toLocalDateTime(TimeZone.UTC)
     }
+    override fun toFullString(): String = buildString {
+        val skipNumber = listOf(years, months, weeks, days, hours, minutes, seconds).filter { it != 0 } == listOf(1)
+        fun Int.asStringWithSpace() = if (this == 1 && skipNumber) "" else "$this "
+        if (years > 0) append("${years.asStringWithSpace()}year${if (years > 1) "s" else ""} ")
+        if (months > 0) append("${months.asStringWithSpace()}month${if (months > 1) "s" else ""} ")
+        if (weeks > 0) append("${weeks.asStringWithSpace()}week${if (weeks > 1) "s" else ""} ")
+        if (days > 0) append("${days.asStringWithSpace()}day${if (days > 1) "s" else ""} ")
+        if (hours > 0) append("${hours.asStringWithSpace()}hour${if (hours > 1) "s" else ""} ")
+        if (minutes > 0) append("${minutes.asStringWithSpace()}minute${if (minutes > 1) "s" else ""} ")
+        if (seconds > 0) append("${seconds.asStringWithSpace()}second${if (seconds > 1) "s" else ""}")
+    }.trim().ifEmpty { "0 seconds" }
+
+    override fun toBriefString(): String = buildString {
+        if (years > 0) append("${years}y ")
+        if (months > 0) append("${months}mo ")
+        if (weeks > 0) append("${weeks}w ")
+        if (days > 0) append("${days}d ")
+        if (hours > 0) append("${hours}h ")
+        if (minutes > 0) append("${minutes}m ")
+        if (seconds > 0) append("${seconds}s")
+    }.trim().ifEmpty { "0s" }
 
     
     companion object {
@@ -364,17 +408,33 @@ data class RecurrencePeriod(
  * Fixed point specification for calendar-based recurrence patterns
  */
 @Serializable
-sealed class FixedPointPattern {
+sealed class FixedPointPattern : Presentable {
+    abstract val timeOfDay: TimeOfDay
     /**
      * Specific days of the week (e.g., every Tuesday and Thursday)
      */
     @Serializable
     data class DaysOfWeek(
         val days: Set<RecurrenceDayOfWeek>,
-        val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
+        override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
     ) : FixedPointPattern() {
         init {
             require(days.isNotEmpty()) { "At least one day must be specified" }
+        }
+
+        override fun toFullString(): String {
+            val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
+            val dayNames = days.map { it.name.lowercase().replaceFirstChar(Char::uppercaseChar) }
+            val daysText = when (dayNames.size) {
+                1 -> "Every ${dayNames.first()}"
+                else -> "Every ${dayNames.dropLast(1).joinToString(", ")} and ${dayNames.last()}"
+            }
+            return daysText + timeStr
+        }
+
+        override fun toBriefString(): String {
+            val dayAbbrevs = days.map { it.name.take(3) }
+            return if (dayAbbrevs.size <= 3) dayAbbrevs.joinToString(", ") else "Weekly"
         }
     }
     
@@ -385,13 +445,29 @@ sealed class FixedPointPattern {
     @Serializable
     data class DayOfMonth(
         val dayOfMonth: Int,
-        val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
+        override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
     ) : FixedPointPattern() {
         init {
             require(dayOfMonth in 1..31) { "Day of month must be between 1 and 31" }
         }
+
+        override fun toFullString(): String {
+            val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
+            val suffix = getOrdinalSuffix(dayOfMonth)
+            return "Every ${dayOfMonth}$suffix of the month" + timeStr
+        }
+
+        override fun toBriefString(): String = "${dayOfMonth}${getOrdinalSuffix(dayOfMonth)} every month"
     }
-    
+    protected fun getOrdinalSuffix(ordinal: Int): String = when {
+        ordinal in 11..13 -> "th"
+        ordinal % 10 == 1 -> "st"
+        ordinal % 10 == 2 -> "nd"
+        ordinal % 10 == 3 -> "rd"
+        else -> "th"
+    }
+
+
     /**
      * Nth day of week in a month (e.g., first Monday, last Friday)
      */
@@ -399,23 +475,47 @@ sealed class FixedPointPattern {
     data class NthDayOfWeekInMonth(
         val ordinal: WeekOrdinal,
         val dayOfWeek: RecurrenceDayOfWeek,
-        val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
-    ) : FixedPointPattern()
+        override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
+    ) : FixedPointPattern() {
+        override fun toFullString(): String {
+            val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
+            val ordinalName = ordinal.name.lowercase()
+            val dayName = dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercaseChar)
+            return "Every $ordinalName $dayName of the month$timeStr"
+        }
+
+        override fun toBriefString(): String {
+            val ordinalAbbrev = ordinal.name.lowercase().replaceFirstChar(Char::uppercaseChar)
+            val dayAbbrev = dayOfWeek.name.take(3).uppercase()
+            return "$ordinalAbbrev $dayAbbrev"
+        }
+    }
     
     /**
      * Specific months and day (e.g., every January 1st, every March 15th)
      */
     @Serializable
     data class YearlyOnDate(
-        val month: RecurrenceMonth,
+        val months: Set<RecurrenceMonth>,
         val dayOfMonth: Int,
-        val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
+        override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
     ) : FixedPointPattern() {
         init {
             require(dayOfMonth in 1..31) { "Day of month must be between 1 and 31" }
         }
+
+        override fun toFullString(): String {
+            val timeStr =
+                "at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
+            val monthName = months.joinToString(", ") { it.name.lowercase().replaceFirstChar(Char::uppercaseChar) }
+            return "Every $dayOfMonth${getOrdinalSuffix(dayOfMonth)} of $monthName $timeStr"
+        }
+
+        override fun toBriefString(): String {
+            val monthAbbrev = months.joinToString(", ") { it.name.take(3) }
+            return "$dayOfMonth${getOrdinalSuffix(dayOfMonth)} of $monthAbbrev"
+        }
     }
-    
     /**
      * Nth day of week in specific months (e.g., first Monday of January and July)
      */
@@ -424,10 +524,24 @@ sealed class FixedPointPattern {
         val ordinal: WeekOrdinal,
         val dayOfWeek: RecurrenceDayOfWeek,
         val months: Set<RecurrenceMonth>,
-        val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
+        override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
     ) : FixedPointPattern() {
         init {
             require(months.isNotEmpty()) { "At least one month must be specified" }
+        }
+
+        override fun toFullString(): String {
+            val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
+            val ordinalName = ordinal.name.lowercase()
+            val dayName = dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercaseChar)
+            val monthNames = months.map { it.name.lowercase().replaceFirstChar(Char::uppercaseChar) }
+            return "Every $ordinalName $dayName in ${monthNames.joinToString(", ")}" + timeStr
+        }
+
+        override fun toBriefString(): String {
+            val ordinalAbbrev = ordinal.name.lowercase()
+            val dayAbbrev = dayOfWeek.name.take(3)
+            return "Yearly $ordinalAbbrev $dayAbbrev"
         }
     }
 }
@@ -437,51 +551,9 @@ sealed class FixedPointPattern {
  */
 @Serializable
 sealed class RecurrenceTrigger {
-    /**
-     * Triggered by date/time (the due date is reached)
-     */
     @Serializable
-    data object DateTime : RecurrenceTrigger()
-    
-    /**
-     * Triggered when task reaches a specific status
-     */
-    @Serializable
-    data class StatusChange(val targetStatus: TaskStatus) : RecurrenceTrigger()
-}
-
-/**
- * Recurrence rule defining how a task repeats
- */
-@Serializable
-sealed class RecurrenceRule {
-    abstract val timezone: RecurrenceTimeZone
-    abstract val termination: RecurrenceTermination
-    abstract val trigger: RecurrenceTrigger
-
-    /**
-     * No recurrence - single occurrence task
-     */
-    @Serializable
-    data object None : RecurrenceRule() {
-        override val timezone: RecurrenceTimeZone = RecurrenceTimeZone.SystemDefault
-        override val termination: RecurrenceTermination = RecurrenceTermination.Never
-        override val trigger: RecurrenceTrigger = RecurrenceTrigger.DateTime
-    }
-
-    /**
-     * Single scheduled occurrence - task resets to specified status at the given time
-     * Unlike None, this actually schedules a status reset at a specific datetime
-     */
-    @Serializable
-    data class Once(
-        @Serializable(with = InstantSerializer::class)
-        val scheduledTime: Instant,
-        val resetToStatus: TaskStatus = TaskStatus.Open,
-        override val timezone: RecurrenceTimeZone = RecurrenceTimeZone.SystemDefault,
-        override val trigger: RecurrenceTrigger = RecurrenceTrigger.DateTime
-    ) : RecurrenceRule() {
-        override val termination: RecurrenceTermination = RecurrenceTermination.AfterOccurrences(1)
+    sealed class TimeRecurrenceTrigger : RecurrenceTrigger() {
+        abstract val timezone: RecurrenceTimeZone
     }
 
     /**
@@ -489,15 +561,13 @@ sealed class RecurrenceRule {
      * Example: Every 2 weeks starting from Jan 1
      */
     @Serializable
-    data class AfterInterval(
-        val period: RecurrencePeriod,
+    data class AfterTimeout(
+        val period: RecurrencePeriod?,
         @Serializable(with = InstantSerializer::class)
         val firstOccurrence: Instant,
         override val timezone: RecurrenceTimeZone = RecurrenceTimeZone.SystemDefault,
-        override val termination: RecurrenceTermination = RecurrenceTermination.Never,
-        override val trigger: RecurrenceTrigger = RecurrenceTrigger.DateTime
-    ) : RecurrenceRule()
-    
+    ) : TimeRecurrenceTrigger()
+
     /**
      * Repeats at fixed calendar points
      * Example: Every Tuesday and Thursday, Every 1st of month
@@ -508,11 +578,68 @@ sealed class RecurrenceRule {
         @Serializable(with = InstantSerializer::class)
         val startFrom: Instant,  // Don't generate occurrences before this
         override val timezone: RecurrenceTimeZone = RecurrenceTimeZone.SystemDefault,
-        override val termination: RecurrenceTermination = RecurrenceTermination.Never,
-        override val trigger: RecurrenceTrigger = RecurrenceTrigger.DateTime
-    ) : RecurrenceRule()
-    
+    ) : TimeRecurrenceTrigger()
+
+    /**
+     * Triggered when task reaches one of the specified statuses
+     */
+    @Serializable
+    data class StatusChange(val requiredStatuses: Set<TaskStatus>) : RecurrenceTrigger()
 }
+
+interface Presentable {
+    fun toBriefString(): String
+    fun toFullString(): String
+}
+
+@Serializable
+data class RecurrenceRule(
+    val timeRecurrenceTrigger: RecurrenceTrigger.TimeRecurrenceTrigger?,
+    val statusChangeTrigger: RecurrenceTrigger.StatusChange?,
+    val resetToStatus: TaskStatus,
+    val termination: RecurrenceTermination = RecurrenceTermination.Never,
+) : Presentable {
+    init {
+        require(timeRecurrenceTrigger != null || statusChangeTrigger != null) {
+            "At least one trigger must be specified"
+        }
+    }
+    override fun toBriefString(): String {
+        val timeRecurrenceTriggerString = timeRecurrenceTrigger?.let {
+            when (it) {
+                is RecurrenceTrigger.AfterTimeout if it.period != null -> "Every ${it.period.toBriefString()}"
+                is RecurrenceTrigger.AfterTimeout -> "At ${formatDate(it.firstOccurrence)}"
+                is RecurrenceTrigger.AtFixedPoints -> it.pattern.toBriefString()
+            }
+        }
+        val statusChangePrefix = if (timeRecurrenceTriggerString == null) "On " else "$timeRecurrenceTriggerString on "
+        return statusChangeTrigger?.requiredStatuses
+            ?.joinToString(prefix = statusChangePrefix) { it.toBriefString() }
+            ?: timeRecurrenceTriggerString
+            ?: error("No recurrence trigger found")
+    }
+
+    override fun toFullString(): String {
+        val timeRecurrenceTriggerString = timeRecurrenceTrigger?.let {
+            when (it) {
+                is RecurrenceTrigger.AfterTimeout if it.period != null -> "Every ${it.period.toFullString()} since ${formatDate(it.firstOccurrence)}"
+                is RecurrenceTrigger.AfterTimeout -> "At ${formatDate(it.firstOccurrence)}"
+                is RecurrenceTrigger.AtFixedPoints -> it.pattern.toFullString() + it.timezoneSuffix()
+            }
+        }
+        val statusChangePrefix =
+            if (timeRecurrenceTriggerString == null) "On status " else "$timeRecurrenceTriggerString on status "
+        val triggersString = statusChangeTrigger?.requiredStatuses
+            ?.joinToString(prefix = statusChangePrefix) { it.displayName }
+            ?: timeRecurrenceTriggerString
+            ?: error("No recurrence trigger found")
+        val resetString = "Reset to status ${resetToStatus.toFullString()}"
+        val termination = termination.toFullString()
+        return "$triggersString\n$resetString\n$termination"
+    }
+}
+
+fun RecurrenceRule?.toFullString(): String = this?.toFullString() ?: "Never"
 
 /**
  * State tracking for recurrence
@@ -539,62 +666,62 @@ object RecurrenceCalculator {
      * @return The next occurrence instant, or null if recurrence has terminated
      */
     fun calculateNextOccurrence(
-        rule: RecurrenceRule,
+        rule: RecurrenceRule?,
         currentState: RecurrenceState,
         triggerTime: Instant = kotlin.time.Clock.System.now()
     ): Instant? {
-        // Check termination
-        when (val termination = rule.termination) {
-            is RecurrenceTermination.Never -> { /* continue */ }
-            is RecurrenceTermination.AfterOccurrences -> {
-                if (currentState.occurrenceCount >= termination.count) return null
-            }
-            is RecurrenceTermination.OnDate -> {
-                if (triggerTime > termination.endDate) return null
-            }
+        // Check termination - either condition can terminate the recurrence
+        if (rule == null) return null
+        val termination = rule.termination
+        val maxOccurrences = termination.maxOccurrences
+        val endDate = termination.endDate
+        if (maxOccurrences != null && currentState.occurrenceCount >= maxOccurrences) {
+            return null
         }
-        
-        return when (rule) {
-            is RecurrenceRule.None -> null
-            is RecurrenceRule.Once -> if (currentState.occurrenceCount == 0) rule.scheduledTime else null
-            is RecurrenceRule.AfterInterval -> calculateAfterInterval(rule, currentState)
-            is RecurrenceRule.AtFixedPoints -> calculateAtFixedPoints(rule, currentState, triggerTime)
+        if (endDate != null && triggerTime > endDate) {
+            return null
+        }
+
+        return when (val trigger = rule.timeRecurrenceTrigger) {
+            is RecurrenceTrigger.AfterTimeout -> calculateAfterTimeout(trigger, currentState)
+            is RecurrenceTrigger.AtFixedPoints -> calculateAtFixedPoints(trigger, currentState, triggerTime)
+            null -> null
         }
     }
     
-    private fun calculateAfterInterval(
-        rule: RecurrenceRule.AfterInterval,
+    private fun calculateAfterTimeout(
+        trigger: RecurrenceTrigger.AfterTimeout,
         currentState: RecurrenceState
-    ): Instant {
-        val tz = rule.timezone.toTimeZone()
+    ): Instant? {
+        val tz = trigger.timezone.toTimeZone()
         val baseDateTime = if (currentState.occurrenceCount == 0) {
-            rule.firstOccurrence.toLocalDateTime(tz)
+            trigger.firstOccurrence.toLocalDateTime(tz)
         } else {
             currentState.lastOccurrenceDate?.toLocalDateTime(tz) 
-                ?: rule.firstOccurrence.toLocalDateTime(tz)
+                ?: trigger.firstOccurrence.toLocalDateTime(tz)
         }
         
         return if (currentState.occurrenceCount == 0) {
-            rule.firstOccurrence
+            trigger.firstOccurrence
         } else {
-            rule.period.addTo(baseDateTime).toInstant(tz)
+            trigger.period?.addTo(baseDateTime)?.toInstant(tz)
         }
     }
     
     private fun calculateAtFixedPoints(
-        rule: RecurrenceRule.AtFixedPoints,
+        trigger: RecurrenceTrigger.AtFixedPoints,
         currentState: RecurrenceState,
         fromTime: Instant
     ): Instant {
-        val tz = rule.timezone.toTimeZone()
+        val tz = trigger.timezone.toTimeZone()
         // Find the maximum of the three instants
         val searchFrom = listOf(
-            rule.startFrom,
-            currentState.lastOccurrenceDate ?: rule.startFrom,
+            trigger.startFrom,
+            currentState.lastOccurrenceDate ?: trigger.startFrom,
             fromTime
         ).maxByOrNull { it.toEpochMilliseconds() } ?: fromTime
         
-        return when (val pattern = rule.pattern) {
+        return when (val pattern = trigger.pattern) {
             is FixedPointPattern.DaysOfWeek -> findNextDayOfWeek(pattern, searchFrom, tz)
             is FixedPointPattern.DayOfMonth -> findNextDayOfMonth(pattern, searchFrom, tz)
             is FixedPointPattern.NthDayOfWeekInMonth -> findNextNthDayOfWeek(pattern, searchFrom, tz)
@@ -701,26 +828,28 @@ object RecurrenceCalculator {
     ): Instant {
         val fromDateTime = from.toLocalDateTime(tz)
         val targetTime = LocalTime(pattern.timeOfDay.hour, pattern.timeOfDay.minute, pattern.timeOfDay.second)
-        val targetMonth = pattern.month.toKotlinxMonth()
-        
-        // Try current year
-        val daysInMonth = targetMonth.length(isLeapYear(fromDateTime.year))
-        val targetDay = minOf(pattern.dayOfMonth, daysInMonth)
-        var targetDate = LocalDate(fromDateTime.year, targetMonth, targetDay)
-        var targetDateTime = LocalDateTime(targetDate, targetTime)
-        
-        if (targetDateTime.toInstant(tz) > from) {
-            return targetDateTime.toInstant(tz)
+        val targetMonths = pattern.months.map { it.toKotlinxMonth() }
+
+        return targetMonths.minOf { targetMonth ->
+            // Try current year
+            val daysInMonth = targetMonth.length(isLeapYear(fromDateTime.year))
+            val targetDay = minOf(pattern.dayOfMonth, daysInMonth)
+            var targetDate = LocalDate(fromDateTime.year, targetMonth, targetDay)
+            var targetDateTime = LocalDateTime(targetDate, targetTime)
+
+            if (targetDateTime.toInstant(tz) > from) {
+                return@minOf targetDateTime.toInstant(tz)
+            }
+
+            // Move to next year
+            val nextYear = fromDateTime.year + 1
+            val nextDaysInMonth = targetMonth.length(isLeapYear(nextYear))
+            val nextTargetDay = minOf(pattern.dayOfMonth, nextDaysInMonth)
+            targetDate = LocalDate(nextYear, targetMonth, nextTargetDay)
+            targetDateTime = LocalDateTime(targetDate, targetTime)
+
+            return@minOf targetDateTime.toInstant(tz)
         }
-        
-        // Move to next year
-        val nextYear = fromDateTime.year + 1
-        val nextDaysInMonth = targetMonth.length(isLeapYear(nextYear))
-        val nextTargetDay = minOf(pattern.dayOfMonth, nextDaysInMonth)
-        targetDate = LocalDate(nextYear, targetMonth, nextTargetDay)
-        targetDateTime = LocalDateTime(targetDate, targetTime)
-        
-        return targetDateTime.toInstant(tz)
     }
     
     private fun findNextNthDayOfWeekInMonths(
@@ -825,13 +954,15 @@ object RecurrenceCalculator {
      * Check if recurrence should trigger based on an event
      */
     fun shouldTrigger(rule: RecurrenceRule, event: RecurrenceTriggerEvent): Boolean {
-        return when (rule.trigger) {
-            is RecurrenceTrigger.DateTime -> event is RecurrenceTriggerEvent.DateTimeReached
-            is RecurrenceTrigger.StatusChange -> {
-                event is RecurrenceTriggerEvent.StatusChanged && 
-                    event.newStatus == (rule.trigger as RecurrenceTrigger.StatusChange).targetStatus
+        val isStatusOk = when (rule.statusChangeTrigger) {
+            is RecurrenceTrigger.StatusChange -> when (event) {
+                is RecurrenceTriggerEvent.DateTimeReached -> event.currentStatus in rule.statusChangeTrigger.requiredStatuses
+                is RecurrenceTriggerEvent.StatusChanged -> event.newStatus in rule.statusChangeTrigger.requiredStatuses
             }
+            null -> true
         }
+        val isTimeOk = rule.timeRecurrenceTrigger == null || event is RecurrenceTriggerEvent.DateTimeReached
+        return isStatusOk && isTimeOk
     }
 }
 
@@ -839,7 +970,7 @@ object RecurrenceCalculator {
  * Events that can trigger recurrence advancement
  */
 sealed class RecurrenceTriggerEvent {
-    data object DateTimeReached : RecurrenceTriggerEvent()
+    data class DateTimeReached(val currentStatus: TaskStatus) : RecurrenceTriggerEvent()
     data class StatusChanged(val newStatus: TaskStatus) : RecurrenceTriggerEvent()
 }
 
@@ -865,12 +996,12 @@ object RecurrenceService {
      * @return RecurrenceResult with updated state and next due date
      */
     fun processRecurrence(
-        rule: RecurrenceRule,
+        rule: RecurrenceRule?,
         currentState: RecurrenceState,
         triggerEvent: RecurrenceTriggerEvent,
         triggerTime: Instant = kotlin.time.Clock.System.now()
     ): RecurrenceResult {
-        if (rule is RecurrenceRule.None) {
+        if (rule == null) {
             return RecurrenceResult(
                 updatedRecurrenceState = currentState,
                 nextOccurrenceDate = null
@@ -906,19 +1037,15 @@ object RecurrenceService {
     /**
      * Initialize recurrence state for a new recurring task
      */
-    fun initializeRecurrence(rule: RecurrenceRule): RecurrenceState {
-        if (rule is RecurrenceRule.None) {
-            return RecurrenceState()
-        }
+    fun initializeRecurrence(rule: RecurrenceRule?): RecurrenceState {
 
-        val firstOccurrence = when (rule) {
-            is RecurrenceRule.None -> null
-            is RecurrenceRule.Once -> rule.scheduledTime
-            is RecurrenceRule.AfterInterval -> rule.firstOccurrence
-            is RecurrenceRule.AtFixedPoints -> RecurrenceCalculator.calculateNextOccurrence(
+        val firstOccurrence = when (val trigger = rule?.timeRecurrenceTrigger) {
+            null -> return RecurrenceState()
+            is RecurrenceTrigger.AfterTimeout -> trigger.firstOccurrence
+            is RecurrenceTrigger.AtFixedPoints -> RecurrenceCalculator.calculateNextOccurrence(
                 rule = rule,
                 currentState = RecurrenceState(),
-                triggerTime = rule.startFrom
+                triggerTime = trigger.startFrom
             )
         }
 
@@ -946,132 +1073,77 @@ object RecurrenceService {
     }
 }
 
-/**
- * Brief human-readable description of a recurrence rule for task cards
- */
-fun RecurrenceRule.toBriefString(): String = when (this) {
-    is RecurrenceRule.None -> ""
-    is RecurrenceRule.Once -> "Once"
-    is RecurrenceRule.AfterInterval -> {
-        val periodStr = period.toBriefString()
-        "Every $periodStr"
-    }
-    is RecurrenceRule.AtFixedPoints -> pattern.toBriefString()
-}
+///**
+// * Brief human-readable description of a recurrence rule for task cards
+// */
+//fun RecurrenceRule?.toBriefString(): String {
+//    if (this == null) return ""
+//    return triggers.joinToString(" & ") {
+//        when (it) {
+//            is RecurrenceTrigger.AfterTimeout if it.period != null -> "Every ${it.period.toBriefString()}"
+//            is RecurrenceTrigger.AfterTimeout -> "Once"
+//            is RecurrenceTrigger.AtFixedPoints -> it.pattern.toBriefString()
+//            is RecurrenceTrigger.StatusChange -> "On ${it.requiredStatuses.joinToString()}"
+//        }
+//    }
+//}
+//
+///**
+// * Human-readable description of a recurrence rule
+// */
+//fun RecurrenceRule?.toDisplayString(): String {
+//    if (this == null) return "Does not repeat"
+//    return triggers.joinToString("&") { trigger ->
+//        when (trigger) {
+//            is RecurrenceTrigger.AfterTimeout if trigger.period != null -> {
+//                val period = trigger.period
+//                val periodStr = buildString {
+//                    if (period.years > 0) append("${period.years} year${if (period.years > 1) "s" else ""} ")
+//                    if (period.months > 0) append("${period.months} month${if (period.months > 1) "s" else ""} ")
+//                    if (period.weeks > 0) append("${period.weeks} week${if (period.weeks > 1) "s" else ""} ")
+//                    if (period.days > 0) append("${period.days} day${if (period.days > 1) "s" else ""} ")
+//                    if (period.hours > 0) append("${period.hours} hour${if (period.hours > 1) "s" else ""} ")
+//                    if (period.minutes > 0) append("${period.minutes} minute${if (period.minutes > 1) "s" else ""} ")
+//                    if (period.seconds > 0) append("${period.seconds} second${if (period.seconds > 1) "s" else ""}")
+//                }.trim()
+//                val triggerInfo = triggerSuffix()
+//                "Every $periodStr$triggerInfo\nReset to ${resetToStatus.displayName}${terminationSuffix()}"
+//            }
+//            is RecurrenceTrigger.AfterTimeout -> listOf("Once", triggerSuffix().takeIf { it.isNotEmpty() })
+//                .joinToString(" ", postfix = "\nReset to ${resetToStatus.displayName}${terminationSuffix()}")
+//
+//            is RecurrenceTrigger.AtFixedPoints -> {
+//                val triggerInfo = triggerSuffix()
+//                trigger.pattern.toFullString() + "${trigger.timezoneSuffix()}$triggerInfo\nReset to ${resetToStatus.displayName}${terminationSuffix()}"
+//            }
+//            is RecurrenceTrigger.StatusChange -> "On status ${trigger.requiredStatuses.joinToString()}"
+//        }
+//    }
+//}
+//
+//private fun RecurrenceRule.triggerSuffix(): String = triggers.filterIsInstance<RecurrenceTrigger.StatusChange>().joinToString {
+////    when (it) {
+////        is RecurrenceTrigger.StatusChange -> {
+//            "\non status ${it.requiredStatuses.joinToString("/") { it.displayName }}"
+////        }
+////    }
+//}
 
-private fun RecurrencePeriod.toBriefString(): String = buildString {
-    if (years > 0) append("${years}y ")
-    if (months > 0) append("${months}mo ")
-    if (weeks > 0) append("${weeks}w ")
-    if (days > 0) append("${days}d ")
-    if (hours > 0) append("${hours}h ")
-    if (minutes > 0) append("${minutes}m ")
-    if (seconds > 0) append("${seconds}s")
-}.trim().ifEmpty { "0s" }
-
-private fun FixedPointPattern.toBriefString(): String = when (this) {
-    is FixedPointPattern.DaysOfWeek -> {
-        val dayAbbrevs = days.map { it.name.take(3) }
-        if (dayAbbrevs.size <= 3) dayAbbrevs.joinToString(", ") else "Weekly"
-    }
-    is FixedPointPattern.DayOfMonth -> "Monthly (${dayOfMonth})"
-    is FixedPointPattern.NthDayOfWeekInMonth -> {
-        val ordinalAbbrev = ordinal.name.take(3).lowercase().replaceFirstChar(Char::uppercaseChar)
-        val dayAbbrev = dayOfWeek.name.take(3)
-        "$ordinalAbbrev $dayAbbrev"
-    }
-    is FixedPointPattern.YearlyOnDate -> {
-        val monthAbbrev = month.name.take(3)
-        "$monthAbbrev $dayOfMonth"
-    }
-    is FixedPointPattern.NthDayOfWeekInMonths -> {
-        val ordinalAbbrev = ordinal.name.take(3).lowercase().replaceFirstChar(Char::uppercaseChar)
-        val dayAbbrev = dayOfWeek.name.take(3)
-        "Yearly $ordinalAbbrev $dayAbbrev"
-    }
-}
-
-/**
- * Human-readable description of a recurrence rule
- */
-fun RecurrenceRule.toDisplayString(): String = when (this) {
-    is RecurrenceRule.None -> "Does not repeat"
-    is RecurrenceRule.Once -> {
-        "Once at ${formatDate(scheduledTime)}, reset to ${resetToStatus.displayName}"
-    }
-    is RecurrenceRule.AfterInterval -> {
-        val periodStr = buildString {
-            if (period.years > 0) append("${period.years} year${if (period.years > 1) "s" else ""} ")
-            if (period.months > 0) append("${period.months} month${if (period.months > 1) "s" else ""} ")
-            if (period.weeks > 0) append("${period.weeks} week${if (period.weeks > 1) "s" else ""} ")
-            if (period.days > 0) append("${period.days} day${if (period.days > 1) "s" else ""} ")
-            if (period.hours > 0) append("${period.hours} hour${if (period.hours > 1) "s" else ""} ")
-            if (period.minutes > 0) append("${period.minutes} minute${if (period.minutes > 1) "s" else ""} ")
-            if (period.seconds > 0) append("${period.seconds} second${if (period.seconds > 1) "s" else ""}")
-        }.trim()
-        "Every $periodStr" + terminationSuffix()
-    }
-    is RecurrenceRule.AtFixedPoints -> {
-        pattern.toDisplayString() + terminationSuffix() + timezoneSuffix()
-    }
-}
-
-private fun RecurrenceRule.AtFixedPoints.timezoneSuffix(): String = when (val tz = timezone) {
+private fun RecurrenceTrigger.AtFixedPoints.timezoneSuffix(): String = when (val tz = timezone) {
     is RecurrenceTimeZone.SystemDefault -> ""
     is RecurrenceTimeZone.Specific -> " (${tz.zoneId})"
 }
 
-private fun RecurrenceRule.terminationSuffix(): String = when (termination) {
-    is RecurrenceTermination.Never -> ""
-    is RecurrenceTermination.AfterOccurrences -> ", ${(termination as RecurrenceTermination.AfterOccurrences).count} times"
-    is RecurrenceTermination.OnDate -> ", until ${formatDate((termination as RecurrenceTermination.OnDate).endDate)}"
-}
+//private fun RecurrenceRule.terminationSuffix(): String {
+//    val parts = mutableListOf<String>()
+//    termination.maxOccurrences?.let { parts.add(if (it == 1) "$it time" else "$it times") }
+//    termination.endDate?.let { parts.add("${if (parts.isEmpty()) "Until" else "until"} ${formatDate(it)}") }
+//    return if (parts.isEmpty()) "" else parts.joinToString(", ", prefix = "\n")
+//}
 
 private fun formatDate(instant: Instant): String {
     val dt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
     val hour = dt.hour.toString().padStart(2, '0')
     val minute = dt.minute.toString().padStart(2, '0')
-    return "${dt.month.name.lowercase().replaceFirstChar(Char::uppercaseChar)} ${dt.dayOfMonth}, ${dt.year} at $hour:$minute"
-}
-
-private fun FixedPointPattern.toDisplayString(): String = when (this) {
-    is FixedPointPattern.DaysOfWeek -> {
-        val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
-        val dayNames = days.map { it.name.lowercase().replaceFirstChar(Char::uppercaseChar) }
-        val daysText = when (dayNames.size) {
-            1 -> "Every ${dayNames.first()}"
-            2 -> "Every ${dayNames[0]} and ${dayNames[1]}"
-            else -> "Every ${dayNames.dropLast(1).joinToString(", ")} and ${dayNames.last()}"
-        }
-        daysText + timeStr
-    }
-    is FixedPointPattern.DayOfMonth -> {
-        val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
-        val suffix = when {
-            dayOfMonth in 11..13 -> "th"
-            dayOfMonth % 10 == 1 -> "st"
-            dayOfMonth % 10 == 2 -> "nd"
-            dayOfMonth % 10 == 3 -> "rd"
-            else -> "th"
-        }
-        "Every ${dayOfMonth}$suffix of the month" + timeStr
-    }
-    is FixedPointPattern.NthDayOfWeekInMonth -> {
-        val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
-        val ordinalName = ordinal.name.lowercase().replaceFirstChar(Char::uppercaseChar)
-        val dayName = dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercaseChar)
-        "Every $ordinalName $dayName of the month" + timeStr
-    }
-    is FixedPointPattern.YearlyOnDate -> {
-        val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
-        val monthName = month.name.lowercase().replaceFirstChar(Char::uppercaseChar)
-        "Every $monthName $dayOfMonth" + timeStr
-    }
-    is FixedPointPattern.NthDayOfWeekInMonths -> {
-        val timeStr = " at ${timeOfDay.hour.toString().padStart(2, '0')}:${timeOfDay.minute.toString().padStart(2, '0')}"
-        val ordinalName = ordinal.name.lowercase().replaceFirstChar(Char::uppercaseChar)
-        val dayName = dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercaseChar)
-        val monthNames = months.map { it.name.lowercase().replaceFirstChar(Char::uppercaseChar) }
-        "Every $ordinalName $dayName in ${monthNames.joinToString(", ")}" + timeStr
-    }
+    return "${dt.month.name.lowercase().replaceFirstChar(Char::uppercaseChar)} ${dt.day}, ${dt.year} at $hour:$minute"
 }

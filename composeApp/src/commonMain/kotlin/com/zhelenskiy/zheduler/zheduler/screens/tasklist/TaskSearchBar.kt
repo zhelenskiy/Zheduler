@@ -15,15 +15,14 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
+import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
 import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -143,36 +142,23 @@ private fun buildFilterChips(filterState: TaskFilterState): List<Pair<String, St
     }
 
     if (filterState.statusFilters.isNotEmpty()) {
-        val statusParts = mutableListOf<String>()
-        filterState.statusFilters.forEach { status ->
-            val details = mutableListOf<String>()
-            if (status is TaskStatus.Blocked) {
-                if (filterState.blockedByTaskIds.isNotBlank()) details.add("ids: ${filterState.blockedByTaskIds}")
-                if (filterState.blockedByComment.isNotBlank()) details.add("comment: ${filterState.blockedByComment}")
+        val updatedStatuses = filterState.statusFilters.map { status ->
+            when (status) {
+                is TaskStatus.Blocked -> {
+                    val ids = filterState.blockedByTaskIds
+                        .takeIf { it.isNotBlank() }
+                        ?.split(",")
+                        ?.map { it.trim() }
+                        ?.filter { Regex("[a-zA-Z]+-[1-9][0-9]*").matchEntire(it) != null }
+                        .orEmpty()
+                        .toSet()
+                    status.copy(blockerTaskIds = ids, comment = filterState.blockedByComment)
+                }
+                is TaskStatus.Declined -> status.copy(reason = filterState.declinedReason)
+                else -> status
             }
-            if (status is TaskStatus.Declined && filterState.declinedReason.isNotBlank()) {
-                details.add("reason: ${filterState.declinedReason}")
-            }
-
-            val part = if (details.isNotEmpty()) {
-                "${status.displayName} (${details.joinToString(", ")})"
-            } else {
-                status.displayName
-            }
-            statusParts.add(part)
         }
-        chips.add("status" to "Status: ${statusParts.joinToString(", ")}")
-    } else {
-        // Show blocked/declined details even if no status filter is selected
-        val blockedParts = mutableListOf<String>()
-        if (filterState.blockedByTaskIds.isNotBlank()) blockedParts.add("ids: ${filterState.blockedByTaskIds}")
-        if (filterState.blockedByComment.isNotBlank()) blockedParts.add("comment: ${filterState.blockedByComment}")
-        if (blockedParts.isNotEmpty()) {
-            chips.add("blockedBy" to "Blocked (${blockedParts.joinToString(", ")})")
-        }
-        if (filterState.declinedReason.isNotBlank()) {
-            chips.add("declinedReason" to "Declined (reason: ${filterState.declinedReason})")
-        }
+        chips.add("status" to "Status: ${updatedStatuses.joinToString(", ") { it.toBriefString() }}")
     }
 
     if (filterState.dueDateFilter != DueDateFilter.Any) {
@@ -215,17 +201,6 @@ private fun buildFilterChips(filterState: TaskFilterState): List<Pair<String, St
             val maxStr = filterState.customEstimatedTimeMax.takeIf { it.isNotBlank() }
             val minPeriod = minStr?.let { parseCompactTimeToPeriod(it) }
             val maxPeriod = maxStr?.let { parseCompactTimeToPeriod(it) }
-
-            // Format periods for display
-            fun formatPeriod(period: com.zhelenskiy.zheduler.zheduler.RecurrencePeriod): String = buildString {
-                if (period.years > 0) append("${period.years}y")
-                if (period.months > 0) append("${period.months}mo")
-                if (period.weeks > 0) append("${period.weeks}w")
-                if (period.days > 0) append("${period.days}d")
-                if (period.hours > 0) append("${period.hours}h")
-                if (period.minutes > 0) append("${period.minutes}m")
-                if (period.seconds > 0) append("${period.seconds}s")
-            }
 
             when {
                 minPeriod != null && maxPeriod != null && minStr == maxStr -> "Time: ${formatPeriod(minPeriod)}"

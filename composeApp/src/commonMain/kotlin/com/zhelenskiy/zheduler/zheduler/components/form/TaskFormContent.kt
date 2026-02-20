@@ -4,7 +4,6 @@ package com.zhelenskiy.zheduler.zheduler.components.form
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -58,7 +57,7 @@ fun TaskFormContent(
     getTaskById: suspend (String) -> Task?,
     getAllTags: suspend () -> Set<String>,
     getAvailableTasks: suspend () -> List<Task>,
-    wouldCreateCycle: suspend (String, String, ConnectionType, Set<TaskConnection>) -> Boolean,
+    searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
     getCalculatedStatusFromSubtasks: suspend (String) -> TaskStatus?,
     currentSpaceIdPrefix: String?,
     allSpacePrefixes: List<String>
@@ -132,43 +131,21 @@ fun TaskFormContent(
 
         // Status selection (hidden when autoUpdateStatusFromSubtasks is enabled)
         AnimatedVisibility(visible = !formState.autoUpdateStatusFromSubtasks) {
-            val isSimpleStatus = formState.status !is TaskStatus.Blocked && formState.status !is TaskStatus.Declined
-
             Card(modifier = Modifier.fillMaxWidth()) {
-                if (isSimpleStatus) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onShowStatusDialog(true) }
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Status:",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        StatusBadge(status = formState.status)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Icon(
-                            Icons.Default.Edit, contentDescription = "Change status",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                } else {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Status",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = { onShowStatusDialog(true) },
-                            modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.clickable { onShowStatusDialog(true) }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            Text(
+                                text = "Status:",
+                                style = MaterialTheme.typography.titleSmall
+                            )
                             StatusBadge(status = formState.status)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Change status")
                         }
 
                         when (val s = formState.status) {
@@ -204,6 +181,11 @@ fun TaskFormContent(
                             else -> {}
                         }
                     }
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        Icons.Default.Edit, contentDescription = "Change status",
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
         }
@@ -264,7 +246,7 @@ fun TaskFormContent(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(formState.dueDate?.let { formatDueDate(it) } ?: "Set due time")
             }
-            if (formState.dueDate != null) {
+            AnimatedVisibility(formState.dueDate != null) {
                 IconButton(onClick = { formState.dueDate = null }) {
                     Icon(Icons.Default.Clear, contentDescription = "Clear date")
                 }
@@ -284,7 +266,7 @@ fun TaskFormContent(
                 Icon(
                     Icons.Default.Refresh,
                     contentDescription = null,
-                    tint = if (formState.recurrenceRule !is RecurrenceRule.None) 
+                    tint = if (formState.recurrenceRule != null)
                         MaterialTheme.colorScheme.primary 
                     else 
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -295,7 +277,7 @@ fun TaskFormContent(
                         style = MaterialTheme.typography.titleSmall
                     )
                     Text(
-                        text = formState.recurrenceRule.toDisplayString(),
+                        text = formState.recurrenceRule.toFullString(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -542,7 +524,7 @@ fun TaskFormContent(
             selectedTags = formState.tags,
             onDismiss = { onShowTagDialog(false) },
             onTagSelected = { tag ->
-                formState.tags = formState.tags + tag
+                formState.tags += tag
                 onShowTagDialog(false)
             }
         )
@@ -573,13 +555,11 @@ fun TaskFormContent(
 
     if (showConnectionDialog) {
         ConnectionDialog(
-            currentTaskId = taskId,
             existingConnections = formState.connections,
-            availableTasks = availableTasks,
-            wouldCreateCycle = wouldCreateCycle,
+            searchTasksForConnection = searchTasksForConnection,
             onDismiss = { onShowConnectionDialog(false) },
             onConnectionAdded = { connection ->
-                formState.connections = formState.connections + connection
+                formState.connections += connection
             },
             onCreateNewTask = onCreateNewTaskWithConnection
         )
@@ -588,7 +568,7 @@ fun TaskFormContent(
     if (showRecurrenceDialog) {
         RecurrenceDialog(
             currentRule = formState.recurrenceRule,
-            currentDueDate = formState.dueDate,
+            availableTasks = availableTasks,
             onDismiss = { onShowRecurrenceDialog(false) },
             onRecurrenceSelected = { rule ->
                 formState.recurrenceRule = rule

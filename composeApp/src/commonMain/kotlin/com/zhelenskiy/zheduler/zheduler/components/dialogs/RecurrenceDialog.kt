@@ -4,6 +4,7 @@ package com.zhelenskiy.zheduler.zheduler.components.dialogs
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,10 +13,29 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.times
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.DayOfMonth
+import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.DaysOfWeek
+import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.NthDayOfWeekInMonth
+import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.YearlyOnDate
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AfterTimeout
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.TimeRecurrenceTrigger
+import com.zhelenskiy.zheduler.zheduler.TimeOfDay
+import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
+import com.zhelenskiy.zheduler.zheduler.components.common.TimeZoneSelector
+import com.zhelenskiy.zheduler.zheduler.components.common.icon
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.NoData
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.Success
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
@@ -27,15 +47,114 @@ import kotlin.time.Instant
 /**
  * Type of recurrence pattern
  */
-enum class RecurrenceType {
-    NONE,
-    ONCE,
-    AFTER_INTERVAL,
+enum class RecurrenceTriggerType {
+    AFTER_TIMEOUT,
     FIXED_DAYS_OF_WEEK,
     FIXED_DAY_OF_MONTH,
     NTH_DAY_OF_WEEK,
     YEARLY_ON_DATE,
     YEARLY_ON_NTH_DAY_OF_WEEK
+}
+
+sealed class FormResult<out T> {
+    data class Success<T>(val value: T) : FormResult<T>()
+    data object Failure : FormResult<Nothing>()
+    data object NoData : FormResult<Nothing>()
+}
+
+@Composable
+fun TimeRecurrenceTriggerSelector(
+    oldTimeTrigger: TimeRecurrenceTrigger?,
+    terminationCount: Int?,
+    onTriggerSelected: (FormResult<TimeRecurrenceTrigger>) -> Unit
+) {
+    var selectedTimeBasedType by remember {
+        mutableStateOf(
+            when (oldTimeTrigger) {
+                null -> null
+                is AfterTimeout -> RecurrenceTriggerType.AFTER_TIMEOUT
+                is AtFixedPoints -> when (oldTimeTrigger.pattern) {
+                    is DaysOfWeek -> RecurrenceTriggerType.FIXED_DAYS_OF_WEEK
+                    is DayOfMonth -> RecurrenceTriggerType.FIXED_DAY_OF_MONTH
+                    is NthDayOfWeekInMonth -> RecurrenceTriggerType.NTH_DAY_OF_WEEK
+                    is YearlyOnDate -> RecurrenceTriggerType.YEARLY_ON_DATE
+                    is FixedPointPattern.NthDayOfWeekInMonths -> RecurrenceTriggerType.YEARLY_ON_NTH_DAY_OF_WEEK
+                }
+            }
+        )
+    }
+
+    Column {
+        TimeBasedTypeSelector(
+            selectedTimeBasedType = selectedTimeBasedType,
+            onTypeSelected = { selectedTimeBasedType = it }
+        )
+        AnimatedContent(targetState = selectedTimeBasedType) { type ->
+            RecurrenceTypeConfiguration(
+                type = type,
+                oldTimeTrigger = oldTimeTrigger,
+                terminationCount = terminationCount,
+                onTriggerSelected = onTriggerSelected,
+            )
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun TimeBasedTypeSelector(
+    selectedTimeBasedType: RecurrenceTriggerType?,
+    onTypeSelected: (RecurrenceTriggerType?) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Time-based", style = MaterialTheme.typography.titleSmall)
+
+        FilterChip(
+            selected = selectedTimeBasedType == null,
+            onClick = { onTypeSelected(null) },
+            label = { Text("None", style = MaterialTheme.typography.labelSmall) }
+        )
+
+        FilterChip(
+            selected = selectedTimeBasedType == RecurrenceTriggerType.AFTER_TIMEOUT,
+            onClick = { onTypeSelected(RecurrenceTriggerType.AFTER_TIMEOUT) },
+            label = { Text("After timeout", style = MaterialTheme.typography.labelSmall) }
+        )
+
+        FilterChip(
+            selected = selectedTimeBasedType == RecurrenceTriggerType.FIXED_DAYS_OF_WEEK,
+            onClick = { onTypeSelected(RecurrenceTriggerType.FIXED_DAYS_OF_WEEK) },
+            label = { Text("Weekly", style = MaterialTheme.typography.labelSmall) }
+        )
+
+        FilterChip(
+            selected = selectedTimeBasedType == RecurrenceTriggerType.FIXED_DAY_OF_MONTH,
+            onClick = { onTypeSelected(RecurrenceTriggerType.FIXED_DAY_OF_MONTH) },
+            label = { Text("Monthly", style = MaterialTheme.typography.labelSmall) }
+        )
+
+        FilterChip(
+            selected = selectedTimeBasedType == RecurrenceTriggerType.NTH_DAY_OF_WEEK,
+            onClick = { onTypeSelected(RecurrenceTriggerType.NTH_DAY_OF_WEEK) },
+            label = { Text("Monthly (weekday)", style = MaterialTheme.typography.labelSmall) }
+        )
+
+        FilterChip(
+            selected = selectedTimeBasedType == RecurrenceTriggerType.YEARLY_ON_DATE,
+            onClick = { onTypeSelected(RecurrenceTriggerType.YEARLY_ON_DATE) },
+            label = { Text("Yearly", style = MaterialTheme.typography.labelSmall) }
+        )
+
+        FilterChip(
+            selected = selectedTimeBasedType == RecurrenceTriggerType.YEARLY_ON_NTH_DAY_OF_WEEK,
+            onClick = { onTypeSelected(RecurrenceTriggerType.YEARLY_ON_NTH_DAY_OF_WEEK) },
+            label = { Text("Yearly (weekday)", style = MaterialTheme.typography.labelSmall) }
+        )
+    }
 }
 
 /**
@@ -44,242 +163,33 @@ enum class RecurrenceType {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecurrenceDialog(
-    currentRule: RecurrenceRule,
-    currentDueDate: Instant?,
+    currentRule: RecurrenceRule?,
+    availableTasks: List<Task>,
     onDismiss: () -> Unit,
-    onRecurrenceSelected: (RecurrenceRule) -> Unit
+    onRecurrenceSelected: (RecurrenceRule?) -> Unit
 ) {
-    var selectedType by remember {
-        mutableStateOf(
-            when (currentRule) {
-                is RecurrenceRule.None -> RecurrenceType.NONE
-                is RecurrenceRule.Once -> RecurrenceType.ONCE
-                is RecurrenceRule.AfterInterval -> RecurrenceType.AFTER_INTERVAL
-                is RecurrenceRule.AtFixedPoints -> when (currentRule.pattern) {
-                    is FixedPointPattern.DaysOfWeek -> RecurrenceType.FIXED_DAYS_OF_WEEK
-                    is FixedPointPattern.DayOfMonth -> RecurrenceType.FIXED_DAY_OF_MONTH
-                    is FixedPointPattern.NthDayOfWeekInMonth -> RecurrenceType.NTH_DAY_OF_WEEK
-                    is FixedPointPattern.YearlyOnDate -> RecurrenceType.YEARLY_ON_DATE
-                    is FixedPointPattern.NthDayOfWeekInMonths -> RecurrenceType.YEARLY_ON_NTH_DAY_OF_WEEK
-                }
-            }
-        )
+    var selectedTimeTrigger by remember {
+        mutableStateOf(currentRule?.timeRecurrenceTrigger?.let(::Success) ?: NoData)
     }
 
-    // Helper to extract TimeOfDay from pattern
-    val initialTimeOfDay = remember(currentRule) {
-        when (currentRule) {
-            is RecurrenceRule.AtFixedPoints -> when (val p = currentRule.pattern) {
-                is FixedPointPattern.DaysOfWeek -> p.timeOfDay
-                is FixedPointPattern.DayOfMonth -> p.timeOfDay
-                is FixedPointPattern.NthDayOfWeekInMonth -> p.timeOfDay
-                is FixedPointPattern.YearlyOnDate -> p.timeOfDay
-                is FixedPointPattern.NthDayOfWeekInMonths -> p.timeOfDay
-            }
-            else -> TimeOfDay(9, 0)
-        }
-    }
-
-    // Period state (compact format)
-    var periodText by remember {
-        mutableStateOf(
-            when (currentRule) {
-                is RecurrenceRule.AfterInterval -> formatPeriod(currentRule.period)
-                else -> ""
-            }
-        )
-    }
-
-    // Once scheduled time - default to 9:00 AM next day
-    var onceScheduledTime by remember {
-        mutableStateOf(
-            when (currentRule) {
-                is RecurrenceRule.Once -> currentRule.scheduledTime
-                else -> {
-                    val now = Clock.System.now()
-                    val nowLocal = now.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
-                    val tomorrow = nowLocal.date.plus(1, DateTimeUnit.DAY)
-                    val tomorrowAt9am = LocalDateTime(tomorrow, LocalTime(9, 0))
-                    tomorrowAt9am.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault())
-                }
-            }
-        )
-    }
-    var showOnceDatePicker by remember { mutableStateOf(false) }
-
-    // Once reset status
-    var onceResetStatus by remember {
-        mutableStateOf<TaskStatus>(
-            when (currentRule) {
-                is RecurrenceRule.Once -> currentRule.resetToStatus
-                else -> TaskStatus.Open
-            }
-        )
-    }
-
-    // Once reset status properties for complex statuses
-    var onceResetBlockedTaskIds by remember {
-        mutableStateOf(
-            when (currentRule) {
-                is RecurrenceRule.Once -> when (val status = currentRule.resetToStatus) {
-                    is TaskStatus.Blocked -> status.blockerTaskIds.joinToString(", ")
-                    else -> ""
-                }
-                else -> ""
-            }
-        )
-    }
-    var onceResetBlockedComment by remember {
-        mutableStateOf(
-            when (currentRule) {
-                is RecurrenceRule.Once -> when (val status = currentRule.resetToStatus) {
-                    is TaskStatus.Blocked -> status.comment
-                    else -> ""
-                }
-                else -> ""
-            }
-        )
-    }
-    var onceResetDeclinedReason by remember {
-        mutableStateOf(
-            when (currentRule) {
-                is RecurrenceRule.Once -> when (val status = currentRule.resetToStatus) {
-                    is TaskStatus.Declined -> status.reason
-                    else -> ""
-                }
-                else -> ""
-            }
-        )
-    }
-
-    // Trigger statuses (for tasks, the statuses that trigger recurrence)
-    var triggerStatuses by remember {
-        mutableStateOf<Set<TaskStatus>>(setOf(TaskStatus.Done))
-    }
+    // Trigger statuses (the statuses that trigger recurrence)
+    // null means "any status"
+    var statusChangesTrigger by remember { mutableStateOf(currentRule?.statusChangeTrigger) }
 
     // Reset status (what status to set when recurrence happens)
-    var resetStatus by remember {
-        mutableStateOf<TaskStatus>(TaskStatus.Open)
-    }
+    var resetToStatus by remember { mutableStateOf(currentRule?.resetToStatus ?: TaskStatus.Open) }
 
-    // Reset status properties for complex statuses
-    var resetBlockedTaskIds by remember { mutableStateOf("") }
-    var resetBlockedComment by remember { mutableStateOf("") }
-    var resetDeclinedReason by remember { mutableStateOf("") }
-
-    // Days of week state
-    var selectedDays by remember {
+    var termination by remember {
         mutableStateOf(
-            if (currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.DaysOfWeek) {
-                (currentRule.pattern as FixedPointPattern.DaysOfWeek).days
-            } else {
-                emptySet()
-            }
+            RecurrenceTermination(
+                afterOccurrences = currentRule?.termination?.maxOccurrences?.let(::AfterOccurrences),
+                onDate = currentRule?.termination?.endDate?.let(RecurrenceTerminationCondition::OnDate)
+            )
         )
     }
 
-    // Day of month state
-    var dayOfMonth by remember {
-        mutableStateOf(
-            if (currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.DayOfMonth) {
-                (currentRule.pattern as FixedPointPattern.DayOfMonth).dayOfMonth.toString()
-            } else {
-                "1"
-            }
-        )
-    }
-
-    // Nth day of week state (also used for YEARLY_ON_NTH_DAY_OF_WEEK)
-    var selectedOrdinal by remember {
-        mutableStateOf(
-            when {
-                currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.NthDayOfWeekInMonth ->
-                    (currentRule.pattern as FixedPointPattern.NthDayOfWeekInMonth).ordinal
-                currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.NthDayOfWeekInMonths ->
-                    (currentRule.pattern as FixedPointPattern.NthDayOfWeekInMonths).ordinal
-                else -> WeekOrdinal.FIRST
-            }
-        )
-    }
-    var selectedDayOfWeek by remember {
-        mutableStateOf(
-            when {
-                currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.NthDayOfWeekInMonth ->
-                    (currentRule.pattern as FixedPointPattern.NthDayOfWeekInMonth).dayOfWeek
-                currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.NthDayOfWeekInMonths ->
-                    (currentRule.pattern as FixedPointPattern.NthDayOfWeekInMonths).dayOfWeek
-                else -> RecurrenceDayOfWeek.MONDAY
-            }
-        )
-    }
-
-    // Yearly date state - multi-select months
-    var selectedMonths by remember {
-        mutableStateOf(
-            when {
-                currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.YearlyOnDate ->
-                    setOf((currentRule.pattern as FixedPointPattern.YearlyOnDate).month)
-                currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.NthDayOfWeekInMonths ->
-                    (currentRule.pattern as FixedPointPattern.NthDayOfWeekInMonths).months
-                else -> setOf(RecurrenceMonth.JANUARY)
-            }
-        )
-    }
-    var yearlyDayOfMonth by remember {
-        mutableStateOf(
-            if (currentRule is RecurrenceRule.AtFixedPoints && currentRule.pattern is FixedPointPattern.YearlyOnDate) {
-                (currentRule.pattern as FixedPointPattern.YearlyOnDate).dayOfMonth.toString()
-            } else {
-                "1"
-            }
-        )
-    }
-
-    // Time of day
-    var timeHour by remember { mutableStateOf(initialTimeOfDay.hour) }
-    var timeMinute by remember { mutableStateOf(initialTimeOfDay.minute) }
-    var showTimePicker by remember { mutableStateOf(false) }
-
-    // Termination state
-    var terminationType by remember {
-        mutableStateOf(
-            when (currentRule.termination) {
-                is RecurrenceTermination.Never -> "never"
-                is RecurrenceTermination.AfterOccurrences -> "count"
-                is RecurrenceTermination.OnDate -> "date"
-            }
-        )
-    }
-    var terminationCount by remember {
-        mutableStateOf(
-            when (val term = currentRule.termination) {
-                is RecurrenceTermination.AfterOccurrences -> term.count.toString()
-                else -> ""
-            }
-        )
-    }
-    var terminationDate by remember {
-        mutableStateOf(
-            when (val term = currentRule.termination) {
-                is RecurrenceTermination.OnDate -> term.endDate
-                else -> null
-            }
-        )
-    }
-    var showTerminationDatePicker by remember { mutableStateOf(false) }
-
-    // Timezone selection
-    var useSystemTimezone by remember {
-        mutableStateOf(currentRule.timezone is RecurrenceTimeZone.SystemDefault)
-    }
-    var selectedTimezone by remember {
-        mutableStateOf(
-            when (val tz = currentRule.timezone) {
-                is RecurrenceTimeZone.SystemDefault -> TimeZone.currentSystemDefault().id
-                is RecurrenceTimeZone.Specific -> tz.zoneId
-            }
-        )
-    }
+    val isTerminationCountValid = termination.afterOccurrences?.let { it.count > 0 } ?: true
+    val isFormValid = selectedTimeTrigger !is FormResult.Failure && isTerminationCountValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -291,525 +201,33 @@ fun RecurrenceDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Recurrence type selection
-                Text("Repeat", style = MaterialTheme.typography.labelLarge)
+                TriggerSelectors(
+                    selectedTimeTrigger = selectedTimeTrigger,
+                    onTimeTriggerSelected = { selectedTimeTrigger = it },
+                    terminationCount = termination.afterOccurrences?.count,
+                    statusChangesTrigger = statusChangesTrigger,
+                    onStatusChangeChange = { statusChangesTrigger = it }
+                )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.NONE,
-                        onClick = { selectedType = RecurrenceType.NONE },
-                        label = { Text("None", style = MaterialTheme.typography.labelSmall) }
-                    )
-
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.ONCE,
-                        onClick = { selectedType = RecurrenceType.ONCE },
-                        label = { Text("Once", style = MaterialTheme.typography.labelSmall) }
-                    )
-
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.AFTER_INTERVAL,
-                        onClick = { selectedType = RecurrenceType.AFTER_INTERVAL },
-                        label = { Text("After interval", style = MaterialTheme.typography.labelSmall) }
-                    )
-
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.FIXED_DAYS_OF_WEEK,
-                        onClick = { selectedType = RecurrenceType.FIXED_DAYS_OF_WEEK },
-                        label = { Text("Weekly", style = MaterialTheme.typography.labelSmall) }
-                    )
-
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.FIXED_DAY_OF_MONTH,
-                        onClick = { selectedType = RecurrenceType.FIXED_DAY_OF_MONTH },
-                        label = { Text("Monthly", style = MaterialTheme.typography.labelSmall) }
-                    )
-
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.NTH_DAY_OF_WEEK,
-                        onClick = { selectedType = RecurrenceType.NTH_DAY_OF_WEEK },
-                        label = { Text("Monthly (weekday)", style = MaterialTheme.typography.labelSmall) }
-                    )
-
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.YEARLY_ON_DATE,
-                        onClick = { selectedType = RecurrenceType.YEARLY_ON_DATE },
-                        label = { Text("Yearly", style = MaterialTheme.typography.labelSmall) }
-                    )
-
-                    FilterChip(
-                        selected = selectedType == RecurrenceType.YEARLY_ON_NTH_DAY_OF_WEEK,
-                        onClick = { selectedType = RecurrenceType.YEARLY_ON_NTH_DAY_OF_WEEK },
-                        label = { Text("Yearly (weekday)", style = MaterialTheme.typography.labelSmall) }
-                    )
-                }
-
-                AnimatedVisibility(visible = selectedType != RecurrenceType.NONE) {
-                    HorizontalDivider()
-                }
-
-                // Type-specific configuration
-                AnimatedContent(targetState = selectedType) { type ->
-                    when (type) {
-                        RecurrenceType.NONE -> {
-                            // No additional configuration needed
-                        }
-
-                        RecurrenceType.ONCE -> {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Scheduled datetime picker
-                                Text("Scheduled Time:", style = MaterialTheme.typography.labelMedium)
-                                OutlinedButton(
-                                    onClick = { showOnceDatePicker = true },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(formatDueDate(onceScheduledTime))
-                                }
-
-                                // Reset status selection
-                                Text("Reset to status:", style = MaterialTheme.typography.labelMedium)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    listOf(
-                                        TaskStatus.Open,
-                                        TaskStatus.InProgress,
-                                        TaskStatus.Blocked(emptySet()),
-                                        TaskStatus.Done,
-                                        TaskStatus.Declined("")
-                                    ).forEach { status ->
-                                        FilterChip(
-                                            selected = onceResetStatus::class == status::class,
-                                            onClick = { onceResetStatus = status },
-                                            label = { Text(status.displayName, style = MaterialTheme.typography.labelSmall) },
-                                            modifier = Modifier.height(28.dp)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    "Status to set when scheduled time is reached",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                // Complex status properties
-                                AnimatedVisibility(visible = onceResetStatus is TaskStatus.Blocked) {
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        OutlinedTextField(
-                                            value = onceResetBlockedTaskIds,
-                                            onValueChange = { onceResetBlockedTaskIds = it },
-                                            label = { Text("Blocked by (Task IDs)", style = MaterialTheme.typography.labelSmall) },
-                                            placeholder = { Text("e.g., TASK-100, TASK-200", style = MaterialTheme.typography.bodySmall) },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            singleLine = true,
-                                            textStyle = MaterialTheme.typography.bodySmall
-                                        )
-                                        OutlinedTextField(
-                                            value = onceResetBlockedComment,
-                                            onValueChange = { onceResetBlockedComment = it },
-                                            label = { Text("Comment", style = MaterialTheme.typography.labelSmall) },
-                                            placeholder = { Text("Optional comment", style = MaterialTheme.typography.bodySmall) },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            singleLine = true,
-                                            textStyle = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                }
-
-                                AnimatedVisibility(visible = onceResetStatus is TaskStatus.Declined) {
-                                    OutlinedTextField(
-                                        value = onceResetDeclinedReason,
-                                        onValueChange = { onceResetDeclinedReason = it },
-                                        label = { Text("Decline reason", style = MaterialTheme.typography.labelSmall) },
-                                        placeholder = { Text("Reason for declining", style = MaterialTheme.typography.bodySmall) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true,
-                                        textStyle = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-                        }
-
-                        RecurrenceType.AFTER_INTERVAL -> {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = periodText,
-                                    onValueChange = { periodText = it },
-                                    label = { Text("Interval (e.g., 1w 2d 3h)") },
-                                    placeholder = { Text("1w", style = MaterialTheme.typography.bodySmall) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    isError = periodText.isNotBlank() && parseCompactTimeToPeriod(periodText) == null
-                                )
-                            }
-                        }
-
-                        RecurrenceType.FIXED_DAYS_OF_WEEK -> {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text("Select days:", style = MaterialTheme.typography.labelMedium)
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    RecurrenceDayOfWeek.entries.forEach { day ->
-                                        FilterChip(
-                                            selected = day in selectedDays,
-                                            onClick = {
-                                                selectedDays = if (day in selectedDays) {
-                                                    selectedDays - day
-                                                } else {
-                                                    selectedDays + day
-                                                }
-                                            },
-                                            label = { Text(day.name.take(3)) }
-                                        )
-                                    }
-                                }
-
-                                TimeOfDayInput(
-                                    hour = timeHour,
-                                    minute = timeMinute,
-                                    onTimeClick = { showTimePicker = true },
-                                    useSystemTimezone = useSystemTimezone,
-                                    onTimezoneToggle = { useSystemTimezone = it },
-                                    selectedTimezone = selectedTimezone,
-                                    onTimezoneSelected = { selectedTimezone = it }
-                                )
-                            }
-                        }
-
-                        RecurrenceType.FIXED_DAY_OF_MONTH -> {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = dayOfMonth,
-                                    onValueChange = { dayOfMonth = it.filter { c -> c.isDigit() }.take(2) },
-                                    label = { Text("Day of month (1-31)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
-                                )
-
-                                TimeOfDayInput(
-                                    hour = timeHour,
-                                    minute = timeMinute,
-                                    onTimeClick = { showTimePicker = true },
-                                    useSystemTimezone = useSystemTimezone,
-                                    onTimezoneToggle = { useSystemTimezone = it },
-                                    selectedTimezone = selectedTimezone,
-                                    onTimezoneSelected = { selectedTimezone = it }
-                                )
-                            }
-                        }
-
-                        RecurrenceType.NTH_DAY_OF_WEEK -> {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                WeekOrdinalDropdown(
-                                    selectedOrdinal = selectedOrdinal,
-                                    onOrdinalSelected = { selectedOrdinal = it }
-                                )
-
-                                DayOfWeekDropdown(
-                                    selectedDayOfWeek = selectedDayOfWeek,
-                                    onDayOfWeekSelected = { selectedDayOfWeek = it }
-                                )
-
-                                TimeOfDayInput(
-                                    hour = timeHour,
-                                    minute = timeMinute,
-                                    onTimeClick = { showTimePicker = true },
-                                    useSystemTimezone = useSystemTimezone,
-                                    onTimezoneToggle = { useSystemTimezone = it },
-                                    selectedTimezone = selectedTimezone,
-                                    onTimezoneSelected = { selectedTimezone = it }
-                                )
-                            }
-                        }
-
-                        RecurrenceType.YEARLY_ON_DATE -> {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Month multi-select chips
-                                Text("Months:", style = MaterialTheme.typography.labelMedium)
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    RecurrenceMonth.entries.forEach { month ->
-                                        FilterChip(
-                                            selected = month in selectedMonths,
-                                            onClick = {
-                                                selectedMonths = if (month in selectedMonths && selectedMonths.size > 1) {
-                                                    selectedMonths - month
-                                                } else {
-                                                    selectedMonths + month
-                                                }
-                                            },
-                                            label = { Text(month.name.take(3)) }
-                                        )
-                                    }
-                                }
-
-                                OutlinedTextField(
-                                    value = yearlyDayOfMonth,
-                                    onValueChange = { yearlyDayOfMonth = it.filter { c -> c.isDigit() }.take(2) },
-                                    label = { Text("Day of month (1-31)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
-                                )
-
-                                TimeOfDayInput(
-                                    hour = timeHour,
-                                    minute = timeMinute,
-                                    onTimeClick = { showTimePicker = true },
-                                    useSystemTimezone = useSystemTimezone,
-                                    onTimezoneToggle = { useSystemTimezone = it },
-                                    selectedTimezone = selectedTimezone,
-                                    onTimezoneSelected = { selectedTimezone = it }
-                                )
-                            }
-                        }
-
-                        RecurrenceType.YEARLY_ON_NTH_DAY_OF_WEEK -> {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                WeekOrdinalDropdown(
-                                    selectedOrdinal = selectedOrdinal,
-                                    onOrdinalSelected = { selectedOrdinal = it }
-                                )
-
-                                DayOfWeekDropdown(
-                                    selectedDayOfWeek = selectedDayOfWeek,
-                                    onDayOfWeekSelected = { selectedDayOfWeek = it }
-                                )
-
-                                // Month multi-select chips
-                                Text("of Months:", style = MaterialTheme.typography.labelMedium)
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    RecurrenceMonth.entries.forEach { month ->
-                                        FilterChip(
-                                            selected = month in selectedMonths,
-                                            onClick = {
-                                                selectedMonths = if (month in selectedMonths && selectedMonths.size > 1) {
-                                                    selectedMonths - month
-                                                } else {
-                                                    selectedMonths + month
-                                                }
-                                            },
-                                            label = { Text(month.name.take(3)) }
-                                        )
-                                    }
-                                }
-
-                                TimeOfDayInput(
-                                    hour = timeHour,
-                                    minute = timeMinute,
-                                    onTimeClick = { showTimePicker = true },
-                                    useSystemTimezone = useSystemTimezone,
-                                    onTimezoneToggle = { useSystemTimezone = it },
-                                    selectedTimezone = selectedTimezone,
-                                    onTimezoneSelected = { selectedTimezone = it }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Trigger and state management (if not NONE or ONCE - ONCE has its own reset status)
-                AnimatedVisibility(visible = selectedType != RecurrenceType.NONE && selectedType != RecurrenceType.ONCE) {
+                AnimatedVisibility(visible = selectedTimeTrigger !is NoData || statusChangesTrigger != null) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         HorizontalDivider()
 
-                        // Trigger statuses (only for interval-based recurrence)
-                        if (selectedType == RecurrenceType.AFTER_INTERVAL) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Trigger on status change", style = MaterialTheme.typography.labelLarge)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    listOf(
-                                        TaskStatus.Open,
-                                        TaskStatus.InProgress,
-                                        TaskStatus.Blocked(emptySet()),
-                                        TaskStatus.Done,
-                                        TaskStatus.Declined("")
-                                    ).forEach { status ->
-                                        val isSelected = triggerStatuses.any { it::class == status::class }
-                                        FilterChip(
-                                            selected = isSelected,
-                                            onClick = {
-                                                triggerStatuses = if (isSelected && triggerStatuses.size > 1) {
-                                                    triggerStatuses.filterNot { it::class == status::class }.toSet()
-                                                } else {
-                                                    triggerStatuses + status
-                                                }
-                                            },
-                                            label = { Text(status.displayName, style = MaterialTheme.typography.labelSmall) },
-                                            modifier = Modifier.height(28.dp)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    "When task reaches these statuses, wait the interval then reset",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        // Reset status
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Reset to status", style = MaterialTheme.typography.labelLarge)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    TaskStatus.Open,
-                                    TaskStatus.InProgress,
-                                    TaskStatus.Blocked(emptySet()),
-                                    TaskStatus.Done,
-                                    TaskStatus.Declined("")
-                                ).forEach { status ->
-                                    FilterChip(
-                                        selected = resetStatus::class == status::class,
-                                        onClick = { resetStatus = status },
-                                        label = { Text(status.displayName, style = MaterialTheme.typography.labelSmall) },
-                                        modifier = Modifier.height(28.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                "Status to set when recurrence creates next occurrence",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            // Complex status properties
-                            AnimatedVisibility(visible = resetStatus is TaskStatus.Blocked) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    OutlinedTextField(
-                                        value = resetBlockedTaskIds,
-                                        onValueChange = { resetBlockedTaskIds = it },
-                                        label = { Text("Blocked by (Task IDs)", style = MaterialTheme.typography.labelSmall) },
-                                        placeholder = { Text("e.g., TASK-100, TASK-200", style = MaterialTheme.typography.bodySmall) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true,
-                                        textStyle = MaterialTheme.typography.bodySmall
-                                    )
-                                    OutlinedTextField(
-                                        value = resetBlockedComment,
-                                        onValueChange = { resetBlockedComment = it },
-                                        label = { Text("Comment", style = MaterialTheme.typography.labelSmall) },
-                                        placeholder = { Text("Optional comment", style = MaterialTheme.typography.bodySmall) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true,
-                                        textStyle = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-
-                            AnimatedVisibility(visible = resetStatus is TaskStatus.Declined) {
-                                OutlinedTextField(
-                                    value = resetDeclinedReason,
-                                    onValueChange = { resetDeclinedReason = it },
-                                    label = { Text("Decline reason", style = MaterialTheme.typography.labelSmall) },
-                                    placeholder = { Text("Reason for declining", style = MaterialTheme.typography.bodySmall) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
+                        ResetToStatusButton(
+                            selectedStatus = resetToStatus,
+                            availableTasks = availableTasks,
+                            onStatusSelected = { resetToStatus = it },
+                        )
 
                         HorizontalDivider()
-                        Text("Ends", style = MaterialTheme.typography.labelLarge)
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FilterChip(
-                                selected = terminationType == "never",
-                                onClick = { terminationType = "never" },
-                                label = { Text("Never", style = MaterialTheme.typography.labelSmall) }
-                            )
-
-                            FilterChip(
-                                selected = terminationType == "count",
-                                onClick = { terminationType = "count" },
-                                label = { Text("After N times", style = MaterialTheme.typography.labelSmall) }
-                            )
-
-                            FilterChip(
-                                selected = terminationType == "date",
-                                onClick = { terminationType = "date" },
-                                label = { Text("On time", style = MaterialTheme.typography.labelSmall) }
-                            )
-                        }
-
-                        AnimatedVisibility(visible = terminationType == "count") {
-                            OutlinedTextField(
-                                value = terminationCount,
-                                onValueChange = { terminationCount = it.filter { c -> c.isDigit() } },
-                                label = { Text("Number of occurrences") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                        }
-
-                        AnimatedVisibility(visible = terminationType == "date") {
-                            OutlinedButton(
-                                onClick = { showTerminationDatePicker = true },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(terminationDate?.let { formatDueDate(it) } ?: "Select end time")
-                            }
-                        }
+                        TerminationSettings(
+                            termination = termination,
+                            onTerminationChange = { termination = it }
+                        )
                     }
                 }
             }
@@ -817,43 +235,20 @@ fun RecurrenceDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    val rule = buildRecurrenceRule(
-                        type = selectedType,
-                        periodText = periodText,
-                        triggerStatuses = triggerStatuses,
-                        selectedDays = selectedDays,
-                        dayOfMonth = dayOfMonth.toIntOrNull() ?: 1,
-                        selectedOrdinal = selectedOrdinal,
-                        selectedDayOfWeek = selectedDayOfWeek,
-                        selectedMonths = selectedMonths,
-                        yearlyDayOfMonth = yearlyDayOfMonth.toIntOrNull() ?: 1,
-                        timeHour = timeHour,
-                        timeMinute = timeMinute,
-                        terminationType = terminationType,
-                        terminationCount = terminationCount.toIntOrNull(),
-                        terminationDate = terminationDate,
-                        currentDueDate = currentDueDate,
-                        useSystemTimezone = useSystemTimezone,
-                        selectedTimezone = selectedTimezone,
-                        onceScheduledTime = onceScheduledTime,
-                        onceResetStatus = onceResetStatus,
-                        onceResetBlockedTaskIds = onceResetBlockedTaskIds,
-                        onceResetBlockedComment = onceResetBlockedComment,
-                        onceResetDeclinedReason = onceResetDeclinedReason,
-                        clock = Clock.System
-                    )
+                    val timeTrigger = (selectedTimeTrigger as? Success)?.value
+                    val rule = if (timeTrigger != null || statusChangesTrigger != null) {
+                        RecurrenceRule(
+                            timeRecurrenceTrigger = timeTrigger,
+                            statusChangeTrigger = statusChangesTrigger,
+                            resetToStatus = resetToStatus,
+                            termination = termination
+                        )
+                    } else {
+                        null
+                    }
                     onRecurrenceSelected(rule)
                 },
-                enabled = isValidConfiguration(
-                    type = selectedType,
-                    periodText = periodText,
-                    triggerStatuses = triggerStatuses,
-                    selectedDays = selectedDays,
-                    dayOfMonth = dayOfMonth.toIntOrNull(),
-                    yearlyDayOfMonth = yearlyDayOfMonth.toIntOrNull(),
-                    terminationType = terminationType,
-                    terminationCount = terminationCount.toIntOrNull()
-                )
+                enabled = isFormValid,
             ) {
                 Text("Save")
             }
@@ -864,43 +259,6 @@ fun RecurrenceDialog(
             }
         }
     )
-
-    if (showTerminationDatePicker) {
-        DatePickerDialog(
-            currentDate = terminationDate,
-            onDismiss = { showTerminationDatePicker = false },
-            onDateSelected = { date ->
-                terminationDate = date
-                showTerminationDatePicker = false
-            }
-        )
-    }
-
-    if (showTimePicker) {
-        TimePickerDialog(
-            initialHour = timeHour,
-            initialMinute = timeMinute,
-            onDismiss = { showTimePicker = false },
-            onTimeSelected = { hour, minute ->
-                timeHour = hour
-                timeMinute = minute
-                showTimePicker = false
-            }
-        )
-    }
-
-    if (showOnceDatePicker) {
-        DatePickerDialog(
-            currentDate = onceScheduledTime,
-            onDismiss = { showOnceDatePicker = false },
-            onDateSelected = { date ->
-                if (date != null) {
-                    onceScheduledTime = date
-                }
-                showOnceDatePicker = false
-            }
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -924,9 +282,7 @@ private fun TimePickerDialog(
             TimePicker(state = timePickerState, layoutType = TimePickerLayoutType.Vertical)
         },
         confirmButton = {
-            TextButton(onClick = {
-                onTimeSelected(timePickerState.hour, timePickerState.minute)
-            }) {
+            TextButton(onClick = { onTimeSelected(timePickerState.hour, timePickerState.minute) }) {
                 Text("OK")
             }
         },
@@ -958,7 +314,7 @@ private fun WeekOrdinalDropdown(
             readOnly = true,
             label = { Text("Which") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(
             expanded = expanded,
@@ -997,7 +353,7 @@ private fun DayOfWeekDropdown(
             readOnly = true,
             label = { Text("Day") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(
             expanded = expanded,
@@ -1016,283 +372,525 @@ private fun DayOfWeekDropdown(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TimeOfDayInput(
-    hour: Int,
-    minute: Int,
-    onTimeClick: () -> Unit,
-    useSystemTimezone: Boolean,
-    onTimezoneToggle: (Boolean) -> Unit,
-    selectedTimezone: String,
-    onTimezoneSelected: (String) -> Unit
+private fun RecurrenceTypeConfiguration(
+    type: RecurrenceTriggerType?,
+    oldTimeTrigger: TimeRecurrenceTrigger?,
+    terminationCount: Int?,
+    onTriggerSelected: (FormResult<TimeRecurrenceTrigger>) -> Unit
+) {
+    val onTriggerSelectedNullable = { trigger: TimeRecurrenceTrigger? ->
+        onTriggerSelected(trigger?.let(::Success) ?: FormResult.Failure)
+    }
+    when (type) {
+        null -> LaunchedEffect(Unit) { onTriggerSelected(NoData) }
+
+        RecurrenceTriggerType.AFTER_TIMEOUT -> AfterTimeoutConfiguration(
+            oldTimeTrigger = oldTimeTrigger as? AfterTimeout?,
+            terminationCount = terminationCount,
+            onTriggerSelected = onTriggerSelectedNullable,
+        )
+
+        RecurrenceTriggerType.FIXED_DAYS_OF_WEEK -> FixedDaysOfWeekConfiguration(
+            oldTimeTrigger = oldTimeTrigger as? AtFixedPoints?,
+            onTriggerSelected = onTriggerSelectedNullable
+        )
+
+        RecurrenceTriggerType.FIXED_DAY_OF_MONTH -> FixedDayOfMonthConfiguration(
+            oldTimeTrigger = oldTimeTrigger as? AtFixedPoints?,
+            onTriggerSelected = onTriggerSelectedNullable,
+        )
+
+        RecurrenceTriggerType.NTH_DAY_OF_WEEK -> NthDayOfWeekConfiguration(
+            oldTimeTrigger = oldTimeTrigger as? AtFixedPoints?,
+            onTriggerSelected = onTriggerSelectedNullable,
+        )
+
+        RecurrenceTriggerType.YEARLY_ON_DATE -> YearlyOnDateConfiguration(
+            oldTimeTrigger = oldTimeTrigger as? AtFixedPoints?,
+            onTriggerSelected = onTriggerSelectedNullable,
+        )
+
+        RecurrenceTriggerType.YEARLY_ON_NTH_DAY_OF_WEEK -> YearlyOnNthDayOfWeekConfiguration(
+            oldTimeTrigger = oldTimeTrigger as? AtFixedPoints?,
+            onTriggerSelected = onTriggerSelectedNullable,
+        )
+    }
+}
+@Composable
+fun timeSelector(initialTimeOfDay: TimeOfDay?): Pair<TimeOfDay, () -> Unit> {
+    var timeOfDay by remember { mutableStateOf(initialTimeOfDay ?: TimeOfDay(9, 0)) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    if (showTimePicker) {
+        TimePickerDialog(
+            initialHour = timeOfDay.hour,
+            initialMinute = timeOfDay.minute,
+            onDismiss = { showTimePicker = false },
+            onTimeSelected = { hour, minute ->
+                timeOfDay = TimeOfDay(
+                    hour = hour.coerceIn(0, 23),
+                    minute = minute.coerceIn(0, 59),
+                )
+                showTimePicker = false
+            }
+        )
+    }
+    return timeOfDay to { showTimePicker = true }
+}
+
+@Composable
+private fun AfterTimeoutConfiguration(
+    oldTimeTrigger: AfterTimeout?,
+    terminationCount: Int?,
+    onTriggerSelected: (TimeRecurrenceTrigger?) -> Unit
+) {
+    // Compact format
+    var periodText by remember { mutableStateOf(oldTimeTrigger?.period?.let(::formatPeriod) ?: "") }
+    var startTime by remember {
+        mutableStateOf(
+            when (oldTimeTrigger) {
+                is AfterTimeout -> oldTimeTrigger.firstOccurrence
+                else -> Clock.System.now()
+            }
+        )
+    }
+
+    LaunchedEffect(periodText, startTime, terminationCount) {
+        val canSkipPeriod = terminationCount == 1
+        if (!canSkipPeriod && periodText.isBlank()) {
+            onTriggerSelected(null)
+            return@LaunchedEffect
+        }
+        val period = parseCompactTimeToPeriod(periodText)
+        if (!canSkipPeriod && period == null) {
+            onTriggerSelected(null)
+        } else {
+            onTriggerSelected(AfterTimeout(period, startTime))
+        }
+    }
+
+    var showStartPicker by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        val multipleOccurrences = terminationCount == null || terminationCount > 1
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AnimatedContent(multipleOccurrences) {
+                if (it) {
+                    Text("Start from:", style = MaterialTheme.typography.labelMedium)
+                } else {
+                    Text("At:", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(
+                onClick = { showStartPicker = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(formatDueDate(startTime))
+            }
+        }
+
+        AnimatedVisibility(visible = multipleOccurrences) {
+            OutlinedTextField(
+                value = periodText,
+                onValueChange = { periodText = it },
+                label = { Text("Interval (e.g., 1w 2d 3h)") },
+                placeholder = { Text("1w", style = MaterialTheme.typography.bodySmall) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = periodText.isNotBlank() && parseCompactTimeToPeriod(periodText) == null
+            )
+        }
+    }
+
+    if (showStartPicker) {
+        DatePickerDialog(
+            currentDate = startTime,
+            onDismiss = { showStartPicker = false },
+            onDateSelected = { date ->
+                startTime = date
+                showStartPicker = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun FixedDaysOfWeekConfiguration(
+    oldTimeTrigger: AtFixedPoints?,
+    onTriggerSelected: (TimeRecurrenceTrigger?) -> Unit
+) {
+    val (timeOfDay, onShowTimePicker) = timeSelector(initialTimeOfDay = oldTimeTrigger?.pattern?.timeOfDay)
+
+    var selectedDays by remember {
+        mutableStateOf((oldTimeTrigger?.pattern as? DaysOfWeek)?.days ?: emptySet())
+    }
+
+    var useSystemTimezone by remember { mutableStateOf(oldTimeTrigger.isUsingSystemDefaultTimezone) }
+    var selectedTimezone by remember { mutableStateOf(oldTimeTrigger.getTimeZoneOrDefault()) }
+
+    LaunchedEffect(selectedDays, timeOfDay, useSystemTimezone, selectedTimezone) {
+        if (selectedDays.isEmpty()) {
+            onTriggerSelected(null)
+        } else {
+            onTriggerSelected(
+                AtFixedPoints(
+                    pattern = DaysOfWeek(days = selectedDays, timeOfDay = timeOfDay),
+                    startFrom = Clock.System.now(),
+                    timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
+                )
+            )
+        }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
+            Text("Days:", style = MaterialTheme.typography.labelMedium)
+            Spacer(modifier = Modifier.width(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                RecurrenceDayOfWeek.entries.forEach { day ->
+                    FilterChip(
+                        selected = day in selectedDays,
+                        onClick = {
+                            selectedDays = if (day in selectedDays) selectedDays - day else selectedDays + day
+                        },
+                        label = { Text(day.name.take(3)) }
+                    )
+                }
+            }
+        }
+
+        TimeOfDayInput(
+            timeOfDay = timeOfDay,
+            onTimeClick = onShowTimePicker,
+            useSystemTimezone = useSystemTimezone,
+            onTimezoneToggle = { useSystemTimezone = it },
+            selectedTimezone = selectedTimezone,
+            onTimezoneSelected = { selectedTimezone = it }
+        )
+    }
+}
+
+private fun AtFixedPoints?.getTimeZoneOrDefault(): String = when (val tz = this?.timezone) {
+    is RecurrenceTimeZone.SystemDefault? -> TimeZone.currentSystemDefault().id
+    is RecurrenceTimeZone.Specific -> tz.zoneId
+}
+
+@Composable
+private fun FixedDayOfMonthConfiguration(
+    oldTimeTrigger: AtFixedPoints?,
+    onTriggerSelected: (TimeRecurrenceTrigger?) -> Unit
+) {
+    val (timeOfDay, onShowTimePicker) = timeSelector(initialTimeOfDay = oldTimeTrigger?.pattern?.timeOfDay)
+
+    var dayOfMonth by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is DayOfMonth -> pattern.dayOfMonth.toString()
+                else -> "1"
+            }
+        )
+    }
+
+    var useSystemTimezone by remember { mutableStateOf(oldTimeTrigger.isUsingSystemDefaultTimezone) }
+    var selectedTimezone by remember { mutableStateOf(oldTimeTrigger.getTimeZoneOrDefault()) }
+    LaunchedEffect(dayOfMonth, timeOfDay, useSystemTimezone, selectedTimezone) {
+        val dayOfMonth = dayOfMonth.toIntOrNull()
+        if (dayOfMonth == null || dayOfMonth !in 1..31) {
+            onTriggerSelected(null)
+        } else {
+            onTriggerSelected(
+                AtFixedPoints(
+                    pattern = DayOfMonth(dayOfMonth = dayOfMonth, timeOfDay = timeOfDay),
+                    startFrom = Clock.System.now(),
+                    timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
+                )
+            )
+        }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        DayOfMonthSelector(
+            dayOfMonth = dayOfMonth,
+            onDayOfMonthChange = { dayOfMonth = it },
+            timeOfDay = timeOfDay,
+            onTimeClick = onShowTimePicker,
+            useSystemTimezone = useSystemTimezone,
+            onTimezoneToggle = { useSystemTimezone = it },
+            selectedTimezone = selectedTimezone,
+            onTimezoneSelected = { selectedTimezone = it }
+        )
+    }
+}
+
+@Composable
+private fun NthDayOfWeekConfiguration(
+    oldTimeTrigger: AtFixedPoints?,
+    onTriggerSelected: (TimeRecurrenceTrigger?) -> Unit
+) {
+    val (timeOfDay, onShowTimePicker) = timeSelector(initialTimeOfDay = oldTimeTrigger?.pattern?.timeOfDay)
+
+    var selectedOrdinal by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is NthDayOfWeekInMonth -> pattern.ordinal
+                else -> WeekOrdinal.FIRST
+            }
+        )
+    }
+    var selectedDayOfWeek by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is NthDayOfWeekInMonth -> pattern.dayOfWeek
+                else -> RecurrenceDayOfWeek.MONDAY
+            }
+        )
+    }
+
+    var useSystemTimezone by remember { mutableStateOf(oldTimeTrigger.isUsingSystemDefaultTimezone) }
+    var selectedTimezone by remember { mutableStateOf(oldTimeTrigger.getTimeZoneOrDefault()) }
+    LaunchedEffect(selectedOrdinal, selectedDayOfWeek, timeOfDay, useSystemTimezone, selectedTimezone) {
+        onTriggerSelected(
+            AtFixedPoints(
+                pattern = NthDayOfWeekInMonth(
+                    ordinal = selectedOrdinal,
+                    dayOfWeek = selectedDayOfWeek,
+                    timeOfDay = timeOfDay,
+                ),
+                startFrom = Clock.System.now(),
+                timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
+            )
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WeekOrdinalDropdown(
+            selectedOrdinal = selectedOrdinal,
+            onOrdinalSelected = { selectedOrdinal = it }
+        )
+
+        DayOfWeekDropdown(
+            selectedDayOfWeek = selectedDayOfWeek,
+            onDayOfWeekSelected = { selectedDayOfWeek = it }
+        )
+
+        TimeOfDayInput(
+            timeOfDay = timeOfDay,
+            onTimeClick = onShowTimePicker,
+            useSystemTimezone = useSystemTimezone,
+            onTimezoneToggle = { useSystemTimezone = it },
+            selectedTimezone = selectedTimezone,
+            onTimezoneSelected = { selectedTimezone = it }
+        )
+    }
+}
+
+@Composable
+private fun YearlyOnDateConfiguration(
+    oldTimeTrigger: AtFixedPoints?,
+    onTriggerSelected: (TimeRecurrenceTrigger?) -> Unit
+) {
+    val (timeOfDay, onShowTimePicker) = timeSelector(initialTimeOfDay = oldTimeTrigger?.pattern?.timeOfDay)
+    var selectedMonths by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is YearlyOnDate -> pattern.months
+                else -> setOf(RecurrenceMonth.JANUARY)
+            }
+        )
+    }
+    var yearlyDayOfMonth by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is YearlyOnDate -> pattern.dayOfMonth.toString()
+                else -> "1"
+            }
+        )
+    }
+
+    var useSystemTimezone by remember { mutableStateOf(oldTimeTrigger.isUsingSystemDefaultTimezone) }
+    var selectedTimezone by remember { mutableStateOf(oldTimeTrigger.getTimeZoneOrDefault()) }
+
+    LaunchedEffect(selectedMonths, yearlyDayOfMonth, timeOfDay, useSystemTimezone, selectedTimezone) {
+        val yearlyDayOfMonth = yearlyDayOfMonth.toIntOrNull()
+        if (yearlyDayOfMonth == null || yearlyDayOfMonth !in 1..31) {
+            onTriggerSelected(null)
+        } else {
+            onTriggerSelected(
+                AtFixedPoints(
+                    pattern = YearlyOnDate(
+                        months = selectedMonths,
+                        dayOfMonth = yearlyDayOfMonth,
+                        timeOfDay = timeOfDay,
+                    ),
+                    startFrom = Clock.System.now(),
+                    timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
+                )
+            )
+        }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        MonthSelector(
+            selectedMonths = selectedMonths,
+            onSelectedMonthsChange = { selectedMonths = it }
+        )
+
+        DayOfMonthSelector(
+            dayOfMonth = yearlyDayOfMonth,
+            onDayOfMonthChange = { yearlyDayOfMonth = it },
+            timeOfDay = timeOfDay,
+            onTimeClick = onShowTimePicker,
+            useSystemTimezone = useSystemTimezone,
+            onTimezoneToggle = { useSystemTimezone = it },
+            selectedTimezone = selectedTimezone,
+            onTimezoneSelected = { selectedTimezone = it }
+        )
+    }
+}
+
+@Composable
+private fun YearlyOnNthDayOfWeekConfiguration(
+    oldTimeTrigger: AtFixedPoints?,
+    onTriggerSelected: (TimeRecurrenceTrigger?) -> Unit
+) {
+    val (timeOfDay, onShowTimePicker) = timeSelector(initialTimeOfDay = oldTimeTrigger?.pattern?.timeOfDay)
+
+    var selectedOrdinal by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is FixedPointPattern.NthDayOfWeekInMonths -> pattern.ordinal
+                else -> WeekOrdinal.FIRST
+            }
+        )
+    }
+    var selectedDayOfWeek by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is FixedPointPattern.NthDayOfWeekInMonths -> pattern.dayOfWeek
+                else -> RecurrenceDayOfWeek.MONDAY
+            }
+        )
+    }
+
+    var selectedMonths by remember {
+        mutableStateOf(
+            when (val pattern = oldTimeTrigger?.pattern) {
+                is FixedPointPattern.NthDayOfWeekInMonths -> pattern.months
+                else -> setOf(RecurrenceMonth.JANUARY)
+            }
+        )
+    }
+
+    var useSystemTimezone by remember { mutableStateOf(oldTimeTrigger.isUsingSystemDefaultTimezone) }
+    var selectedTimezone by remember { mutableStateOf(oldTimeTrigger.getTimeZoneOrDefault()) }
+
+    LaunchedEffect(selectedOrdinal, selectedDayOfWeek, selectedMonths, timeOfDay, useSystemTimezone, selectedTimezone) {
+        onTriggerSelected(
+            AtFixedPoints(
+                pattern = FixedPointPattern.NthDayOfWeekInMonths(
+                    ordinal = selectedOrdinal,
+                    dayOfWeek = selectedDayOfWeek,
+                    months = selectedMonths,
+                    timeOfDay = timeOfDay,
+                ),
+                startFrom = Clock.System.now(),
+                timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
+            )
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WeekOrdinalDropdown(
+            selectedOrdinal = selectedOrdinal,
+            onOrdinalSelected = { selectedOrdinal = it }
+        )
+
+        DayOfWeekDropdown(
+            selectedDayOfWeek = selectedDayOfWeek,
+            onDayOfWeekSelected = { selectedDayOfWeek = it }
+        )
+
+        MonthSelector(
+            selectedMonths = selectedMonths,
+            onSelectedMonthsChange = { selectedMonths = it },
+        )
+
+        TimeOfDayInput(
+            timeOfDay = timeOfDay,
+            onTimeClick = onShowTimePicker,
+            useSystemTimezone = useSystemTimezone,
+            onTimezoneToggle = { useSystemTimezone = it },
+            selectedTimezone = selectedTimezone,
+            onTimezoneSelected = { selectedTimezone = it }
+        )
+    }
+}
+
+private val AtFixedPoints?.isUsingSystemDefaultTimezone: Boolean
+    get() = this?.timezone is RecurrenceTimeZone.SystemDefault?
+
+@Composable
+private fun MonthSelector(
+    selectedMonths: Set<RecurrenceMonth>,
+    onSelectedMonthsChange: (Set<RecurrenceMonth>) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Time:", style = MaterialTheme.typography.labelMedium)
-        OutlinedButton(
-            onClick = onTimeClick,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
+        FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
+            Text("Months:", style = MaterialTheme.typography.labelMedium)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}")
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(
-                checked = useSystemTimezone,
-                onCheckedChange = onTimezoneToggle
-            )
-            Text(
-                "Use system timezone",
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-
-        AnimatedVisibility(visible = !useSystemTimezone) {
-            var timezoneExpanded by remember { mutableStateOf(false) }
-            val commonTimezones = remember {
-                listOf(
-                    // UTC
-                    "UTC",
-                    // North America - USA
-                    "America/New_York",
-                    "America/Detroit",
-                    "America/Chicago",
-                    "America/Indianapolis",
-                    "America/Denver",
-                    "America/Phoenix",
-                    "America/Los_Angeles",
-                    "America/Anchorage",
-                    "America/Juneau",
-                    "America/Honolulu",
-                    // North America - Canada
-                    "America/Toronto",
-                    "America/Vancouver",
-                    "America/Montreal",
-                    "America/Edmonton",
-                    "America/Calgary",
-                    "America/Winnipeg",
-                    "America/Halifax",
-                    "America/St_Johns",
-                    // Central America & Caribbean
-                    "America/Mexico_City",
-                    "America/Tijuana",
-                    "America/Cancun",
-                    "America/Guatemala",
-                    "America/Panama",
-                    "America/Havana",
-                    "America/Jamaica",
-                    "America/Puerto_Rico",
-                    "America/Costa_Rica",
-                    // South America
-                    "America/Bogota",
-                    "America/Lima",
-                    "America/Quito",
-                    "America/Santiago",
-                    "America/Buenos_Aires",
-                    "America/Sao_Paulo",
-                    "America/Rio_Branco",
-                    "America/Manaus",
-                    "America/Caracas",
-                    "America/La_Paz",
-                    "America/Montevideo",
-                    "America/Asuncion",
-                    // Western Europe
-                    "Europe/London",
-                    "Europe/Dublin",
-                    "Europe/Lisbon",
-                    "Europe/Paris",
-                    "Europe/Madrid",
-                    "Europe/Barcelona",
-                    "Europe/Berlin",
-                    "Europe/Amsterdam",
-                    "Europe/Brussels",
-                    "Europe/Luxembourg",
-                    "Europe/Zurich",
-                    "Europe/Vienna",
-                    "Europe/Rome",
-                    "Europe/Milan",
-                    "Europe/Monaco",
-                    // Central Europe
-                    "Europe/Prague",
-                    "Europe/Warsaw",
-                    "Europe/Budapest",
-                    "Europe/Bratislava",
-                    "Europe/Ljubljana",
-                    "Europe/Zagreb",
-                    "Europe/Belgrade",
-                    "Europe/Sarajevo",
-                    "Europe/Skopje",
-                    "Europe/Podgorica",
-                    "Europe/Tirana",
-                    // Northern Europe
-                    "Europe/Stockholm",
-                    "Europe/Oslo",
-                    "Europe/Copenhagen",
-                    "Europe/Helsinki",
-                    "Europe/Tallinn",
-                    "Europe/Riga",
-                    "Europe/Vilnius",
-                    "Europe/Reykjavik",
-                    // Eastern Europe
-                    "Europe/Athens",
-                    "Europe/Bucharest",
-                    "Europe/Sofia",
-                    "Europe/Kyiv",
-                    "Europe/Chisinau",
-                    "Europe/Moscow",
-                    "Europe/Minsk",
-                    "Europe/Kaliningrad",
-                    "Europe/Samara",
-                    "Europe/Istanbul",
-                    // Africa - North
-                    "Africa/Cairo",
-                    "Africa/Casablanca",
-                    "Africa/Tunis",
-                    "Africa/Algiers",
-                    "Africa/Tripoli",
-                    // Africa - West
-                    "Africa/Lagos",
-                    "Africa/Accra",
-                    "Africa/Abidjan",
-                    "Africa/Dakar",
-                    // Africa - East
-                    "Africa/Nairobi",
-                    "Africa/Addis_Ababa",
-                    "Africa/Dar_es_Salaam",
-                    "Africa/Kampala",
-                    "Africa/Khartoum",
-                    // Africa - South
-                    "Africa/Johannesburg",
-                    "Africa/Cape_Town",
-                    "Africa/Harare",
-                    "Africa/Lusaka",
-                    // Middle East
-                    "Asia/Dubai",
-                    "Asia/Abu_Dhabi",
-                    "Asia/Riyadh",
-                    "Asia/Jeddah",
-                    "Asia/Tehran",
-                    "Asia/Jerusalem",
-                    "Asia/Tel_Aviv",
-                    "Asia/Beirut",
-                    "Asia/Damascus",
-                    "Asia/Amman",
-                    "Asia/Baghdad",
-                    "Asia/Kuwait",
-                    "Asia/Qatar",
-                    "Asia/Bahrain",
-                    "Asia/Muscat",
-                    // Central Asia
-                    "Asia/Almaty",
-                    "Asia/Tashkent",
-                    "Asia/Bishkek",
-                    "Asia/Dushanbe",
-                    "Asia/Ashgabat",
-                    "Asia/Baku",
-                    "Asia/Tbilisi",
-                    "Asia/Yerevan",
-                    // South Asia
-                    "Asia/Kolkata",
-                    "Asia/Mumbai",
-                    "Asia/Delhi",
-                    "Asia/Bangalore",
-                    "Asia/Chennai",
-                    "Asia/Dhaka",
-                    "Asia/Karachi",
-                    "Asia/Lahore",
-                    "Asia/Colombo",
-                    "Asia/Kathmandu",
-                    "Asia/Thimphu",
-                    // Southeast Asia
-                    "Asia/Bangkok",
-                    "Asia/Jakarta",
-                    "Asia/Singapore",
-                    "Asia/Kuala_Lumpur",
-                    "Asia/Ho_Chi_Minh",
-                    "Asia/Hanoi",
-                    "Asia/Manila",
-                    "Asia/Phnom_Penh",
-                    "Asia/Vientiane",
-                    "Asia/Yangon",
-                    "Asia/Brunei",
-                    // East Asia
-                    "Asia/Hong_Kong",
-                    "Asia/Macau",
-                    "Asia/Taipei",
-                    "Asia/Shanghai",
-                    "Asia/Beijing",
-                    "Asia/Chongqing",
-                    "Asia/Seoul",
-                    "Asia/Pyongyang",
-                    "Asia/Tokyo",
-                    "Asia/Osaka",
-                    "Asia/Ulaanbaatar",
-                    // Russia - Asian
-                    "Asia/Vladivostok",
-                    "Asia/Yakutsk",
-                    "Asia/Irkutsk",
-                    "Asia/Krasnoyarsk",
-                    "Asia/Novosibirsk",
-                    "Asia/Omsk",
-                    "Asia/Yekaterinburg",
-                    "Asia/Magadan",
-                    "Asia/Kamchatka",
-                    // Australia
-                    "Australia/Perth",
-                    "Australia/Adelaide",
-                    "Australia/Darwin",
-                    "Australia/Brisbane",
-                    "Australia/Sydney",
-                    "Australia/Melbourne",
-                    "Australia/Hobart",
-                    "Australia/Canberra",
-                    // Pacific
-                    "Pacific/Auckland",
-                    "Pacific/Wellington",
-                    "Pacific/Fiji",
-                    "Pacific/Honolulu",
-                    "Pacific/Guam",
-                    "Pacific/Port_Moresby",
-                    "Pacific/Noumea",
-                    "Pacific/Tahiti",
-                    "Pacific/Samoa",
-                    "Pacific/Tongatapu",
-                    // Atlantic
-                    "Atlantic/Azores",
-                    "Atlantic/Canary",
-                    "Atlantic/Bermuda",
-                    "Atlantic/Reykjavik"
-                )
-            }
-
-            ExposedDropdownMenuBox(
-                expanded = timezoneExpanded,
-                onExpandedChange = { timezoneExpanded = it }
-            ) {
-                OutlinedTextField(
-                    value = selectedTimezone,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Timezone", style = MaterialTheme.typography.labelSmall) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(timezoneExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    textStyle = MaterialTheme.typography.bodySmall
-                )
-                ExposedDropdownMenu(
-                    expanded = timezoneExpanded,
-                    onDismissRequest = { timezoneExpanded = false }
+            var chipWidth by remember { mutableStateOf(0.dp) }
+            val density = LocalDensity.current
+            BoxWithConstraints {
+                val itemSpacing = 4.dp
+                val maxNumberOfColumns = when {
+                    maxWidth >= 12 * chipWidth + 11 * itemSpacing -> 12
+                    maxWidth >= 6 * chipWidth + 5 * itemSpacing -> 6
+                    maxWidth >= 4 * chipWidth + 3 * itemSpacing -> 4
+                    maxWidth >= 3 * chipWidth + 2 * itemSpacing -> 3
+                    maxWidth >= 2 * chipWidth + 1 * itemSpacing -> 2
+                    else -> 1
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(itemSpacing),
+                    maxItemsInEachRow = maxNumberOfColumns,
                 ) {
-                    commonTimezones.forEach { timezone ->
-                        DropdownMenuItem(
-                            text = { Text(timezone, style = MaterialTheme.typography.bodySmall) },
+                    RecurrenceMonth.entries.forEach { month ->
+                        FilterChip(
+                            selected = month in selectedMonths,
                             onClick = {
-                                onTimezoneSelected(timezone)
-                                timezoneExpanded = false
+                                onSelectedMonthsChange(
+                                    if (month in selectedMonths && selectedMonths.size > 1) {
+                                        selectedMonths - month
+                                    } else {
+                                        selectedMonths + month
+                                    }
+                                )
+                            },
+                            label = { Text(month.name.take(3)) },
+                            modifier = Modifier.onSizeChanged {
+                                with(density) { chipWidth = it.width.toDp() }
                             }
                         )
                     }
@@ -1302,189 +900,327 @@ private fun TimeOfDayInput(
     }
 }
 
-private fun isValidConfiguration(
-    type: RecurrenceType,
-    periodText: String,
-    triggerStatuses: Set<TaskStatus>,
-    selectedDays: Set<RecurrenceDayOfWeek>,
-    dayOfMonth: Int?,
-    yearlyDayOfMonth: Int?,
-    terminationType: String,
-    terminationCount: Int?
-): Boolean {
-    when (type) {
-        RecurrenceType.NONE -> return true
-        RecurrenceType.ONCE -> return true // Once is always valid (has a scheduled time)
-        RecurrenceType.AFTER_INTERVAL -> {
-            if (periodText.isBlank() || parseCompactTimeToPeriod(periodText) == null) {
-                return false
+val allStatusDefaultValues = listOf(
+    TaskStatus.Open,
+    TaskStatus.InProgress,
+    TaskStatus.Blocked(emptySet()),
+    TaskStatus.Done,
+    TaskStatus.Declined("")
+)
+
+@Composable
+private fun ResetToStatusButton(
+    selectedStatus: TaskStatus,
+    availableTasks: List<Task>,
+    onStatusSelected: (TaskStatus) -> Unit,
+) {
+    var showResetStatusDialog by remember { mutableStateOf(false) }
+
+    if (showResetStatusDialog) {
+        StatusSelectionDialog(
+            currentStatus = selectedStatus,
+            availableTasks = availableTasks,
+            onDismiss = { showResetStatusDialog = false },
+            onStatusSelected = { status ->
+                onStatusSelected(status)
+                showResetStatusDialog = false
             }
-        }
-        RecurrenceType.FIXED_DAYS_OF_WEEK -> {
-            if (selectedDays.isEmpty()) return false
-        }
-        RecurrenceType.FIXED_DAY_OF_MONTH -> {
-            if (dayOfMonth == null || dayOfMonth !in 1..31) return false
-        }
-        RecurrenceType.NTH_DAY_OF_WEEK -> {
-            // Always valid if ordinal and day are selected
-        }
-        RecurrenceType.YEARLY_ON_DATE -> {
-            if (yearlyDayOfMonth == null || yearlyDayOfMonth !in 1..31) return false
-        }
-        RecurrenceType.YEARLY_ON_NTH_DAY_OF_WEEK -> {
-            // Always valid if ordinal, day, and month are selected
-        }
+        )
     }
 
-    // Only check termination for types that use it (not ONCE)
-    if (type != RecurrenceType.ONCE && terminationType == "count" && (terminationCount == null || terminationCount <= 0)) {
-        return false
-    }
-
-    return true
-}
-
-private fun buildRecurrenceRule(
-    type: RecurrenceType,
-    periodText: String,
-    triggerStatuses: Set<TaskStatus>,
-    selectedDays: Set<RecurrenceDayOfWeek>,
-    dayOfMonth: Int,
-    selectedOrdinal: WeekOrdinal,
-    selectedDayOfWeek: RecurrenceDayOfWeek,
-    selectedMonths: Set<RecurrenceMonth>,
-    yearlyDayOfMonth: Int,
-    timeHour: Int,
-    timeMinute: Int,
-    terminationType: String,
-    terminationCount: Int?,
-    terminationDate: Instant?,
-    currentDueDate: Instant?,
-    useSystemTimezone: Boolean,
-    selectedTimezone: String,
-    onceScheduledTime: Instant,
-    onceResetStatus: TaskStatus,
-    onceResetBlockedTaskIds: String,
-    onceResetBlockedComment: String,
-    onceResetDeclinedReason: String,
-    clock: Clock
-): RecurrenceRule {
-    val termination = when (terminationType) {
-        "count" -> RecurrenceTermination.AfterOccurrences(terminationCount ?: 1)
-        "date" -> terminationDate?.let { RecurrenceTermination.OnDate(it) } ?: RecurrenceTermination.Never
-        else -> RecurrenceTermination.Never
-    }
-
-    val timeOfDay = TimeOfDay(
-        hour = timeHour.coerceIn(0, 23),
-        minute = timeMinute.coerceIn(0, 59)
-    )
-
-    val startFrom = currentDueDate ?: clock.now()
-
-    val timezone = if (useSystemTimezone) {
-        RecurrenceTimeZone.SystemDefault
-    } else {
-        RecurrenceTimeZone.Specific(selectedTimezone)
-    }
-
-    return when (type) {
-        RecurrenceType.NONE -> RecurrenceRule.None
-
-        RecurrenceType.ONCE -> {
-            val finalResetStatus = when (onceResetStatus) {
-                is TaskStatus.Blocked -> {
-                    val taskIds = onceResetBlockedTaskIds
-                        .split(",")
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .toSet()
-                    TaskStatus.Blocked(taskIds, onceResetBlockedComment)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Reset to status", style = MaterialTheme.typography.titleSmall)
+            StatusBadge(
+                status = selectedStatus,
+                modifier = Modifier
+                    .clickable(onClick = { showResetStatusDialog = true })
+                    .padding(6.dp)
+            )
+        }
+        when (selectedStatus) {
+            is TaskStatus.Blocked -> {
+                if (selectedStatus.blockerTaskIds.isNotEmpty()) {
+                    Text(
+                        "Blocked by: ${selectedStatus.blockerTaskIds.joinToString(", ")}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                is TaskStatus.Declined -> TaskStatus.Declined(onceResetDeclinedReason)
-                else -> onceResetStatus
+                if (selectedStatus.comment.isNotEmpty()) {
+                    Text(
+                        selectedStatus.comment,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-            RecurrenceRule.Once(
-                scheduledTime = onceScheduledTime,
-                resetToStatus = finalResetStatus,
-                timezone = timezone
-            )
-        }
 
-        RecurrenceType.AFTER_INTERVAL -> {
-            val period = parseCompactTimeToPeriod(periodText) ?: RecurrencePeriod(days = 1)
+            is TaskStatus.Declined -> {
+                if (selectedStatus.reason.isNotEmpty()) {
+                    Text(
+                        selectedStatus.reason,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-            RecurrenceRule.AfterInterval(
-                period = period,
-                firstOccurrence = startFrom,
-                termination = termination
-            )
-        }
-
-        RecurrenceType.FIXED_DAYS_OF_WEEK -> {
-            RecurrenceRule.AtFixedPoints(
-                pattern = FixedPointPattern.DaysOfWeek(
-                    days = selectedDays,
-                    timeOfDay = timeOfDay
-                ),
-                startFrom = startFrom,
-                timezone = timezone,
-                termination = termination
-            )
-        }
-
-        RecurrenceType.FIXED_DAY_OF_MONTH -> {
-            RecurrenceRule.AtFixedPoints(
-                pattern = FixedPointPattern.DayOfMonth(
-                    dayOfMonth = dayOfMonth.coerceIn(1, 31),
-                    timeOfDay = timeOfDay
-                ),
-                startFrom = startFrom,
-                timezone = timezone,
-                termination = termination
-            )
-        }
-
-        RecurrenceType.NTH_DAY_OF_WEEK -> {
-            RecurrenceRule.AtFixedPoints(
-                pattern = FixedPointPattern.NthDayOfWeekInMonth(
-                    ordinal = selectedOrdinal,
-                    dayOfWeek = selectedDayOfWeek,
-                    timeOfDay = timeOfDay
-                ),
-                startFrom = startFrom,
-                timezone = timezone,
-                termination = termination
-            )
-        }
-
-        RecurrenceType.YEARLY_ON_DATE -> {
-            RecurrenceRule.AtFixedPoints(
-                pattern = FixedPointPattern.YearlyOnDate(
-                    month = selectedMonths.first(),
-                    dayOfMonth = yearlyDayOfMonth.coerceIn(1, 31),
-                    timeOfDay = timeOfDay
-                ),
-                startFrom = startFrom,
-                timezone = timezone,
-                termination = termination
-            )
-        }
-
-        RecurrenceType.YEARLY_ON_NTH_DAY_OF_WEEK -> {
-            RecurrenceRule.AtFixedPoints(
-                pattern = FixedPointPattern.NthDayOfWeekInMonths(
-                    ordinal = selectedOrdinal,
-                    dayOfWeek = selectedDayOfWeek,
-                    months = selectedMonths,
-                    timeOfDay = timeOfDay
-                ),
-                startFrom = startFrom,
-                timezone = timezone,
-                termination = termination
-            )
+            else -> {}
         }
     }
 }
 
+@Composable
+private fun TriggerSelectors(
+    selectedTimeTrigger: FormResult<TimeRecurrenceTrigger>,
+    onTimeTriggerSelected: (FormResult<TimeRecurrenceTrigger>) -> Unit,
+    terminationCount: Int?,
+    statusChangesTrigger: StatusChange?,
+    onStatusChangeChange: (StatusChange?) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Triggers", style = MaterialTheme.typography.titleMedium)
+
+        TimeRecurrenceTriggerSelector(
+            oldTimeTrigger = (selectedTimeTrigger as? Success)?.value,
+            terminationCount = terminationCount,
+            onTriggerSelected = onTimeTriggerSelected
+        )
+        StatusChangesSelector(
+            statusChangeChange = statusChangesTrigger,
+            onStatusChangeChange = onStatusChangeChange,
+        )
+    }
+}
+
+@Composable
+private fun TerminationSettings(
+    termination: RecurrenceTermination,
+    onTerminationChange: (RecurrenceTermination) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Ends", style = MaterialTheme.typography.titleSmall)
+
+        TerminationCountSelector(
+            terminationCount = termination.afterOccurrences?.count?.toString() ?: "",
+            onTerminationCountChange = { count ->
+                onTerminationChange(
+                    termination.copy(
+                        afterOccurrences = if (count.isNotEmpty()) {
+                            AfterOccurrences(count.toIntOrNull() ?: 0)
+                        } else {
+                            null
+                        }
+                    )
+                )
+            }
+        )
+
+        TerminationDateSelector(
+            terminationDate = termination.endDate,
+            onTerminationDateSelected = { date ->
+                onTerminationChange(
+                    termination.copy(
+                        onDate = date?.let(RecurrenceTerminationCondition::OnDate)
+                    )
+                )
+            }
+        )
+    }
+}
+
+@Composable
+private fun TerminationCountSelector(
+    terminationCount: String,
+    onTerminationCountChange: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "After",
+            style = MaterialTheme.typography.titleSmall
+        )
+        OutlinedTextField(
+            value = terminationCount,
+            onValueChange = onTerminationCountChange,
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            placeholder = { Text("+∞") }
+        )
+        Text(
+            text = if (terminationCount != "1") "times" else "time",
+            style = MaterialTheme.typography.titleSmall
+        )
+    }
+}
+
+@Composable
+private fun TerminationDateSelector(
+    terminationDate: Instant?,
+    onTerminationDateSelected: (Instant?) -> Unit
+) {
+    var showTerminationDatePicker by remember { mutableStateOf(false) }
+
+    if (showTerminationDatePicker) {
+        DatePickerDialog(
+            currentDate = terminationDate,
+            onDismiss = { showTerminationDatePicker = false },
+            onDateSelected = { date ->
+                onTerminationDateSelected(date)
+                showTerminationDatePicker = false
+            }
+        )
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Until",
+            style = MaterialTheme.typography.titleSmall
+        )
+        OutlinedButton(
+            onClick = { showTerminationDatePicker = true },
+            modifier = Modifier.weight(1f),
+        ) {
+            Text(terminationDate?.let { formatDueDate(it) } ?: "Select date")
+        }
+        AnimatedVisibility(terminationDate != null) {
+            IconButton(onClick = { onTerminationDateSelected(null) }) {
+                Icon(Icons.Default.Close, contentDescription = "Clear date")
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusChangesSelector(
+    statusChangeChange: StatusChange?,
+    onStatusChangeChange: (StatusChange?) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            itemVerticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("If status is", style = MaterialTheme.typography.titleSmall)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = statusChangeChange?.requiredStatuses == null,
+                    onClick = { onStatusChangeChange(null) },
+                    label = { Text("Any", style = MaterialTheme.typography.labelSmall) }
+                )
+                allStatusDefaultValues.forEach { status ->
+                    val isSelected = statusChangeChange?.requiredStatuses?.any { it::class == status::class } == true
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            val currentStatuses = statusChangeChange?.requiredStatuses.orEmpty()
+                            onStatusChangeChange(
+                                StatusChange(
+                                    if (isSelected && statusChangeChange.requiredStatuses.size > 1) {
+                                        currentStatuses.filterNot { it::class == status::class }.toSet()
+                                    } else if (!isSelected) {
+                                        currentStatuses + status
+                                    } else {
+                                        currentStatuses
+                                    }
+                                )
+                            )
+                        },
+                        label = { Text(status.displayName, style = MaterialTheme.typography.labelSmall) },
+                        leadingIcon = { Icon(status.icon, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DayOfMonthSelector(
+    dayOfMonth: String,
+    onDayOfMonthChange: (String) -> Unit,
+    timeOfDay: TimeOfDay,
+    onTimeClick: () -> Unit,
+    useSystemTimezone: Boolean,
+    onTimezoneToggle: (Boolean) -> Unit,
+    selectedTimezone: String,
+    onTimezoneSelected: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = dayOfMonth,
+            onValueChange = { onDayOfMonthChange(it.filter { c -> c.isDigit() }.take(2)) },
+            label = { Text("Day of month (1-31)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        TimeOfDayInput(
+            timeOfDay = timeOfDay,
+            onTimeClick = onTimeClick,
+            useSystemTimezone = useSystemTimezone,
+            onTimezoneToggle = onTimezoneToggle,
+            selectedTimezone = selectedTimezone,
+            onTimezoneSelected = onTimezoneSelected
+        )
+    }
+}
+
+@Composable
+private fun TimeOfDayInput(
+    timeOfDay: TimeOfDay,
+    onTimeClick: () -> Unit,
+    useSystemTimezone: Boolean,
+    onTimezoneToggle: (Boolean) -> Unit,
+    selectedTimezone: String,
+    onTimezoneSelected: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Time:", style = MaterialTheme.typography.labelMedium)
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(
+                onClick = onTimeClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                val formattedHour = timeOfDay.hour.toString().padStart(2, '0')
+                val formattedMinute = timeOfDay.minute.toString().padStart(2, '0')
+                Text("$formattedHour:$formattedMinute")
+            }
+        }
+
+        TimeZoneSelector(
+            useSystemTimezone = useSystemTimezone,
+            selectedTimezone = selectedTimezone,
+            onUseSystemTimezoneChange = onTimezoneToggle,
+            onTimezoneSelected = onTimezoneSelected,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+private fun getRecurrenceTimeZone(
+    useSystemTimezone: Boolean,
+    selectedTimezone: String
+): RecurrenceTimeZone = if (useSystemTimezone) {
+    RecurrenceTimeZone.SystemDefault
+} else {
+    RecurrenceTimeZone.Specific(selectedTimezone)
+}

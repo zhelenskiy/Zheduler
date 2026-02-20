@@ -3,7 +3,6 @@
 package com.zhelenskiy.zheduler.zheduler.screens.taskdetail
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Refresh
@@ -338,7 +338,7 @@ fun TaskDetailScreen(
                         getTaskById = viewModel::getTaskById,
                         getAllTags = viewModel::getAllTags,
                         getAvailableTasks = viewModel::getAvailableTasks,
-                        wouldCreateCycle = viewModel::wouldCreateCycle,
+                        searchTasksForConnection = viewModel::searchTasksForConnection,
                         getCalculatedStatusFromSubtasks = viewModel::getCalculatedStatusFromSubtasks,
                         currentSpaceIdPrefix = currentSpaceIdPrefix,
                         allSpacePrefixes = allSpacePrefixes
@@ -368,6 +368,25 @@ fun TaskDetailScreen(
                 var isTimelineExpanded by remember { mutableStateOf(false) }
 
                 Column {
+                    if (currentTaskWithTotals.isMissed(Clock.System.now())) {
+                        val color = MaterialTheme.colorScheme.error
+                        Row(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.ErrorOutline,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = color
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Missed",
+                                color = color
+                            )
+                        }
+                    }
                     if (isSimpleStatus) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -391,7 +410,7 @@ fun TaskDetailScreen(
                                 )
                             }
 
-                            StatusBadge(status = task.status, isMissed = currentTaskWithTotals.isMissed(Clock.System.now()))
+                            StatusBadge(status = task.status)
                             when (val status = task.status) {
                                 is TaskStatus.Blocked -> {
                                     if (status.comment.isNotEmpty()) {
@@ -433,7 +452,7 @@ fun TaskDetailScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
-                            StatusBadge(status = task.status, isMissed = currentTaskWithTotals.isMissed(Clock.System.now()))
+                            StatusBadge(status = task.status)
                             when (val status = task.status) {
                                 is TaskStatus.Blocked -> {
                                     if (status.blockerTaskIds.isNotEmpty()) {
@@ -715,7 +734,7 @@ fun TaskDetailScreen(
                         )
                         Column {
                             Text(
-                                text = task.recurrenceRule.toDisplayString(),
+                                text = task.recurrenceRule.toFullString(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )

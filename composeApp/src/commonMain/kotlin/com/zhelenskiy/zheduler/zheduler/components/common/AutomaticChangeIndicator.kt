@@ -21,7 +21,6 @@ fun AutomaticChangeIndicator(
     getTaskById: suspend (String) -> Task?,
     onTaskClick: (String) -> Unit
 ) {
-    // Load related tasks asynchronously
     var relatedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
 
     LaunchedEffect(reason) {

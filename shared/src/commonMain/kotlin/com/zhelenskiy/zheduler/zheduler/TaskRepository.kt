@@ -79,6 +79,28 @@ interface TaskRepository {
     suspend fun getAllExcept(spaceId: String, excludeTaskId: String): List<Task>
 
     /**
+     * Search tasks for connection dialog with filtering.
+     * Filters by spaceId, excludes current task, optionally filters by search query,
+     * and checks for cycles. Uses SQL indexes for efficient search on id and title fields.
+     *
+     * @param spaceId The space to search in
+     * @param excludeTaskId The current task ID to exclude
+     * @param searchQuery Optional search query to filter by id or title (case-insensitive)
+     * @param excludeTaskIds Additional task IDs to exclude (e.g., already connected tasks)
+     * @param connectionType The type of connection being created (for cycle detection)
+     * @param existingConnections Existing connections to check for cycles
+     * @return List of tasks matching the criteria that won't create cycles
+     */
+    suspend fun searchTasksForConnection(
+        spaceId: String,
+        excludeTaskId: String,
+        searchQuery: String = "",
+        excludeTaskIds: Set<String> = emptySet(),
+        connectionType: ConnectionType,
+        existingConnections: Set<TaskConnection>
+    ): List<Task>
+
+    /**
      * Get all tasks in a space with calculated totals (total due date, total priority).
      * @param spaceId The space ID
      * @return List of tasks with their calculated totals
@@ -171,7 +193,7 @@ interface TaskRepository {
         connections: Set<TaskConnection> = emptySet(),
         notifications: List<TaskNotification> = emptyList(),
         customId: String? = null,
-        recurrenceRule: RecurrenceRule = RecurrenceRule.None,
+        recurrenceRule: RecurrenceRule? = null,
         resetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
         autoUpdateStatusFromSubtasks: Boolean = false
     ): Task?

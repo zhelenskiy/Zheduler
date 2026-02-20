@@ -131,6 +131,30 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tasks.values.filter { it.spaceId == spaceId && it.id != excludeTaskId }
     }
 
+    override suspend fun searchTasksForConnection(
+        spaceId: String,
+        excludeTaskId: String,
+        searchQuery: String,
+        excludeTaskIds: Set<String>,
+        connectionType: ConnectionType,
+        existingConnections: Set<TaskConnection>
+    ): List<Task> = mutex.withLock {
+        tasks.values.filter { task ->
+            // Filter by space
+            task.spaceId == spaceId &&
+            // Exclude current task
+            task.id != excludeTaskId &&
+            // Exclude additional task IDs
+            task.id !in excludeTaskIds &&
+            // Filter by search query (case-insensitive)
+            (searchQuery.isBlank() ||
+                task.id.contains(searchQuery, ignoreCase = true) ||
+                task.title.contains(searchQuery, ignoreCase = true)) &&
+            // Check for cycles - this is done in the repository layer
+            !wouldCreateCycle(excludeTaskId, task.id, connectionType, existingConnections)
+        }
+    }
+
     override suspend fun getAllSpacePrefixes(): List<String> = mutex.withLock {
         spaces.values.map { it.idPrefix }
     }
@@ -234,7 +258,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
         customId: String?,
-        recurrenceRule: RecurrenceRule,
+        recurrenceRule: RecurrenceRule?,
         resetStatusOnRecurrence: TaskStatus,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
@@ -242,14 +266,13 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
         val recurrenceState = RecurrenceService.initializeRecurrence(recurrenceRule)
-        val effectiveDueDate = dueDate ?: recurrenceState.nextOccurrenceDate
 
         val task = Task(
             id = taskId,
             title = title,
             description = description,
             status = status,
-            dueDate = effectiveDueDate,
+            dueDate = dueDate,
             priority = priority,
             estimatedTime = estimatedTime,
             tags = tags,
@@ -425,7 +448,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun getRecurringTasksDueBefore(time: Instant): List<Task> =
         tasks.values.filter { task ->
-            task.isRecurring && task.dueDate?.let { time >= it } == true
+            task.isRecurring && task.dueDate?.let { it <= time } == true
         }
 
     override suspend fun delete(id: String): Boolean = mutex.withLock {
