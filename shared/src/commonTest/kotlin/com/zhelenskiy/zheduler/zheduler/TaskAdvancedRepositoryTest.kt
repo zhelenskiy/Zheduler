@@ -265,7 +265,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val task = repo.add(
             spaceId,
             title = "Recurring",
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = now
             )
@@ -284,10 +284,10 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
             spaceId,
             title = "Recurring",
             status = TaskStatus.Done,
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = now,
-                trigger = RecurrenceTrigger.StatusChange(TaskStatus.Done)
+                trigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(TaskStatus.Done))
             )
         )!!
 
@@ -310,7 +310,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
             spaceId,
             title = "Past due recurring",
             dueDate = pastDue,
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = pastDue
             )

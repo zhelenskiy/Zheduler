@@ -19,7 +19,7 @@ CREATE TABLE tasks (
     tagsJson TEXT NOT NULL,
     notificationsJson TEXT NOT NULL,
     spaceId TEXT NOT NULL,
-    recurrenceRuleJson TEXT NOT NULL,
+    recurrenceRuleJson TEXT,
     recurrenceStateJson TEXT NOT NULL,
     resetStatusOnRecurrenceJson TEXT NOT NULL,
     autoUpdateStatusFromSubtasks INTEGER NOT NULL DEFAULT 0,
@@ -32,6 +32,9 @@ CREATE INDEX idx_tasks_spaceId ON tasks(spaceId);
 CREATE INDEX idx_tasks_isBlocked ON tasks(isBlocked);
 -- Composite index for getRecurringTasksDueBefore query (isRecurring = 1 AND dueDate <= ?)
 CREATE INDEX idx_tasks_recurring_dueDate ON tasks(isRecurring, dueDate);
+-- Indexes for task search by id and title
+CREATE INDEX idx_tasks_id_search ON tasks(id);
+CREATE INDEX idx_tasks_title_search ON tasks(title);
 -- Note: idx_tasks_dueDate and idx_tasks_priority removed (filtering done in Kotlin, not SQL)
 
 -- Task connections
@@ -127,6 +130,11 @@ SELECT * FROM tasks WHERE spaceId = ?;
 
 getTasksBySpaceExcept:
 SELECT * FROM tasks WHERE spaceId = ? AND id != ?;
+
+searchTasksForConnection:
+SELECT * FROM tasks
+WHERE spaceId = ? AND id != ?
+  AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%');
 
 getTaskById:
 SELECT * FROM tasks WHERE id = ?;

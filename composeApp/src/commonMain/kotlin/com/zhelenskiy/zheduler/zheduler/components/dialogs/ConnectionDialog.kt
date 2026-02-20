@@ -22,10 +22,8 @@ import com.zhelenskiy.zheduler.zheduler.TaskConnection
 
 @Composable
 fun ConnectionDialog(
-    currentTaskId: String,
     existingConnections: Set<TaskConnection>,
-    availableTasks: List<Task>,
-    wouldCreateCycle: suspend (String, String, ConnectionType, Set<TaskConnection>) -> Boolean,
+    searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
     onDismiss: () -> Unit,
     onConnectionAdded: (TaskConnection) -> Unit,
     onCreateNewTask: ((ConnectionType) -> Unit)?
@@ -38,132 +36,32 @@ fun ConnectionDialog(
         .map { it.targetTaskId }
         .toSet()
 
-    // Filter tasks asynchronously due to suspend wouldCreateCycle
     var filteredTasks by remember { mutableStateOf<List<Task>>(emptyList()) }
 
-    LaunchedEffect(searchQuery, availableTasks, existingTargetIds, selectedConnectionType, existingConnections) {
-        val base = availableTasks.filter { task ->
-            task.id !in existingTargetIds &&
-            !wouldCreateCycle(currentTaskId, task.id, selectedConnectionType, existingConnections)
-        }
-        filteredTasks = if (searchQuery.isBlank()) base
-        else base.filter {
-            it.id.contains(searchQuery, ignoreCase = true) ||
-            it.title.contains(searchQuery, ignoreCase = true)
-        }
+    LaunchedEffect(searchQuery, existingTargetIds, selectedConnectionType, existingConnections) {
+        filteredTasks = searchTasksForConnection(
+            searchQuery,
+            existingTargetIds,
+            selectedConnectionType,
+            existingConnections
+        )
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Connection") },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Connection type selector
-                Text(
-                    text = "Connection Type",
-                    style = MaterialTheme.typography.labelMedium
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ConnectionType.entries.forEach { type ->
-                        FilterChip(
-                            selected = selectedConnectionType == type,
-                            onClick = { selectedConnectionType = type },
-                            label = { Text(type.displayName) }
-                        )
-                    }
+            ConnectionDialogContent(
+                selectedConnectionType = selectedConnectionType,
+                onConnectionTypeSelected = { selectedConnectionType = it },
+                onCreateNewTask = onCreateNewTask,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                filteredTasks = filteredTasks,
+                onTaskSelected = { task ->
+                    onConnectionAdded(TaskConnection(task.id, selectedConnectionType))
                 }
-
-                HorizontalDivider()
-
-                // Create new task button (only in edit mode)
-                if (onCreateNewTask != null) {
-                    OutlinedButton(
-                        onClick = { onCreateNewTask(selectedConnectionType) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Create new task with this connection")
-                    }
-
-                    HorizontalDivider()
-                }
-
-                // Search existing tasks
-                Text(
-                    text = if (onCreateNewTask != null) "Or connect to existing task" else "Connect to existing task",
-                    style = MaterialTheme.typography.labelMedium
-                )
-                
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("Search by ID or title") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
-                )
-                
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 200.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(filteredTasks, key = { it.id }) { task ->
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onConnectionAdded(TaskConnection(task.id, selectedConnectionType))
-                                },
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = MaterialTheme.shapes.small
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = task.id,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = task.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                Icon(
-                                    Icons.Default.Add,
-                                    contentDescription = "Add connection",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-                    
-                    if (filteredTasks.isEmpty()) {
-                        item {
-                            Text(
-                                text = if (searchQuery.isBlank()) "No tasks available" else "No matching tasks",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        }
-                    }
-                }
-            }
+            )
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
@@ -172,4 +70,198 @@ fun ConnectionDialog(
         },
         dismissButton = {}
     )
+}
+
+@Composable
+private fun ConnectionDialogContent(
+    selectedConnectionType: ConnectionType,
+    onConnectionTypeSelected: (ConnectionType) -> Unit,
+    onCreateNewTask: ((ConnectionType) -> Unit)?,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    filteredTasks: List<Task>,
+    onTaskSelected: (Task) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ConnectionTypeSelector(
+            selectedType = selectedConnectionType,
+            onTypeSelected = onConnectionTypeSelected
+        )
+
+        HorizontalDivider()
+
+        // Create nested task button (only in edit mode)
+        if (onCreateNewTask != null) {
+            CreateNestedNewTaskButton(onCreateNewTask, selectedConnectionType)
+            HorizontalDivider()
+        }
+
+        TaskSearchSection(
+            hasCreateNewOption = onCreateNewTask != null,
+            searchQuery = searchQuery,
+            onSearchQueryChange = onSearchQueryChange,
+            filteredTasks = filteredTasks,
+            onTaskSelected = onTaskSelected
+        )
+    }
+}
+
+@Composable
+private fun ConnectionTypeSelector(
+    selectedType: ConnectionType,
+    onTypeSelected: (ConnectionType) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Connection Type",
+            style = MaterialTheme.typography.labelMedium
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ConnectionType.entries.forEach { type ->
+                FilterChip(
+                    selected = selectedType == type,
+                    onClick = { onTypeSelected(type) },
+                    label = { Text(type.displayName) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskSearchSection(
+    hasCreateNewOption: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    filteredTasks: List<Task>,
+    onTaskSelected: (Task) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = if (hasCreateNewOption) "Or connect to existing task" else "Connect to existing task",
+            style = MaterialTheme.typography.labelMedium
+        )
+
+        TaskSearchField(
+            searchQuery = searchQuery,
+            onSearchQueryChange = onSearchQueryChange
+        )
+
+        TaskSearchResults(
+            tasks = filteredTasks,
+            searchQuery = searchQuery,
+            onTaskSelected = onTaskSelected
+        )
+    }
+}
+
+@Composable
+private fun TaskSearchField(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = onSearchQueryChange,
+        label = { Text("Search by ID or title") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
+    )
+}
+
+@Composable
+private fun TaskSearchResults(
+    tasks: List<Task>,
+    searchQuery: String,
+    onTaskSelected: (Task) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.heightIn(max = 200.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        items(tasks, key = { it.id }) { task ->
+            TaskListItem(
+                task = task,
+                onClick = { onTaskSelected(task) }
+            )
+        }
+
+        if (tasks.isEmpty()) {
+            item {
+                EmptyTasksMessage(searchQuery = searchQuery)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskListItem(
+    task: Task,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = task.id,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                Icons.Default.Add,
+                contentDescription = "Add connection",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyTasksMessage(searchQuery: String) {
+    Text(
+        text = if (searchQuery.isBlank()) "No tasks available" else "No matching tasks",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(16.dp)
+    )
+}
+
+@Composable
+private fun CreateNestedNewTaskButton(
+    onCreateNewTask: (ConnectionType) -> Unit,
+    selectedConnectionType: ConnectionType
+) {
+    OutlinedButton(
+        onClick = { onCreateNewTask(selectedConnectionType) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(Icons.Default.Add, contentDescription = null)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Create new task with this connection")
+    }
 }

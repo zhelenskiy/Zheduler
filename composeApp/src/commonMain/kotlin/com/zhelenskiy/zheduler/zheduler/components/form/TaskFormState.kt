@@ -20,7 +20,7 @@ class TaskFormState(
     initialStatus: TaskStatus = TaskStatus.Open,
     initialConnections: Set<TaskConnection> = emptySet(),
     initialNotifications: List<String> = emptyList(), // Compact time strings (e.g., "1d", "2h30m")
-    initialRecurrenceRule: RecurrenceRule = RecurrenceRule.None,
+    initialRecurrenceRule: RecurrenceRule? = null,
     initialResetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
     initialAutoUpdateStatusFromSubtasks: Boolean = false
 ) {
@@ -115,7 +115,7 @@ class TaskFormState(
                 status != TaskStatus.Open ||
                 connections != initialConnections ||
                 notifications.isNotEmpty() ||
-                recurrenceRule != RecurrenceRule.None ||
+                recurrenceRule != null ||
                 resetStatusOnRecurrence != TaskStatus.Open ||
                 autoUpdateStatusFromSubtasks
     }
@@ -131,7 +131,7 @@ data class ParsedTaskValues(
     val status: TaskStatus,
     val connections: Set<TaskConnection>,
     val notifications: List<TaskNotification> = emptyList(),
-    val recurrenceRule: RecurrenceRule = RecurrenceRule.None,
+    val recurrenceRule: RecurrenceRule? = null,
     val resetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
     val autoUpdateStatusFromSubtasks: Boolean = false
 )
@@ -147,7 +147,7 @@ fun rememberTaskFormState(
     initialStatus: TaskStatus = TaskStatus.Open,
     initialConnections: Set<TaskConnection> = emptySet(),
     initialNotifications: List<String> = emptyList(),
-    initialRecurrenceRule: RecurrenceRule = RecurrenceRule.None,
+    initialRecurrenceRule: RecurrenceRule? = null,
     initialResetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
     initialAutoUpdateStatusFromSubtasks: Boolean = false
 ): TaskFormState {

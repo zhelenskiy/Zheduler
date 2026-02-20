@@ -14,6 +14,24 @@ interface TaskFormDataProvider {
     suspend fun getTaskById(id: String): Task?
     suspend fun getAllTags(): Set<String>
     suspend fun getAvailableTasks(): List<Task>
+
+    /**
+     * Search tasks for connection dialog with filtering.
+     * This method should delegate to repository for SQL-based filtering.
+     *
+     * @param searchQuery Search query to filter by id or title
+     * @param excludeTaskIds Task IDs to exclude from results (e.g., already connected)
+     * @param connectionType The type of connection being created
+     * @param existingConnections Existing connections to check for cycles
+     * @return List of tasks that match the search and don't create cycles
+     */
+    suspend fun searchTasksForConnection(
+        searchQuery: String,
+        excludeTaskIds: Set<String>,
+        connectionType: ConnectionType,
+        existingConnections: Set<TaskConnection>
+    ): List<Task>
+
     suspend fun wouldCreateCycle(
         currentId: String,
         targetId: String,

@@ -45,28 +45,60 @@ value class Priority(val value: Int) : Comparable<Priority> {
  * Task status representing the current state of a task
  */
 @Serializable
-sealed class TaskStatus {
+sealed class TaskStatus : Presentable {
     @Serializable
     data object Open : TaskStatus()
-    
+
     @Serializable
     data class Blocked(val blockerTaskIds: Set<String>, val comment: String = "") : TaskStatus()
-    
+
     @Serializable
     data object InProgress : TaskStatus()
-    
+
     @Serializable
     data object Done : TaskStatus()
-    
+
     @Serializable
     data class Declined(val reason: String) : TaskStatus()
-    
-    val displayName: String get() = when (this) {
-        is Open -> "Open"
-        is Blocked -> "Blocked"
-        is InProgress -> "In Progress"
-        is Done -> "Done"
-        is Declined -> "Declined"
+
+    val displayName: String
+        get() = when (this) {
+            is Open -> "Open"
+            is Blocked -> "Blocked"
+            is InProgress -> "In Progress"
+            is Done -> "Done"
+            is Declined -> "Declined"
+        }
+
+    override fun toBriefString(): String = when (this) {
+        is Blocked -> listOfNotNull(
+            displayName,
+            blockerTaskIds.takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "by "),
+            comment.takeIf { it.isNotBlank() }?.let { "(comment: ${it.addEllipsis()})" },
+        ).joinToString(" ")
+        is Declined if reason.isBlank() -> displayName
+        is Declined -> "$displayName (reason: ${reason.addEllipsis()})"
+        else -> displayName
+    }
+
+    private fun String.isMultiline(): Boolean = lineSequence().drop(1).any()
+    private fun String.prependSeparator(): String = if (isMultiline()) ":\n$this" else " $this"
+    private fun String.addEllipsis(): String = when {
+        isMultiline() -> "${lineSequence().first().take(32)}..."
+        length > 32 -> "${take(32)}..."
+        else -> this
+    }
+
+    override fun toFullString(): String = when (this) {
+        is Blocked -> listOfNotNull(
+            displayName,
+            blockerTaskIds.takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "by "),
+            comment.takeIf { it.isNotBlank() }?.let { "with comment${it.prependSeparator()}" },
+        ).joinToString(" ")
+
+        is Declined if reason.isBlank() -> displayName
+        is Declined -> "$displayName with reason${reason.prependSeparator()}"
+        else -> displayName
     }
 }
 
@@ -81,24 +113,26 @@ enum class ConnectionType {
     SubtaskOf,
     ParentOf;
 
-    val displayName: String get() = when (this) {
-        RelatesTo -> "Relates to"
-        DependsOn -> "Depends on"
-        IsDependencyOf -> "Is dependency of"
-        SubtaskOf -> "Is subtask of"
-        ParentOf -> "Is parent for"
-    }
+    val displayName: String
+        get() = when (this) {
+            RelatesTo -> "Relates to"
+            DependsOn -> "Depends on"
+            IsDependencyOf -> "Is dependency of"
+            SubtaskOf -> "Is subtask of"
+            ParentOf -> "Is parent for"
+        }
 
     /**
      * Returns the symmetric connection type that should be created on the target task
      */
-    val symmetric: ConnectionType get() = when (this) {
-        RelatesTo -> RelatesTo
-        DependsOn -> IsDependencyOf
-        IsDependencyOf -> DependsOn
-        SubtaskOf -> ParentOf
-        ParentOf -> SubtaskOf
-    }
+    val symmetric: ConnectionType
+        get() = when (this) {
+            RelatesTo -> RelatesTo
+            DependsOn -> IsDependencyOf
+            IsDependencyOf -> DependsOn
+            SubtaskOf -> ParentOf
+            ParentOf -> SubtaskOf
+        }
 }
 
 /**
@@ -191,17 +225,15 @@ data class Task(
     val connections: Set<TaskConnection> = emptySet(),
     val notifications: List<TaskNotification> = emptyList(), // Notifications before deadline
     val spaceId: String, // ID of the space this task belongs to
-    val recurrenceRule: RecurrenceRule = RecurrenceRule.None,
+    val recurrenceRule: RecurrenceRule? = null,
     val recurrenceState: RecurrenceState = RecurrenceState(),
     val resetStatusOnRecurrence: TaskStatus = TaskStatus.Open, // Status to reset to when recurring
     val autoUpdateStatusFromSubtasks: Boolean = false // Automatically update status based on subtasks
 ) {
-    companion object
-
     /**
      * Check if this task is recurring
      */
-    val isRecurring: Boolean get() = recurrenceRule !is RecurrenceRule.None
+    val isRecurring: Boolean get() = recurrenceRule != null
 
     /**
      * Check if this task is missed (overdue and not resolved).

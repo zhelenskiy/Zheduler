@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +58,7 @@ fun TaskSelectionDialog(
                     items(filteredTasks, key = { it.id }) { task ->
                         Row(
                             modifier = Modifier
+                                .clip(MaterialTheme.shapes.medium)
                                 .fillMaxWidth()
                                 .clickable {
                                     currentSelection = if (task.id in currentSelection) {

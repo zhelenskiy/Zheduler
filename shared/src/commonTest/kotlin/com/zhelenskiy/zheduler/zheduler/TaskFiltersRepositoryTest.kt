@@ -558,7 +558,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.add(
             spaceId,
             title = "Recurring",
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = Clock.System.now()
             )
@@ -578,7 +578,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.add(
             spaceId,
             title = "Recurring",
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = Clock.System.now()
             )

@@ -65,12 +65,12 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         assertEquals(LocalDateTime(2024, 2, 18, 4, 0), result)
     }
 
-    // ==================== AfterInterval Recurrence Tests ====================
+    // ==================== AfterTimeout Recurrence Tests ====================
 
     @Test
     fun testEveryPeriodFirstOccurrence() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(1),
             firstOccurrence = firstOccurrence
         )
@@ -83,7 +83,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testEveryPeriodSubsequentOccurrences() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(1),
             firstOccurrence = firstOccurrence
         )
@@ -99,10 +99,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testEveryPeriodTerminationAfterOccurrences() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-            termination = RecurrenceTermination.AfterOccurrences(3)
+            termination = RecurrenceTermination.afterOccurrences(3)
         )
         val state = RecurrenceState(occurrenceCount = 3)
 
@@ -114,10 +114,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     fun testEveryPeriodTerminationOnDate() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
         val endDate = instant(2024, 1, 20, 0, 0)
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-            termination = RecurrenceTermination.OnDate(endDate)
+            termination = RecurrenceTermination.onDate(endDate)
         )
         val state = RecurrenceState(occurrenceCount = 1, lastOccurrenceDate = firstOccurrence)
 
@@ -283,7 +283,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val startFrom = instant(2024, 1, 1, 0, 0)
         val rule = RecurrenceRule.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                month = RecurrenceMonth.MARCH,
+                months = RecurrenceMonth.MARCH,
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
@@ -304,7 +304,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val startFrom = instant(2024, 6, 1, 0, 0)
         val rule = RecurrenceRule.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                month = RecurrenceMonth.MARCH,
+                months = RecurrenceMonth.MARCH,
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
@@ -332,7 +332,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testInitializeRecurrenceForEveryPeriod() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(1),
             firstOccurrence = firstOccurrence
         )
@@ -345,10 +345,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testProcessRecurrenceTermination() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-            termination = RecurrenceTermination.AfterOccurrences(2)
+            termination = RecurrenceTermination.afterOccurrences(2)
         )
         
         val currentState = RecurrenceState(
@@ -359,7 +359,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val result = RecurrenceService.processRecurrence(
             rule = rule,
             currentState = currentState,
-            triggerEvent = RecurrenceTriggerEvent.DateTimeReached,
+            triggerEvent = RecurrenceTriggerEvent.DateTimeReached(TaskStatus.Open),
             triggerTime = instant(2024, 1, 17, 9, 0)
         )
         
@@ -371,12 +371,12 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
 
     @Test
     fun testShouldTriggerDateTime() {
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = instant(2024, 1, 1, 0, 0)
         )
         
-        assertTrue(RecurrenceCalculator.shouldTrigger(rule, RecurrenceTriggerEvent.DateTimeReached))
+        assertTrue(RecurrenceCalculator.shouldTrigger(rule, RecurrenceTriggerEvent.DateTimeReached(TaskStatus.Open)))
         assertFalse(RecurrenceCalculator.shouldTrigger(rule, RecurrenceTriggerEvent.StatusChanged(TaskStatus.Done)))
     }
 
@@ -389,11 +389,11 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
 
     @Test
     fun testDisplayStringEveryPeriod() {
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(2),
             firstOccurrence = instant(2024, 1, 1, 0, 0)
         )
-        assertEquals("Every 2 weeks", rule.toDisplayString())
+        assertEquals("Every 2 weeks\nReset to Open", rule.toDisplayString())
     }
 
     @Test
@@ -410,10 +410,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
 
     @Test
     fun testDisplayStringWithTermination() {
-        val rule = RecurrenceRule.AfterInterval(
+        val rule = RecurrenceRule.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = instant(2024, 1, 1, 0, 0),
-            termination = RecurrenceTermination.AfterOccurrences(5)
+            termination = RecurrenceTermination.afterOccurrences(5)
         )
         assertTrue(rule.toDisplayString().contains("5 times"))
     }
@@ -429,10 +429,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             title = "Recurring task",
             status = TaskStatus.Done,
             dueDate = originalDueDate,
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofWeeks(1),
                 firstOccurrence = originalDueDate,
-                trigger = RecurrenceTrigger.StatusChange(TaskStatus.Done)
+                trigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(TaskStatus.Done))
             ),
             resetStatusOnRecurrence = TaskStatus.Open
         )!!
@@ -457,11 +457,11 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             title = "Recurring task",
             status = TaskStatus.Done,
             dueDate = originalDueDate,
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofWeeks(1),
                 firstOccurrence = originalDueDate,
-                trigger = RecurrenceTrigger.StatusChange(TaskStatus.Done),
-                termination = RecurrenceTermination.AfterOccurrences(1)
+                trigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(TaskStatus.Done)),
+                termination = RecurrenceTermination.afterOccurrences(1)
             ),
             resetStatusOnRecurrence = TaskStatus.Open
         )!!
@@ -495,7 +495,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             id = "TASK-2",
             title = "Recurring",
             spaceId = "space-1",
-            recurrenceRule = RecurrenceRule.AfterInterval(
+            recurrenceRule = RecurrenceRule.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             )

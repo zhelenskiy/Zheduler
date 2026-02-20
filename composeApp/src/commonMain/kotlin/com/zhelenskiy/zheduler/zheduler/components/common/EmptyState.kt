@@ -37,9 +37,9 @@ fun EmptyState(
  */
 @Composable
 fun EmptySearchResults(
-    message: String = "No items match your search",
+    message: String,
     icon: ImageVector = Icons.Default.SearchOff,
-    clearButtonText: String = "Clear search",
+    clearButtonText: String,
     onClearFilters: () -> Unit,
     modifier: Modifier = Modifier
 ) {

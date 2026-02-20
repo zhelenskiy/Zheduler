@@ -2,6 +2,10 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.NthDayOfWeekInMonths
+import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.YearlyOnDate
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AfterTimeout
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -381,10 +385,9 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         triggerTime: Instant
     ): Task? {
         val task = getById(taskId) ?: return null
-        if (!task.isRecurring) return task
 
         val updatedRecurrenceData = RecurrenceService.processRecurrence(
-            rule = task.recurrenceRule,
+            rule = task.recurrenceRule ?: return task,
             currentState = task.recurrenceState,
             triggerEvent = triggerEvent,
             triggerTime = triggerTime
@@ -427,8 +430,8 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         val updatedTasks = mutableListOf<Task>()
 
         getRecurringTasksDueBefore(currentTime).forEach { task ->
-            val triggerEvent = RecurrenceTriggerEvent.DateTimeReached
-            if (RecurrenceCalculator.shouldTrigger(task.recurrenceRule, triggerEvent)) {
+            val triggerEvent = RecurrenceTriggerEvent.DateTimeReached(task.status)
+            if (task.recurrenceRule != null && RecurrenceCalculator.shouldTrigger(task.recurrenceRule, triggerEvent)) {
                 processRecurrenceTriggerInternal(task.id, triggerEvent, currentTime)?.let {
                     updatedTasks.add(it)
                 }
@@ -1025,19 +1028,21 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             val recurrenceRule = task.recurrenceRule
             val matchesRecurrence = when (criteria.recurrenceFilter) {
                 RecurrenceFilter.Any -> true
-                RecurrenceFilter.NoRecurrence -> recurrenceRule is RecurrenceRule.None
-                RecurrenceFilter.HasRecurrence -> recurrenceRule !is RecurrenceRule.None
-                RecurrenceFilter.Once -> recurrenceRule is RecurrenceRule.Once
-                RecurrenceFilter.AfterInterval -> recurrenceRule is RecurrenceRule.AfterInterval
-                RecurrenceFilter.FixedDaysOfWeek -> recurrenceRule is RecurrenceRule.AtFixedPoints &&
-                    recurrenceRule.pattern is FixedPointPattern.DaysOfWeek
-                RecurrenceFilter.FixedDayOfMonth -> recurrenceRule is RecurrenceRule.AtFixedPoints &&
-                    recurrenceRule.pattern is FixedPointPattern.DayOfMonth
-                RecurrenceFilter.NthDayOfWeek -> recurrenceRule is RecurrenceRule.AtFixedPoints &&
-                    recurrenceRule.pattern is FixedPointPattern.NthDayOfWeekInMonth
-                RecurrenceFilter.Yearly -> recurrenceRule is RecurrenceRule.AtFixedPoints &&
-                    (recurrenceRule.pattern is FixedPointPattern.YearlyOnDate ||
-                     recurrenceRule.pattern is FixedPointPattern.NthDayOfWeekInMonths)
+                RecurrenceFilter.NoRecurrence -> recurrenceRule == null
+                RecurrenceFilter.HasRecurrence -> recurrenceRule != null
+                RecurrenceFilter.AfterTimeout -> recurrenceRule?.timeRecurrenceTrigger is AfterTimeout
+                RecurrenceFilter.FixedDaysOfWeek -> recurrenceRule?.timeRecurrenceTrigger.let {
+                    it is AtFixedPoints && it.pattern is FixedPointPattern.DaysOfWeek
+                }
+                RecurrenceFilter.FixedDayOfMonth -> recurrenceRule?.timeRecurrenceTrigger.let {
+                    it is AtFixedPoints && it.pattern is FixedPointPattern.DayOfMonth
+                }
+                RecurrenceFilter.NthDayOfWeek -> recurrenceRule?.timeRecurrenceTrigger.let {
+                    it is AtFixedPoints && it.pattern is FixedPointPattern.NthDayOfWeekInMonth
+                }
+                RecurrenceFilter.Yearly -> recurrenceRule?.timeRecurrenceTrigger.let {
+                    it is AtFixedPoints && (it.pattern is YearlyOnDate || it.pattern is NthDayOfWeekInMonths)
+                }
             }
 
             // Notifications filter

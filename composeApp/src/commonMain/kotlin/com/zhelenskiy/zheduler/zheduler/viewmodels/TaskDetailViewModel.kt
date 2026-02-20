@@ -164,6 +164,23 @@ class TaskDetailViewModel(
 
     override suspend fun getAvailableTasks(): List<Task> = repository.getAllExcept(spaceId, taskId)
 
+    override suspend fun searchTasksForConnection(
+        searchQuery: String,
+        excludeTaskIds: Set<String>,
+        connectionType: ConnectionType,
+        existingConnections: Set<TaskConnection>
+    ): List<Task> {
+        // Repository handles all filtering including SQL-based search and cycle detection
+        return repository.searchTasksForConnection(
+            spaceId = spaceId,
+            excludeTaskId = taskId,
+            searchQuery = searchQuery,
+            excludeTaskIds = excludeTaskIds,
+            connectionType = connectionType,
+            existingConnections = existingConnections
+        )
+    }
+
     override suspend fun wouldCreateCycle(
         currentId: String,
         targetId: String,

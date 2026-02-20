@@ -24,14 +24,15 @@ private fun Badge(
     color: Color,
     icon: ImageVector,
     text: String,
-    contentDescription: String = text
+    contentDescription: String = text,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         color = color.copy(alpha = 0.2f),
-        shape = MaterialTheme.shapes.small
+        shape = MaterialTheme.shapes.small,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            modifier = modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -50,20 +51,40 @@ private fun Badge(
     }
 }
 
-@Composable
-fun StatusBadge(status: TaskStatus, isMissed: Boolean = false) {
-    val (color, icon, displayName) = when {
-        isMissed -> Triple(MaterialTheme.colorScheme.error, Icons.Default.ErrorOutline, "Missed")
-        else -> when (status) {
-            is TaskStatus.Open -> Triple(MaterialTheme.colorScheme.primary, Icons.Default.RadioButtonUnchecked, status.displayName)
-            is TaskStatus.Blocked -> Triple(MaterialTheme.colorScheme.tertiary, Icons.Default.Block, status.displayName)
-            is TaskStatus.InProgress -> Triple(MaterialTheme.colorScheme.secondary, Icons.Default.PlayArrow, status.displayName)
-            is TaskStatus.Done -> Triple(MaterialTheme.colorScheme.primary, Icons.Default.CheckCircle, status.displayName)
-            is TaskStatus.Declined -> Triple(MaterialTheme.colorScheme.outline, Icons.Default.Cancel, status.displayName)
+val TaskStatus.icon
+        get() = when (this) {
+            is TaskStatus.Open -> Icons.Default.RadioButtonUnchecked
+            is TaskStatus.Blocked -> Icons.Default.Block
+            is TaskStatus.InProgress -> Icons.Default.PlayArrow
+            is TaskStatus.Done -> Icons.Default.CheckCircle
+            is TaskStatus.Declined -> Icons.Default.Cancel
         }
+
+@Composable
+fun StatusBadge(status: TaskStatus, modifier: Modifier = Modifier) {
+    Badge(color = status.color, icon = status.icon, text = status.displayName, modifier = modifier)
+}
+
+val TaskStatus.color: Color
+    @Composable
+    get() {
+        val color = when (this) {
+            is TaskStatus.Open -> MaterialTheme.colorScheme.primary
+            is TaskStatus.Blocked -> MaterialTheme.colorScheme.tertiary
+            is TaskStatus.InProgress -> MaterialTheme.colorScheme.secondary
+            is TaskStatus.Done -> MaterialTheme.colorScheme.primary
+            is TaskStatus.Declined -> MaterialTheme.colorScheme.outline
+        }
+        return color
     }
 
-    Badge(color = color, icon = icon, text = displayName)
+@Composable
+fun MissedBadge() {
+    Badge(
+        color = MaterialTheme.colorScheme.error,
+        icon = Icons.Default.ErrorOutline,
+        text = "Missed"
+    )
 }
 
 @Composable

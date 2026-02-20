@@ -32,7 +32,7 @@ class NewTaskViewModel(
         tags: Set<String>,
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
-        recurrenceRule: RecurrenceRule,
+        recurrenceRule: RecurrenceRule?,
         resetStatusOnRecurrence: TaskStatus,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? {
@@ -60,6 +60,24 @@ class NewTaskViewModel(
     override suspend fun getAvailableTasks(): List<Task> {
         val nextId = getNextId()
         return repository.getAllExcept(spaceId, nextId)
+    }
+
+    override suspend fun searchTasksForConnection(
+        searchQuery: String,
+        excludeTaskIds: Set<String>,
+        connectionType: ConnectionType,
+        existingConnections: Set<TaskConnection>
+    ): List<Task> {
+        val nextId = getNextId()
+        // Repository handles all filtering including SQL-based search and cycle detection
+        return repository.searchTasksForConnection(
+            spaceId = spaceId,
+            excludeTaskId = nextId,
+            searchQuery = searchQuery,
+            excludeTaskIds = excludeTaskIds,
+            connectionType = connectionType,
+            existingConnections = existingConnections
+        )
     }
 
     override suspend fun wouldCreateCycle(
