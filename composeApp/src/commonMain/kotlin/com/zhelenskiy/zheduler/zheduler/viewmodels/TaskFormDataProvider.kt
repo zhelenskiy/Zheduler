@@ -13,7 +13,17 @@ import com.zhelenskiy.zheduler.zheduler.TaskStatus
 interface TaskFormDataProvider {
     suspend fun getTaskById(id: String): Task?
     suspend fun getAllTags(): Set<String>
+    suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String>
     suspend fun getAvailableTasks(): List<Task>
+
+    /**
+     * Filter tasks for selection dialog (e.g., blocker selection in StatusSelectionDialog).
+     * Delegates to repository for SQL-based filtering.
+     *
+     * @param searchQuery Search query to filter by id or title
+     * @return List of tasks that match the search
+     */
+    suspend fun filterTasksForSelection(searchQuery: String): List<Task>
 
     /**
      * Search tasks for connection dialog with filtering.

@@ -9,20 +9,20 @@ import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-// Shared state holder for task form
+@Stable
 class TaskFormState(
-    initialTitle: String = "",
-    initialDescription: String = "",
-    initialPriority: String = "",
-    initialEstimatedTime: String = "",
-    initialTags: Set<String> = emptySet(),
-    initialDueDate: Instant? = null,
-    initialStatus: TaskStatus = TaskStatus.Open,
-    initialConnections: Set<TaskConnection> = emptySet(),
-    initialNotifications: List<String> = emptyList(), // Compact time strings (e.g., "1d", "2h30m")
-    initialRecurrenceRule: RecurrenceRule? = null,
-    initialResetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
-    initialAutoUpdateStatusFromSubtasks: Boolean = false
+    initialTitle: String,
+    initialDescription: String,
+    initialPriority: String,
+    initialEstimatedTime: String,
+    initialTags: Set<String>,
+    initialDueDate: Instant?,
+    initialStatus: TaskStatus,
+    initialConnections: Set<TaskConnection>,
+    initialNotifications: List<String>, // Compact time strings (e.g., "1d", "2h 30m")
+    initialRecurrenceRule: RecurrenceRule?,
+    initialResetStatusOnRecurrence: TaskStatus,
+    initialAutoUpdateStatusFromSubtasks: Boolean
 ) {
     var title by mutableStateOf(initialTitle)
     var description by mutableStateOf(initialDescription)
@@ -73,9 +73,7 @@ class TaskFormState(
         title = task.title
         description = task.description
         priority = task.priority?.value?.toString() ?: ""
-        estimatedTime = task.estimatedTime?.let { period ->
-            formatPeriod(period)
-        } ?: ""
+        estimatedTime = task.estimatedTime?.let(::formatPeriod) ?: ""
         tags = task.tags
         dueDate = task.dueDate
         status = task.status

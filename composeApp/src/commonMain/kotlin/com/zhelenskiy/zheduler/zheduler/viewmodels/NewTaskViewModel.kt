@@ -57,9 +57,17 @@ class NewTaskViewModel(
 
     override suspend fun getAllTags(): Set<String> = repository.getAllTags()
 
+    override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> =
+        repository.filterTags(searchQuery, excludeTags)
+
     override suspend fun getAvailableTasks(): List<Task> {
         val nextId = getNextId()
         return repository.getAllExcept(spaceId, nextId)
+    }
+
+    override suspend fun filterTasksForSelection(searchQuery: String): List<Task> {
+        val nextId = getNextId()
+        return repository.filterTasksForSelection(spaceId, nextId, searchQuery)
     }
 
     override suspend fun searchTasksForConnection(

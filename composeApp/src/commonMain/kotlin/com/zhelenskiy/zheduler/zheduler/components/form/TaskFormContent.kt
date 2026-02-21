@@ -56,7 +56,8 @@ fun TaskFormContent(
     // Data providers (instead of repository)
     getTaskById: suspend (String) -> Task?,
     getAllTags: suspend () -> Set<String>,
-    getAvailableTasks: suspend () -> List<Task>,
+    filterTags: suspend (String, Set<String>) -> List<String>,
+    filterTasksForSelection: suspend (String) -> List<Task>,
     searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
     getCalculatedStatusFromSubtasks: suspend (String) -> TaskStatus?,
     currentSpaceIdPrefix: String?,
@@ -67,7 +68,6 @@ fun TaskFormContent(
     // Load connected tasks asynchronously
     var connectedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
     var allTags by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var availableTasks by remember { mutableStateOf<List<Task>>(emptyList()) }
 
     LaunchedEffect(formState.connections) {
         val tasks = mutableMapOf<String, Task>()
@@ -81,7 +81,6 @@ fun TaskFormContent(
 
     LaunchedEffect(Unit) {
         allTags = getAllTags()
-        availableTasks = getAvailableTasks()
     }
 
     Column(
@@ -520,8 +519,8 @@ fun TaskFormContent(
     // Dialogs
     if (showTagDialog) {
         TagSelectionDialog(
-            existingTags = allTags,
             selectedTags = formState.tags,
+            filterTags = filterTags,
             onDismiss = { onShowTagDialog(false) },
             onTagSelected = { tag ->
                 formState.tags += tag
@@ -544,7 +543,8 @@ fun TaskFormContent(
     if (showStatusDialog) {
         StatusSelectionDialog(
             currentStatus = formState.status,
-            availableTasks = availableTasks,
+            filterTasks = filterTasksForSelection,
+            getTaskById = getTaskById,
             onDismiss = { onShowStatusDialog(false) },
             onStatusSelected = { status ->
                 formState.status = status
@@ -568,7 +568,8 @@ fun TaskFormContent(
     if (showRecurrenceDialog) {
         RecurrenceDialog(
             currentRule = formState.recurrenceRule,
-            availableTasks = availableTasks,
+            filterTasks = filterTasksForSelection,
+            getTaskById = getTaskById,
             onDismiss = { onShowRecurrenceDialog(false) },
             onRecurrenceSelected = { rule ->
                 formState.recurrenceRule = rule

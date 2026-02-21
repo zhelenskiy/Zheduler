@@ -546,6 +546,82 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         assertEquals(setOf("tag1", "tag2"), updatedTask.tags)
     }
 
+    @Test
+    fun `filterTags with empty query returns all tags sorted`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        repo.addTag("zebra")
+        repo.addTag("apple")
+        repo.addTag("banana")
+
+        val filtered = repo.filterTags("", emptySet())
+        assertEquals(listOf("apple", "banana", "zebra"), filtered)
+    }
+
+    @Test
+    fun `filterTags with query returns matching tags case-insensitive`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        repo.addTag("backend")
+        repo.addTag("frontend")
+        repo.addTag("fullstack")
+        repo.addTag("mobile")
+
+        val filtered = repo.filterTags("end", emptySet())
+        assertEquals(listOf("backend", "frontend"), filtered)
+    }
+
+    @Test
+    fun `filterTags excludes specified tags`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        repo.addTag("tag1")
+        repo.addTag("tag2")
+        repo.addTag("tag3")
+        repo.addTag("tag4")
+
+        val filtered = repo.filterTags("", setOf("tag2", "tag4"))
+        assertEquals(listOf("tag1", "tag3"), filtered)
+    }
+
+    @Test
+    fun `filterTags with query and exclusions works correctly`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        repo.addTag("important")
+        repo.addTag("urgent")
+        repo.addTag("optional")
+        repo.addTag("required")
+
+        val filtered = repo.filterTags("ent", setOf("urgent"))
+        assertEquals(listOf("important"), filtered)
+    }
+
+    @Test
+    fun `filterTags returns empty list when no tags match`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        repo.addTag("tag1")
+        repo.addTag("tag2")
+
+        val filtered = repo.filterTags("nonexistent", emptySet())
+        assertTrue(filtered.isEmpty())
+    }
+
+    @Test
+    fun `filterTags with empty tags returns empty list`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+
+        val filtered = repo.filterTags("anything", emptySet())
+        assertTrue(filtered.isEmpty())
+    }
+
+    @Test
+    fun `filterTags is case insensitive`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        repo.addTag("JavaScript")
+        repo.addTag("TypeScript")
+        repo.addTag("CoffeeScript")
+
+        val filtered = repo.filterTags("SCRIPT", emptySet())
+        assertEquals(listOf("CoffeeScript", "JavaScript", "TypeScript"), filtered)
+    }
+
     // ==================== Connection Tests ====================
 
     @Test
