@@ -40,12 +40,11 @@ class SqlDelightTaskRepository(
         queries.getSpaceById(id).awaitAsOneOrNull()?.toModel()
 
     override suspend fun filterSpaces(
-        spaces: List<Space>,
         query: String,
         searchInName: Boolean,
         searchInPrefix: Boolean
     ): List<Space> {
-        if (query.isBlank()) return spaces
+        if (query.isBlank()) return queries.getAllSpaces().awaitAsList().map { it.toModel() }
         return queries.filterSpaces(
             searchInName = if (searchInName) 1L else 0L,
             query = query,
@@ -99,13 +98,9 @@ class SqlDelightTaskRepository(
     override suspend fun getAll(spaceId: String): List<Task> =
         queries.getTasksBySpace(spaceId).awaitAsList().map { loadTaskWithConnections(it) }
 
-    override suspend fun getAllExcept(spaceId: String, excludeTaskId: String): List<Task> =
-        queries.getTasksBySpaceExcept(spaceId, excludeTaskId).awaitAsList()
-            .map { loadTaskWithConnections(it) }
-
     override suspend fun filterTasksForSelection(
         spaceId: String,
-        excludeTaskId: String,
+        excludeTaskId: String?,
         searchQuery: String
     ): List<Task> =
         queries.searchTasksForConnection(
@@ -129,7 +124,7 @@ class SqlDelightTaskRepository(
      */
     override suspend fun searchTasksForConnection(
         spaceId: String,
-        excludeTaskId: String,
+        excludeTaskId: String?,
         searchQuery: String,
         excludeTaskIds: Set<String>,
         connectionType: ConnectionType,
@@ -152,7 +147,7 @@ class SqlDelightTaskRepository(
     override suspend fun getAllSpacePrefixes(): List<String> =
         queries.getAllPrefixes().awaitAsList()
 
-    override suspend fun getAllWithTotals(spaceId: String): List<TaskWithTotals> {
+    override suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals> {
         val tasks = getAll(spaceId)
         val blockedTasks = getBlockedTasks()
         val tasksById = tasks.associateBy { it.id }
@@ -165,19 +160,19 @@ class SqlDelightTaskRepository(
         }
     }
 
-    override suspend fun getById(id: String): Task? = getByIdUnsafe(id)
+    override suspend fun getTaskById(id: String): Task? = getByIdUnsafe(id)
 
     private suspend fun getByIdUnsafe(id: String): Task? {
         val entity = queries.getTaskById(id).awaitAsOneOrNull() ?: return null
         return loadTaskWithConnections(entity)
     }
 
-    override suspend fun getByIdWithTotals(id: String): TaskWithTotals? {
-        val task = getById(id) ?: return null
+    override suspend fun getTasksByIdWithTotals(id: String): TaskWithTotals? {
+        val task = getTaskById(id) ?: return null
         val blockedTasks = getBlockedTasks()
         val neededTaskIds = collectNeededTaskIds(task, blockedTasks)
         // Batch fetch all needed tasks in a single query
-        val tasksById = getByIds(neededTaskIds).associateBy { it.id } + (task.id to task)
+        val tasksById = getTasksByIds(neededTaskIds).associateBy { it.id } + (task.id to task)
         return TaskWithTotals(
             task = task,
             totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
@@ -185,7 +180,7 @@ class SqlDelightTaskRepository(
         )
     }
 
-    override suspend fun getByIds(ids: Set<String>): List<Task> {
+    override suspend fun getTasksByIds(ids: Set<String>): List<Task> {
         if (ids.isEmpty()) return emptyList()
         return queries.getTasksByIds(ids).awaitAsList().map { loadTaskWithConnections(it) }
     }
@@ -210,7 +205,7 @@ class SqlDelightTaskRepository(
             if (currentId in needed) continue
             needed.add(currentId)
 
-            val current = getById(currentId) ?: continue
+            val current = getTaskById(currentId) ?: continue
 
             current.connections
                 .filter { it.type == ConnectionType.IsDependencyOf }
@@ -284,10 +279,6 @@ class SqlDelightTaskRepository(
         return "${space.idPrefix}-$nextNum"
     }
 
-    override suspend fun generateNextId(spaceId: String): String = mutex.withLock {
-        generateNextIdUnsafe(spaceId)
-    }
-
     private suspend fun generateNextIdUnsafe(spaceId: String): String {
         val space = queries.getSpaceById(spaceId).awaitAsOneOrNull() ?: return "TASK-1"
         val nextNum = queries.getNextId(spaceId).awaitAsOneOrNull() ?: 1
@@ -295,7 +286,7 @@ class SqlDelightTaskRepository(
         return "${space.idPrefix}-$nextNum"
     }
 
-    override suspend fun add(
+    override suspend fun addTask(
         spaceId: String,
         title: String,
         description: String,
@@ -340,7 +331,7 @@ class SqlDelightTaskRepository(
         )
     }
 
-    override suspend fun update(task: Task): Task? = mutex.withLock {
+    override suspend fun updateTask(task: Task): Task? = mutex.withLock {
         val oldTask = getByIdUnsafe(task.id) ?: return@withLock null
 
         val removedConnections = oldTask.connections - task.connections
@@ -437,7 +428,7 @@ class SqlDelightTaskRepository(
     override suspend fun getSubtasks(taskId: String): List<Task> =
         queries.getSubtasks(taskId).awaitAsList().map { loadTaskWithConnections(it) }
 
-    override suspend fun delete(id: String): Boolean = mutex.withLock {
+    override suspend fun deleteTask(id: String): Boolean = mutex.withLock {
         val task = getByIdUnsafe(id) ?: return@withLock false
 
         task.connections.forEach { connection ->
@@ -507,7 +498,7 @@ class SqlDelightTaskRepository(
     }
 
     override suspend fun getAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals> =
-        filterTasksWithCriteria(getAllWithTotals(spaceId), criteria)
+        filterTasksWithCriteria(getAllTasksWithTotals(spaceId), criteria)
 
     override suspend fun getFilterState(spaceId: String): TaskFilterCriteria =
         queries.getFilterState(spaceId).awaitAsOneOrNull()?.toTaskFilterCriteria() ?: TaskFilterCriteria()
@@ -729,7 +720,7 @@ class SqlDelightTaskRepository(
         return true
     }
 
-    suspend fun clearAllData() {
+    override suspend fun clearAllData() {
         queries.getAllSpaces().awaitAsList().forEach { space ->
             queries.deleteSpace(space.id)
         }

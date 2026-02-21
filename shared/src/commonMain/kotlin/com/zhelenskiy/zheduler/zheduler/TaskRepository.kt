@@ -70,15 +70,6 @@ interface TaskRepository {
     suspend fun getAll(spaceId: String): List<Task>
 
     /**
-     * Get all tasks in a space except one specific task.
-     * Useful when selecting connections to avoid self-references.
-     * @param spaceId The space ID
-     * @param excludeTaskId The task ID to exclude
-     * @return List of tasks excluding the specified one
-     */
-    suspend fun getAllExcept(spaceId: String, excludeTaskId: String): List<Task>
-
-    /**
      * Filter tasks for selection dialog (e.g., blocker selection).
      * Uses SQL-based filtering for efficient search on id and title fields.
      *
@@ -89,7 +80,7 @@ interface TaskRepository {
      */
     suspend fun filterTasksForSelection(
         spaceId: String,
-        excludeTaskId: String,
+        excludeTaskId: String?,
         searchQuery: String = ""
     ): List<Task>
 
@@ -108,7 +99,7 @@ interface TaskRepository {
      */
     suspend fun searchTasksForConnection(
         spaceId: String,
-        excludeTaskId: String,
+        excludeTaskId: String?,
         searchQuery: String = "",
         excludeTaskIds: Set<String> = emptySet(),
         connectionType: ConnectionType,
@@ -120,28 +111,28 @@ interface TaskRepository {
      * @param spaceId The space ID
      * @return List of tasks with their calculated totals
      */
-    suspend fun getAllWithTotals(spaceId: String): List<TaskWithTotals>
+    suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals>
 
     /**
      * Get a task by its ID.
      * @param id The task ID
      * @return The task, or null if not found
      */
-    suspend fun getById(id: String): Task?
+    suspend fun getTaskById(id: String): Task?
 
     /**
      * Get multiple tasks by their IDs.
      * @param ids Set of task IDs
      * @return List of found tasks (may be fewer than requested if some don't exist)
      */
-    suspend fun getByIds(ids: Set<String>): List<Task>
+    suspend fun getTasksByIds(ids: Set<String>): List<Task>
 
     /**
      * Get a task by its ID with calculated totals.
      * @param id The task ID
      * @return The task with totals, or null if not found
      */
-    suspend fun getByIdWithTotals(id: String): TaskWithTotals?
+    suspend fun getTasksByIdWithTotals(id: String): TaskWithTotals?
 
     /**
      * Get all tags used across all tasks.
@@ -180,13 +171,6 @@ interface TaskRepository {
     suspend fun peekNextId(spaceId: String): String
 
     /**
-     * Generate and reserve the next task ID, incrementing the counter.
-     * @param spaceId The space ID
-     * @return The generated task ID
-     */
-    suspend fun generateNextId(spaceId: String): String
-
-    /**
      * Add a new task to the repository.
      * @param spaceId The space ID where the task will be created
      * @param title The task title
@@ -204,7 +188,7 @@ interface TaskRepository {
      * @param autoUpdateStatusFromSubtasks Whether to automatically update status based on subtasks (defaults to false)
      * @return The created task, or null if creation failed
      */
-    suspend fun add(
+    suspend fun addTask(
         spaceId: String,
         title: String,
         description: String = "",
@@ -227,7 +211,7 @@ interface TaskRepository {
      * @param task The task with updated values
      * @return The updated task, or null if update failed
      */
-    suspend fun update(task: Task): Task?
+    suspend fun updateTask(task: Task): Task?
 
     /**
      * Delete a task by its ID.
@@ -235,7 +219,7 @@ interface TaskRepository {
      * @param id The task ID to delete
      * @return true if deleted successfully, false otherwise
      */
-    suspend fun delete(id: String): Boolean
+    suspend fun deleteTask(id: String): Boolean
 
     // ============ Connection operations ============
 
@@ -269,7 +253,7 @@ interface TaskRepository {
      * @return true if adding this connection would create a cycle
      */
     suspend fun wouldCreateCycle(
-        fromTaskId: String,
+        fromTaskId: String?,
         toTaskId: String,
         type: ConnectionType,
         currentConnections: Set<TaskConnection> = emptySet()
@@ -355,14 +339,12 @@ interface TaskRepository {
 
     /**
      * Filter spaces by search query.
-     * @param spaces List of spaces to filter
      * @param query The search query
      * @param searchInName Whether to search in space name
      * @param searchInPrefix Whether to search in space ID prefix
      * @return Filtered list of spaces
      */
     suspend fun filterSpaces(
-        spaces: List<Space>,
         query: String,
         searchInName: Boolean,
         searchInPrefix: Boolean
@@ -468,4 +450,5 @@ interface TaskRepository {
      * @return List of tasks that were updated
      */
     suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task>
+    suspend fun clearAllData()
 }

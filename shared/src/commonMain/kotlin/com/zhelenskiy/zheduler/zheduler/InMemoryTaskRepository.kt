@@ -49,14 +49,13 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     override suspend fun getSpaceById(id: String): Space? = mutex.withLock { spaces[id] }
 
     override suspend fun filterSpaces(
-        spaces: List<Space>,
         query: String,
         searchInName: Boolean,
         searchInPrefix: Boolean
     ): List<Space> {
-        if (query.isBlank()) return spaces
+        if (query.isBlank()) return spaces.values.toList()
 
-        return spaces.filter { space ->
+        return spaces.values.filter { space ->
             val matchesName = searchInName && space.name.contains(query, ignoreCase = true)
             val matchesPrefix = searchInPrefix && space.idPrefix.contains(query, ignoreCase = true)
             matchesName || matchesPrefix
@@ -127,17 +126,14 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tasks.values.filter { it.spaceId == spaceId }.toList()
     }
 
-    override suspend fun getAllExcept(spaceId: String, excludeTaskId: String): List<Task> = mutex.withLock {
-        tasks.values.filter { it.spaceId == spaceId && it.id != excludeTaskId }
-    }
-
     override suspend fun filterTasksForSelection(
         spaceId: String,
-        excludeTaskId: String,
+        excludeTaskId: String?,
         searchQuery: String
     ): List<Task> = mutex.withLock {
         tasks.values.filter { task ->
-            task.spaceId == spaceId && task.id != excludeTaskId &&
+            task.spaceId == spaceId &&
+            (excludeTaskId == null || task.id != excludeTaskId) &&
             (searchQuery.isBlank() ||
              task.id.contains(searchQuery, ignoreCase = true) ||
              task.title.contains(searchQuery, ignoreCase = true))
@@ -146,7 +142,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun searchTasksForConnection(
         spaceId: String,
-        excludeTaskId: String,
+        excludeTaskId: String?,
         searchQuery: String,
         excludeTaskIds: Set<String>,
         connectionType: ConnectionType,
@@ -156,7 +152,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             // Filter by space
             task.spaceId == spaceId &&
             // Exclude current task
-            task.id != excludeTaskId &&
+            (excludeTaskId == null || task.id != excludeTaskId) &&
             // Exclude additional task IDs
             task.id !in excludeTaskIds &&
             // Filter by search query (case-insensitive)
@@ -172,7 +168,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         spaces.values.map { it.idPrefix }
     }
 
-    override suspend fun getAllWithTotals(spaceId: String): List<TaskWithTotals> = mutex.withLock {
+    override suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals> = mutex.withLock {
         val spaceTasks = tasks.values.filter { it.spaceId == spaceId }
         val blockedTasks = getBlockedTasks()
         val tasksById = spaceTasks.associateBy { it.id }
@@ -187,11 +183,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     // Note: getById does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
     // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
-    override suspend fun getById(id: String): Task? = tasks[id]
+    override suspend fun getTaskById(id: String): Task? = tasks[id]
 
-    override suspend fun getByIds(ids: Set<String>): List<Task> = ids.mapNotNull { tasks[it] }
+    override suspend fun getTasksByIds(ids: Set<String>): List<Task> = ids.mapNotNull { tasks[it] }
 
-    override suspend fun getByIdWithTotals(id: String): TaskWithTotals? = mutex.withLock {
+    override suspend fun getTasksByIdWithTotals(id: String): TaskWithTotals? = mutex.withLock {
         tasks[id]?.let { task ->
             val blockedTasks = getBlockedTasks()
             val tasksById = tasks.values.associateBy { it.id }
@@ -257,10 +253,6 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         "${space.idPrefix}-$nextNum"
     }
 
-    override suspend fun generateNextId(spaceId: String): String = mutex.withLock {
-        generateNextIdUnsafe(spaceId)
-    }
-
     private fun generateNextIdUnsafe(spaceId: String): String {
         val space = spaces[spaceId] ?: return "TASK-1"
         val nextNum = nextIdBySpace.getOrPut(spaceId) { 1 }
@@ -268,7 +260,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         return "${space.idPrefix}-$nextNum"
     }
 
-    override suspend fun add(
+    override suspend fun addTask(
         spaceId: String,
         title: String,
         description: String,
@@ -324,7 +316,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         task
     }
 
-    override suspend fun update(task: Task): Task? = mutex.withLock {
+    override suspend fun updateTask(task: Task): Task? = mutex.withLock {
         val oldTask = tasks[task.id] ?: return@withLock null
 
         val removedConnections = oldTask.connections - task.connections
@@ -473,7 +465,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             task.isRecurring && task.dueDate?.let { it <= time } == true
         }
 
-    override suspend fun delete(id: String): Boolean = mutex.withLock {
+    override suspend fun deleteTask(id: String): Boolean = mutex.withLock {
         val task = tasks[id] ?: return@withLock false
 
         task.connections.forEach { connection ->
@@ -668,5 +660,16 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task> = mutex.withLock {
         processDateBasedRecurrencesInternal(currentTime)
+    }
+
+    override suspend fun clearAllData() = mutex.withLock {
+        spaces.clear()
+        tasks.clear()
+        statusTimelines.clear()
+        allTags.clear()
+        nextIdBySpace.clear()
+        filterStateBySpaceId.clear()
+        viewModeBySpaceId.clear()
+        filterPanelOpenBySpaceId.clear()
     }
 }

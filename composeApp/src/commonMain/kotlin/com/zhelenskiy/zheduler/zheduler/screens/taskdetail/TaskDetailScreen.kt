@@ -17,13 +17,13 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
-import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
 import com.zhelenskiy.zheduler.zheduler.components.common.AutomaticChangeIndicator
 import com.zhelenskiy.zheduler.zheduler.components.common.ConnectedTaskChip
 import com.zhelenskiy.zheduler.zheduler.components.common.DueDateBadge
@@ -37,6 +37,8 @@ import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
 import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
+import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailViewModel
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -170,11 +172,6 @@ fun TaskDetailScreen(
         connectedTasks = connected
     }
 
-    var showTagDialog by remember { mutableStateOf(false) }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showStatusDialog by remember { mutableStateOf(false) }
-    var showConnectionDialog by remember { mutableStateOf(false) }
-    var showRecurrenceDialog by remember { mutableStateOf(false) }
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableStateOf(0) }
 
@@ -321,22 +318,10 @@ fun TaskDetailScreen(
                         taskId = task.id,
                         isNewTask = false,
                         onTaskClick = onTaskClick,
-                        showTagDialog = showTagDialog,
-                        onShowTagDialog = { showTagDialog = it },
-                        showDatePicker = showDatePicker,
-                        onShowDatePicker = { showDatePicker = it },
-                        showStatusDialog = showStatusDialog,
-                        onShowStatusDialog = { showStatusDialog = it },
-                        showConnectionDialog = showConnectionDialog,
-                        onShowConnectionDialog = { showConnectionDialog = it },
-                        showRecurrenceDialog = showRecurrenceDialog,
-                        onShowRecurrenceDialog = { showRecurrenceDialog = it },
                         onCreateNewTaskWithConnection = { connectionType ->
-                            showConnectionDialog = false
                             onAddNewTaskWithConnection(task.id, connectionType.symmetric)
                         },
                         getTaskById = viewModel::getTaskById,
-                        getAllTags = viewModel::getAllTags,
                         filterTags = viewModel::filterTags,
                         filterTasksForSelection = viewModel::filterTasksForSelection,
                         searchTasksForConnection = viewModel::searchTasksForConnection,
@@ -365,8 +350,7 @@ fun TaskDetailScreen(
                 )
 
                 // Status section
-                val isSimpleStatus = task.status !is TaskStatus.Blocked && task.status !is TaskStatus.Declined
-                var isTimelineExpanded by remember { mutableStateOf(false) }
+                var isTimelineExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
 
                 Column {
                     if (currentTaskWithTotals.isMissed(Clock.System.now())) {
@@ -388,106 +372,29 @@ fun TaskDetailScreen(
                             )
                         }
                     }
-                    if (isSimpleStatus) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Status:",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        // History button
+                        IconButton(
+                            onClick = { isTimelineExpanded = !isTimelineExpanded },
+                            modifier = Modifier.size(24.dp)
                         ) {
-                            Text(
-                                text = "Status:",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = "History",
+                                modifier = Modifier.size(18.dp)
                             )
-
-                            // History button (always shown)
-                            IconButton(
-                                onClick = { isTimelineExpanded = !isTimelineExpanded },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.History,
-                                    contentDescription = "History",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            StatusBadge(status = task.status)
-                            when (val status = task.status) {
-                                is TaskStatus.Blocked -> {
-                                    if (status.comment.isNotEmpty()) {
-                                        Text(
-                                            text = status.comment,
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                }
-                                is TaskStatus.Declined -> {
-                                    Text(
-                                        text = status.reason,
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
-                                }
-                                else -> {}
-                            }
                         }
-                    } else {
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Status:",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
 
-                            // History button (always shown)
-                            IconButton(
-                                onClick = { isTimelineExpanded = !isTimelineExpanded },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.History,
-                                    contentDescription = "History",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            StatusBadge(status = task.status)
-                            when (val status = task.status) {
-                                is TaskStatus.Blocked -> {
-                                    if (status.blockerTaskIds.isNotEmpty()) {
-                                        Text(
-                                            text = "by",
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                        status.blockerTaskIds.forEach { blockerId ->
-                                            val blockerTask = blockerTasks[blockerId]
-                                            ConnectedTaskChip(
-                                                task = blockerTask,
-                                                taskId = blockerId,
-                                                onClick = { blockerTask?.let { onTaskClick(it.id) } }
-                                            )
-                                        }
-                                    }
-                                    if (status.comment.isNotEmpty()) {
-                                        Text(
-                                            text = status.comment,
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                }
-
-                                is TaskStatus.Declined -> {
-                                    Text(
-                                        text = status.reason,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-
-                                else -> {}
-                            }
-                        }
+                        TaskStatus(status = task.status, blockerTasks = blockerTasks, onBlockerTaskClick = onTaskClick)
                     }
 
                     // Animated timeline
@@ -524,84 +431,11 @@ fun TaskDetailScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontFamily = FontFamily.Monospace
                                         )
-                                        change.previousStatus?.let { prev ->
-                                            StatusBadge(status = prev)
-                                            when (prev) {
-                                                is TaskStatus.Blocked -> {
-                                                    if (prev.blockerTaskIds.isNotEmpty()) {
-                                                        Text(
-                                                            text = "by",
-                                                            style = MaterialTheme.typography.labelSmall
-                                                        )
-                                                        prev.blockerTaskIds.forEach { blockerId ->
-                                                            val blockerTask = blockerTasks[blockerId]
-                                                            ConnectedTaskChip(
-                                                                task = blockerTask,
-                                                                taskId = blockerId,
-                                                                onClick = { blockerTask?.let { onTaskClick(it.id) } }
-                                                            )
-                                                        }
-                                                    }
-                                                    if (prev.comment.isNotEmpty()) {
-                                                        Text(
-                                                            text = prev.comment,
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                }
-                                                is TaskStatus.Declined -> {
-                                                    Text(
-                                                        text = prev.reason,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                                else -> {}
-                                            }
-                                            Text("→", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                        StatusBadge(status = change.newStatus)
-                                        when (val newStatus = change.newStatus) {
-                                            is TaskStatus.Blocked -> {
-                                                if (newStatus.blockerTaskIds.isNotEmpty()) {
-                                                    Text(
-                                                        text = "by",
-                                                        style = MaterialTheme.typography.labelSmall
-                                                    )
-                                                    newStatus.blockerTaskIds.forEach { blockerId ->
-                                                        val blockerTask = blockerTasks[blockerId]
-                                                        ConnectedTaskChip(
-                                                            task = blockerTask,
-                                                            taskId = blockerId,
-                                                            onClick = { blockerTask?.let { onTaskClick(it.id) } }
-                                                        )
-                                                    }
-                                                }
-                                                if (newStatus.comment.isNotEmpty()) {
-                                                    Text(
-                                                        text = newStatus.comment,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                            is TaskStatus.Declined -> {
-                                                Text(
-                                                    text = newStatus.reason,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                            else -> {}
-                                        }
-                                        change.automaticChangeReason?.let {
-                                            AutomaticChangeIndicator(
-                                                reason = it,
-                                                getTaskById = viewModel::getTaskById,
-                                                onTaskClick = onTaskClick
-                                            )
-                                        }
+                                        TaskStatusChange(
+                                            change = change,
+                                            blockerTasks = blockerTasks,
+                                            onBlockerTaskClick = onTaskClick
+                                        )
                                     }
                                 }
                             }
@@ -668,7 +502,7 @@ fun TaskDetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = formatPeriod(estimatedTime),
+                            text = estimatedTime.toBriefString(),
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
@@ -773,7 +607,7 @@ fun TaskDetailScreen(
                                     shape = MaterialTheme.shapes.small
                                 ) {
                                     Text(
-                                        text = formatPeriod(notification.timeBeforeDeadline),
+                                        text = notification.timeBeforeDeadline.toBriefString(),
                                         style = MaterialTheme.typography.labelMedium,
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                     )

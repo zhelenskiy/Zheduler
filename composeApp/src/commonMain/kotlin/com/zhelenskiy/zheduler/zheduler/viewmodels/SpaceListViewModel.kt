@@ -3,7 +3,7 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.Space
-import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
+import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,11 +23,11 @@ enum class SpaceSearchOption {
 }
 
 class SpaceListViewModel(
-    private val repository: SqlDelightTaskRepository
+    private val repository: TaskRepository
 ) : ViewModel() {
 
-    private val _spaces = MutableStateFlow<List<Space>>(emptyList())
-    val spaces: StateFlow<List<Space>> = _spaces.asStateFlow()
+    private val _spaces = MutableStateFlow<List<Space>?>(null)
+    val spaces: StateFlow<List<Space>?> = _spaces.asStateFlow()
 
     private val _allTags = MutableStateFlow<Set<String>>(emptySet())
     val allTags: StateFlow<Set<String>> = _allTags.asStateFlow()
@@ -43,18 +43,16 @@ class SpaceListViewModel(
     val showSearchOptions: StateFlow<Boolean> = _showSearchOptions.asStateFlow()
 
     // Filtered spaces computed from search criteria using repository method
-    val filteredSpaces: StateFlow<List<Space>> = combine(
-        _spaces,
+    val filteredSpaces: StateFlow<List<Space>?> = combine(
         _searchQuery,
         _searchOptions
-    ) { spaces, query, options ->
+    ) { query, options ->
         repository.filterSpaces(
-            spaces = spaces,
             query = query,
             searchInName = SpaceSearchOption.Name in options,
             searchInPrefix = SpaceSearchOption.Prefix in options
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
         loadSpaces()
@@ -104,10 +102,6 @@ class SpaceListViewModel(
         _searchQuery.value = ""
     }
 
-    fun updateSearchOptions(options: Set<SpaceSearchOption>) {
-        _searchOptions.value = options
-    }
-
     fun toggleSearchOption(option: SpaceSearchOption) {
         val current = _searchOptions.value
         _searchOptions.value = if (option in current && current.size > 1) {
@@ -143,10 +137,6 @@ class SpaceListViewModel(
             loadSpaces()
         }
         return result
-    }
-
-    fun canDeleteSpace(prefix: String): Boolean {
-        return _spaces.value.size > 1
     }
 
     /**

@@ -5,7 +5,6 @@ package com.zhelenskiy.zheduler.zheduler.components.form
 import androidx.compose.runtime.*
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
-import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -62,7 +61,11 @@ class TaskFormState(
             dueDate = dueDate,
             status = status,
             connections = connections,
-            notifications = notifications.mapNotNull { parseCompactTimeToPeriod(it) }.map { TaskNotification(it) },
+            notifications = notifications
+                .takeIf { dueDate != null }
+                ?.mapNotNull { parseCompactTimeToPeriod(it) }
+                ?.map { TaskNotification(it) }
+                ?: emptyList(),
             recurrenceRule = recurrenceRule,
             resetStatusOnRecurrence = resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
@@ -73,12 +76,12 @@ class TaskFormState(
         title = task.title
         description = task.description
         priority = task.priority?.value?.toString() ?: ""
-        estimatedTime = task.estimatedTime?.let(::formatPeriod) ?: ""
+        estimatedTime = task.estimatedTime?.let { it.toBriefString() } ?: ""
         tags = task.tags
         dueDate = task.dueDate
         status = task.status
         connections = task.connections
-        notifications = task.notifications.map { formatPeriod(it.timeBeforeDeadline) }
+        notifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() }
         recurrenceRule = task.recurrenceRule
         resetStatusOnRecurrence = task.resetStatusOnRecurrence
         autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
@@ -86,8 +89,8 @@ class TaskFormState(
 
     fun hasUnsavedChanges(task: Task): Boolean {
         val expectedPriority = task.priority?.value?.toString() ?: ""
-        val expectedEstimatedTime = task.estimatedTime?.let { formatPeriod(it) } ?: ""
-        val expectedNotifications = task.notifications.map { formatPeriod(it.timeBeforeDeadline) }
+        val expectedEstimatedTime = task.estimatedTime?.let { it.toBriefString() } ?: ""
+        val expectedNotifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() }
 
         return title != task.title ||
                 description != task.description ||
@@ -174,12 +177,12 @@ fun rememberTaskFormState(task: Task): TaskFormState {
             initialTitle = task.title,
             initialDescription = task.description,
             initialPriority = task.priority?.value?.toString() ?: "",
-            initialEstimatedTime = task.estimatedTime?.let { formatPeriod(it) } ?: "",
+            initialEstimatedTime = task.estimatedTime?.let { it.toBriefString() } ?: "",
             initialTags = task.tags,
             initialDueDate = task.dueDate,
             initialStatus = task.status,
             initialConnections = task.connections,
-            initialNotifications = task.notifications.map { formatPeriod(it.timeBeforeDeadline) },
+            initialNotifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() },
             initialRecurrenceRule = task.recurrenceRule,
             initialResetStatusOnRecurrence = task.resetStatusOnRecurrence,
             initialAutoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks

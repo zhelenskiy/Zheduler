@@ -22,7 +22,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `auto status update works when parent created before subtasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -30,19 +30,19 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Create subtasks after parent
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update subtask status to trigger automation
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Done))
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `auto status update with second subtask changing parent state`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -50,22 +50,22 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Add first subtask already marked as done
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should become Done (only subtask is done)
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // Add second subtask with Open status
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should change to Open (one subtask is Open)
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Complete second subtask - parent back to Done
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -73,11 +73,11 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create subtasks first
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
 
         // Create parent after
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -89,10 +89,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update subtask status to trigger automation
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Done))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -100,21 +100,21 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create both tasks first
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.add(spaceId, title = "Subtask", status = TaskStatus.Done)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Done)!!
 
         // Add connection later
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Trigger update by changing subtask status
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     // ==================== Auto Status Update - State Change Sequences ====================
@@ -122,84 +122,84 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `auto status update handles rapid status changes`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.add(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Rapidly change status multiple times
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.InProgress))
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.InProgress))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
-        assertIs<TaskStatus.Blocked>(repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(parent.id)!!.status)
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Open))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Open))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `auto status update handles multiple subtasks changing in different orders`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
-        val subtask3 = repo.add(spaceId, title = "Subtask 3", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask3 = repo.addTask(spaceId, title = "Subtask 3", status = TaskStatus.Open)!!
 
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask3.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update in non-sequential order
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status) // Still has open subtasks
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status) // Still has open subtasks
 
-        repo.update(repo.getById(subtask3.id)!!.copy(status = TaskStatus.InProgress))
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status) // InProgress takes priority
+        repo.updateTask(repo.getTaskById(subtask3.id)!!.copy(status = TaskStatus.InProgress))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status) // InProgress takes priority
 
-        repo.update(repo.getById(subtask3.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status) // Still has subtask1 open
+        repo.updateTask(repo.getTaskById(subtask3.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status) // Still has subtask1 open
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status) // All done
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status) // All done
     }
 
     @Test
     fun `auto status update toggles between states correctly`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Done,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.add(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Toggle status back and forth
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Open))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Open))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Open))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Open))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
     }
 
     // ==================== Blocked Task Unblocking - Order of Operations ====================
@@ -209,129 +209,129 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocked task first (with non-existent blocker reference)
-        val blocked = repo.add(spaceId, title = "Blocked")!!
+        val blocked = repo.addTask(spaceId, title = "Blocked")!!
 
         // Create blocker after
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
 
         // Set blocked status
-        repo.update(repo.getById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
         // Complete blocker
-        repo.update(repo.getById(blocker.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
     }
 
     @Test
     fun `blocked task unblocks when blocker completed before blocked status set`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
-        val blocked = repo.add(spaceId, title = "Blocked", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocked = repo.addTask(spaceId, title = "Blocked", status = TaskStatus.Open)!!
 
         // Complete blocker first
-        repo.update(repo.getById(blocker.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
 
         // Then set blocked status (should immediately unblock)
-        repo.update(repo.getById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
 
         // Should be unblocked immediately since blocker is already done
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
     }
 
     @Test
     fun `blocked task handles blockers completing in different orders`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.add(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
-        val blocker3 = repo.add(spaceId, title = "Blocker 3", status = TaskStatus.Open)!!
-        val blocked = repo.add(
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
+        val blocker3 = repo.addTask(spaceId, title = "Blocker 3", status = TaskStatus.Open)!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
             status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id, blocker3.id))
         )!!
 
         // Complete in non-sequential order
-        repo.update(repo.getById(blocker2.id)!!.copy(status = TaskStatus.Done))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status) // Still blocked
+        repo.updateTask(repo.getTaskById(blocker2.id)!!.copy(status = TaskStatus.Done))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status) // Still blocked
 
-        repo.update(repo.getById(blocker1.id)!!.copy(status = TaskStatus.Done))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status) // Still blocked
+        repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Done))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status) // Still blocked
 
-        repo.update(repo.getById(blocker3.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status) // Now unblocked
+        repo.updateTask(repo.getTaskById(blocker3.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status) // Now unblocked
     }
 
     @Test
     fun `blocked task with 3 blockers stays blocked until all complete`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.add(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
-        val blocker3 = repo.add(spaceId, title = "Blocker 3", status = TaskStatus.Open)!!
-        val blocked = repo.add(
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
+        val blocker3 = repo.addTask(spaceId, title = "Blocker 3", status = TaskStatus.Open)!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
             status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id, blocker3.id))
         )!!
 
         // Initial state: all open, task blocked
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
         // Cycle blocker1: done → undone (others stay Open)
-        repo.update(repo.getById(blocker1.id)!!.copy(status = TaskStatus.Done))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Done))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
-        repo.update(repo.getById(blocker1.id)!!.copy(status = TaskStatus.Open))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Open))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
         // Cycle blocker2: done → undone (all are Open now)
-        repo.update(repo.getById(blocker2.id)!!.copy(status = TaskStatus.Done))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker2.id)!!.copy(status = TaskStatus.Done))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
-        repo.update(repo.getById(blocker2.id)!!.copy(status = TaskStatus.Open))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker2.id)!!.copy(status = TaskStatus.Open))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
         // Cycle blocker3: done → undone (all are Open now)
-        repo.update(repo.getById(blocker3.id)!!.copy(status = TaskStatus.Done))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker3.id)!!.copy(status = TaskStatus.Done))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
-        repo.update(repo.getById(blocker3.id)!!.copy(status = TaskStatus.Open))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker3.id)!!.copy(status = TaskStatus.Open))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
         // Now complete all three at the same time
-        repo.update(repo.getById(blocker1.id)!!.copy(status = TaskStatus.Done))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status) // Still blocked
+        repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Done))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status) // Still blocked
 
-        repo.update(repo.getById(blocker2.id)!!.copy(status = TaskStatus.Done))
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status) // Still blocked
+        repo.updateTask(repo.getTaskById(blocker2.id)!!.copy(status = TaskStatus.Done))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status) // Still blocked
 
-        repo.update(repo.getById(blocker3.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status) // NOW unblocked
+        repo.updateTask(repo.getTaskById(blocker3.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status) // NOW unblocked
     }
 
     @Test
     fun `blocked task handles blocker being un-completed after unblocking`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
-        val blocked = repo.add(
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
             status = TaskStatus.Blocked(setOf(blocker.id))
         )!!
 
         // Complete blocker - unblocks the task
-        repo.update(repo.getById(blocker.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
 
         // Manually revert blocked task back to blocked state
-        repo.update(repo.getById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
 
         // Since blocker is still Done, updateStatus checks and immediately sets to InProgress
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
     }
 
     // ==================== Combined Automation - Auto Status + Unblocking ====================
@@ -340,14 +340,14 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `parent auto-updates when subtask unblocks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
-        val parent = repo.add(
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Blocked(setOf(blocker.id))
@@ -355,17 +355,17 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be blocked because subtask is blocked
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
-        assertIs<TaskStatus.Blocked>(repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(parent.id)!!.status)
 
         // Complete blocker - subtask unblocks, parent should auto-update
-        repo.update(repo.getById(blocker.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
 
         // Subtask should be unblocked
-        assertEquals(TaskStatus.InProgress, repo.getById(subtask.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(subtask.id)!!.status)
 
         // Parent should also update to InProgress
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -373,72 +373,72 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create 4-level hierarchy
-        val grandgrandparent = repo.add(
+        val grandgrandparent = repo.addTask(
             spaceId,
             title = "GrandGrandparent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val grandparent = repo.add(
+        val grandparent = repo.addTask(
             spaceId,
             title = "Grandparent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val child = repo.add(spaceId, title = "Child", status = TaskStatus.Open)!!
+        val child = repo.addTask(spaceId, title = "Child", status = TaskStatus.Open)!!
 
         repo.addConnection(grandparent.id, grandgrandparent.id, ConnectionType.SubtaskOf)
         repo.addConnection(parent.id, grandparent.id, ConnectionType.SubtaskOf)
         repo.addConnection(child.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update child - should cascade all the way up
-        repo.update(repo.getById(child.id)!!.copy(status = TaskStatus.InProgress))
+        repo.updateTask(repo.getTaskById(child.id)!!.copy(status = TaskStatus.InProgress))
 
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
-        assertEquals(TaskStatus.InProgress, repo.getById(grandparent.id)!!.status)
-        assertEquals(TaskStatus.InProgress, repo.getById(grandgrandparent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(grandparent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(grandgrandparent.id)!!.status)
 
         // Complete child - should cascade all the way up
-        repo.update(repo.getById(child.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(child.id)!!.copy(status = TaskStatus.Done))
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
-        assertEquals(TaskStatus.Done, repo.getById(grandparent.id)!!.status)
-        assertEquals(TaskStatus.Done, repo.getById(grandgrandparent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(grandparent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(grandgrandparent.id)!!.status)
     }
 
     @Test
     fun `automation handles subtask status updates`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
 
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
 
         // Subtask1 done - parent should be Open (because subtask2 is open)
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Subtask2 in progress - parent should auto-update to InProgress
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.InProgress))
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.InProgress))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
         // Subtask2 done - parent should auto-update to Done
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     // ==================== Automation with Task Deletion ====================
@@ -447,105 +447,105 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `auto status update handles subtask deletion`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Done)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Done)!!
 
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
 
         // Trigger update
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Open))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Open))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Delete open subtask
-        repo.delete(subtask1.id)
+        repo.deleteTask(subtask1.id)
 
         // Trigger update on remaining subtask
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
 
         // Parent should be Done (only remaining subtask is done)
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `blocked task handles blocker deletion`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.add(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
-        val blocked = repo.add(
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
             status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
         )!!
 
         // Delete one blocker (connections should be cleaned up)
-        repo.delete(blocker1.id)
+        repo.deleteTask(blocker1.id)
 
         // Blocked task should still be blocked by blocker2
-        val blockedStatus = repo.getById(blocked.id)!!.status
+        val blockedStatus = repo.getTaskById(blocked.id)!!.status
         // Deleting a blocker removes it from the blocker list
         assertIs<TaskStatus.Blocked>(blockedStatus)
         assertEquals(setOf(blocker2.id), (blockedStatus as TaskStatus.Blocked).blockerTaskIds)
 
         // Complete remaining blocker
-        repo.update(repo.getById(blocker2.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(blocker2.id)!!.copy(status = TaskStatus.Done))
 
         // Should unblock (deleted blocker was removed from the list)
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
     }
 
     @Test
     fun `deleting only subtask updates parent status`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.add(spaceId, title = "Only Subtask", status = TaskStatus.InProgress)!!
+        val subtask = repo.addTask(spaceId, title = "Only Subtask", status = TaskStatus.InProgress)!!
 
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be InProgress because of subtask
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.InProgress))
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.InProgress))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
         // Delete the only subtask
-        repo.delete(subtask.id)
+        repo.deleteTask(subtask.id)
 
         // Parent has no subtasks now, so next status update won't change it
         // But status stays as it was (InProgress) since no trigger happens
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `deleting only blocker unblocks task immediately`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.add(spaceId, title = "Only Blocker", status = TaskStatus.Open)!!
-        val blocked = repo.add(
+        val blocker = repo.addTask(spaceId, title = "Only Blocker", status = TaskStatus.Open)!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
             status = TaskStatus.Blocked(setOf(blocker.id))
         )!!
 
         // Verify blocked
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
         // Delete the only blocker
-        repo.delete(blocker.id)
+        repo.deleteTask(blocker.id)
 
         // Task should unblock immediately
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
     }
 
     // ==================== Automation Toggling ====================
@@ -554,52 +554,52 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `disabling auto update stops automation`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.add(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update subtask - parent auto-updates
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.InProgress))
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.InProgress))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
         // Disable auto-update
-        repo.update(repo.getById(parent.id)!!.copy(autoUpdateStatusFromSubtasks = false))
+        repo.updateTask(repo.getTaskById(parent.id)!!.copy(autoUpdateStatusFromSubtasks = false))
 
         // Update subtask again - parent should NOT auto-update
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status) // Still InProgress
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status) // Still InProgress
     }
 
     @Test
     fun `enabling auto update applies current subtask states`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = false  // Disabled initially
         )!!
-        val subtask = repo.add(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update subtask while auto-update is disabled
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status) // No auto-update
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status) // No auto-update
 
         // Enable auto-update
-        repo.update(repo.getById(parent.id)!!.copy(autoUpdateStatusFromSubtasks = true))
+        repo.updateTask(repo.getTaskById(parent.id)!!.copy(autoUpdateStatusFromSubtasks = true))
 
         // Trigger an update by changing subtask status
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
 
         // Now parent should update
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     // ==================== Performance and Edge Cases ====================
@@ -608,7 +608,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `automation handles large number of subtasks efficiently`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -617,30 +617,30 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
 
         // Create 50 subtasks
         val subtasks = (1..50).map { i ->
-            val subtask = repo.add(spaceId, title = "Subtask $i", status = TaskStatus.Open)!!
+            val subtask = repo.addTask(spaceId, title = "Subtask $i", status = TaskStatus.Open)!!
             repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
             subtask
         }
 
         // Update all to InProgress
-        subtasks.forEach { repo.update(repo.getById(it.id)!!.copy(status = TaskStatus.InProgress)) }
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        subtasks.forEach { repo.updateTask(repo.getTaskById(it.id)!!.copy(status = TaskStatus.InProgress)) }
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
         // Update all to Done one by one
-        subtasks.dropLast(1).forEach { repo.update(repo.getById(it.id)!!.copy(status = TaskStatus.Done)) }
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status) // One still in progress
+        subtasks.dropLast(1).forEach { repo.updateTask(repo.getTaskById(it.id)!!.copy(status = TaskStatus.Done)) }
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status) // One still in progress
 
         // Complete last one
-        repo.update(repo.getById(subtasks.last().id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtasks.last().id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `automation handles circular parent-child relationships gracefully`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val task1 = repo.add(spaceId, title = "Task 1", status = TaskStatus.Open, autoUpdateStatusFromSubtasks = true)!!
-        val task2 = repo.add(spaceId, title = "Task 2", status = TaskStatus.Open, autoUpdateStatusFromSubtasks = true)!!
+        val task1 = repo.addTask(spaceId, title = "Task 1", status = TaskStatus.Open, autoUpdateStatusFromSubtasks = true)!!
+        val task2 = repo.addTask(spaceId, title = "Task 2", status = TaskStatus.Open, autoUpdateStatusFromSubtasks = true)!!
 
         // Create first connection: task2 is subtask of task1
         val firstConnection = repo.addConnection(task2.id, task1.id, ConnectionType.SubtaskOf)
@@ -651,7 +651,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         assertFalse(cycleCreated)
 
         // Ensure no cycle exists - task1 should NOT have SubtaskOf connection to task2
-        val task1Connections = repo.getById(task1.id)!!.connections
+        val task1Connections = repo.getTaskById(task1.id)!!.connections
         assertFalse(task1Connections.any { it.targetTaskId == task2.id && it.type == ConnectionType.SubtaskOf })
     }
 
@@ -659,10 +659,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `cycle prevention with more than 2 nodes`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val task1 = repo.add(spaceId, title = "Task 1", status = TaskStatus.Open)!!
-        val task2 = repo.add(spaceId, title = "Task 2", status = TaskStatus.Open)!!
-        val task3 = repo.add(spaceId, title = "Task 3", status = TaskStatus.Open)!!
-        val task4 = repo.add(spaceId, title = "Task 4", status = TaskStatus.Open)!!
+        val task1 = repo.addTask(spaceId, title = "Task 1", status = TaskStatus.Open)!!
+        val task2 = repo.addTask(spaceId, title = "Task 2", status = TaskStatus.Open)!!
+        val task3 = repo.addTask(spaceId, title = "Task 3", status = TaskStatus.Open)!!
+        val task4 = repo.addTask(spaceId, title = "Task 4", status = TaskStatus.Open)!!
 
         // Create chain: task4 -> task3 -> task2 -> task1
         assertTrue(repo.addConnection(task4.id, task3.id, ConnectionType.SubtaskOf))
@@ -679,18 +679,18 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         assertFalse(repo.addConnection(task1.id, task3.id, ConnectionType.SubtaskOf))
 
         // Verify the valid chain still exists
-        assertTrue(repo.getById(task4.id)!!.connections.any {
+        assertTrue(repo.getTaskById(task4.id)!!.connections.any {
             it.targetTaskId == task3.id && it.type == ConnectionType.SubtaskOf
         })
-        assertTrue(repo.getById(task3.id)!!.connections.any {
+        assertTrue(repo.getTaskById(task3.id)!!.connections.any {
             it.targetTaskId == task2.id && it.type == ConnectionType.SubtaskOf
         })
-        assertTrue(repo.getById(task2.id)!!.connections.any {
+        assertTrue(repo.getTaskById(task2.id)!!.connections.any {
             it.targetTaskId == task1.id && it.type == ConnectionType.SubtaskOf
         })
 
         // Adding a non-cycle connection should work
-        val task5 = repo.add(spaceId, title = "Task 5", status = TaskStatus.Open)!!
+        val task5 = repo.addTask(spaceId, title = "Task 5", status = TaskStatus.Open)!!
         assertTrue(repo.addConnection(task5.id, task1.id, ConnectionType.SubtaskOf))
     }
 
@@ -698,7 +698,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `blocked status with non-existent blocker ID handles gracefully`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocked = repo.add(
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
             status = TaskStatus.Blocked(setOf("NON-EXISTENT-1", "NON-EXISTENT-2"))
@@ -706,15 +706,15 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
 
         // Non-existent blockers are treated as if they don't block (or system should handle gracefully)
         // The exact behavior depends on implementation - documenting current behavior
-        val status = repo.getById(blocked.id)!!.status
+        val status = repo.getTaskById(blocked.id)!!.status
         assertIs<TaskStatus.Blocked>(status)
 
         // Creating a real task and marking it done shouldn't affect this
-        val realTask = repo.add(spaceId, title = "Real Task", status = TaskStatus.Open)!!
-        repo.update(repo.getById(realTask.id)!!.copy(status = TaskStatus.Done))
+        val realTask = repo.addTask(spaceId, title = "Real Task", status = TaskStatus.Open)!!
+        repo.updateTask(repo.getTaskById(realTask.id)!!.copy(status = TaskStatus.Done))
 
         // Blocked task should remain in its blocked state (non-existent blockers)
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
     }
 
     // ==================== Regression Tests for Bug Fixes ====================
@@ -724,7 +724,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create parent with auto-update enabled
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -732,43 +732,43 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Create a subtask that is already Done
-        val subtask = repo.add(spaceId, title = "Subtask", status = TaskStatus.Done)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Done)!!
 
         // Parent should still be Open (no subtasks yet)
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Add the connection - parent should IMMEDIATELY update to Done
         // (without needing to call updateStatus on the subtask)
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should now be Done because its only subtask is Done
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `addConnection with SubtaskOf immediately updates parent to InProgress when subtask is InProgress`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask = repo.add(spaceId, title = "Subtask", status = TaskStatus.InProgress)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.InProgress)!!
 
         // Add connection - parent should immediately become InProgress
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `addConnection with SubtaskOf calculates status from multiple existing subtasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -776,26 +776,26 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // First subtask is Done
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // Second subtask is Open - parent should become Open
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Third subtask is InProgress - parent should become InProgress (takes priority over Open)
-        val subtask3 = repo.add(spaceId, title = "Subtask 3", status = TaskStatus.InProgress)!!
+        val subtask3 = repo.addTask(spaceId, title = "Subtask 3", status = TaskStatus.InProgress)!!
         repo.addConnection(subtask3.id, parent.id, ConnectionType.SubtaskOf)
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `delete subtask immediately updates parent status`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -803,50 +803,50 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Add two subtasks - one Done, one Open
-        val subtaskDone = repo.add(spaceId, title = "Subtask Done", status = TaskStatus.Done)!!
-        val subtaskOpen = repo.add(spaceId, title = "Subtask Open", status = TaskStatus.Open)!!
+        val subtaskDone = repo.addTask(spaceId, title = "Subtask Done", status = TaskStatus.Done)!!
+        val subtaskOpen = repo.addTask(spaceId, title = "Subtask Open", status = TaskStatus.Open)!!
 
         repo.addConnection(subtaskDone.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtaskOpen.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be Open (one subtask is Open)
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Delete the Open subtask - parent should IMMEDIATELY become Done
         // (without needing to call updateStatus)
-        repo.delete(subtaskOpen.id)
+        repo.deleteTask(subtaskOpen.id)
 
         // Parent should now be Done because its only remaining subtask is Done
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `delete subtask with InProgress status updates parent to Done when remaining subtasks are Done`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Done)!!
-        val subtaskInProgress = repo.add(spaceId, title = "Subtask InProgress", status = TaskStatus.InProgress)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Done)!!
+        val subtaskInProgress = repo.addTask(spaceId, title = "Subtask InProgress", status = TaskStatus.InProgress)!!
 
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtaskInProgress.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be InProgress
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
         // Delete the InProgress subtask
-        repo.delete(subtaskInProgress.id)
+        repo.deleteTask(subtaskInProgress.id)
 
         // Parent should now be Done
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -854,32 +854,32 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker that blocks taskA
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
 
         // Create taskA that is blocked by blocker
-        val taskA = repo.add(
+        val taskA = repo.addTask(
             spaceId,
             title = "Task A",
             status = TaskStatus.Blocked(setOf(blocker.id))
         )!!
 
         // Create taskB that is blocked by taskA
-        val taskB = repo.add(
+        val taskB = repo.addTask(
             spaceId,
             title = "Task B",
             status = TaskStatus.Blocked(setOf(taskA.id))
         )!!
 
         // Complete blocker - taskA should unblock
-        repo.update(repo.getById(blocker.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(taskA.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(taskA.id)!!.status)
 
         // taskB is still blocked by taskA (taskA is not Done yet)
-        assertIs<TaskStatus.Blocked>(repo.getById(taskB.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(taskB.id)!!.status)
 
         // Complete taskA - taskB should unblock
-        repo.update(repo.getById(taskA.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(taskB.id)!!.status)
+        repo.updateTask(repo.getTaskById(taskA.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(taskB.id)!!.status)
     }
 
     @Test
@@ -887,10 +887,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
 
         // Create parent with auto-status from subtasks enabled
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -898,7 +898,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Create subtask of parent that is blocked
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Blocked(setOf(blocker.id))
@@ -906,32 +906,32 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be blocked because subtask is blocked
-        assertIs<TaskStatus.Blocked>(repo.getById(parent.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(parent.id)!!.status)
 
         // Create task that DEPENDS ON the parent (not blocked by it)
         // This task can only start when parent is done
-        val dependent = repo.add(
+        val dependent = repo.addTask(
             spaceId,
             title = "Dependent",
             status = TaskStatus.Blocked(setOf(parent.id))
         )!!
 
         // Complete blocker - subtask should unblock
-        repo.update(repo.getById(blocker.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.InProgress, repo.getById(subtask.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(subtask.id)!!.status)
 
         // Parent should auto-update to InProgress
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
         // Dependent is still blocked by parent (parent needs to be Done/Declined to unblock)
-        assertIs<TaskStatus.Blocked>(repo.getById(dependent.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(dependent.id)!!.status)
 
         // Complete subtask - parent should become Done
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // Now dependent should unblock (parent status changed to Done)
-        assertEquals(TaskStatus.InProgress, repo.getById(dependent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(dependent.id)!!.status)
     }
 
     @Test
@@ -939,10 +939,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
 
         // Create parent with auto-status from subtasks enabled
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -950,7 +950,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Create subtask of parent that is blocked
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Blocked(setOf(blocker.id))
@@ -958,31 +958,31 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be blocked because subtask is blocked
-        assertIs<TaskStatus.Blocked>(repo.getById(parent.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(parent.id)!!.status)
 
         // Create task that is blocked by parent
-        val dependent = repo.add(
+        val dependent = repo.addTask(
             spaceId,
             title = "Dependent",
             status = TaskStatus.Blocked(setOf(parent.id))
         )!!
 
         // Delete blocker - subtask should unblock immediately
-        repo.delete(blocker.id)
-        assertEquals(TaskStatus.InProgress, repo.getById(subtask.id)!!.status)
+        repo.deleteTask(blocker.id)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(subtask.id)!!.status)
 
         // Parent should auto-update to InProgress
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
         // Dependent is still blocked (parent needs to be Done/Declined)
-        assertIs<TaskStatus.Blocked>(repo.getById(dependent.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(dependent.id)!!.status)
 
         // Complete subtask - parent should become Done
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // Now dependent should unblock
-        assertEquals(TaskStatus.InProgress, repo.getById(dependent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(dependent.id)!!.status)
     }
 
     @Test
@@ -990,10 +990,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker
-        val blocker = repo.add(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
 
         // Create parent with auto-status from subtasks enabled
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -1001,7 +1001,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Create subtask of parent that is blocked
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Blocked(setOf(blocker.id))
@@ -1009,48 +1009,48 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be blocked because subtask is blocked
-        assertIs<TaskStatus.Blocked>(repo.getById(parent.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(parent.id)!!.status)
 
         // Create task that is blocked by parent
-        val dependent = repo.add(
+        val dependent = repo.addTask(
             spaceId,
             title = "Dependent",
             status = TaskStatus.Blocked(setOf(parent.id))
         )!!
 
         // Disable auto-status on parent
-        val parentUpdated = repo.getById(parent.id)!!
-        repo.update(parentUpdated.copy(autoUpdateStatusFromSubtasks = false))
+        val parentUpdated = repo.getTaskById(parent.id)!!
+        repo.updateTask(parentUpdated.copy(autoUpdateStatusFromSubtasks = false))
 
         // Manually set parent to Done (overriding the blocked subtask)
-        repo.update(repo.getById(parent.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(parent.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // Dependent should unblock (parent became Done)
-        assertEquals(TaskStatus.InProgress, repo.getById(dependent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(dependent.id)!!.status)
 
         // Subtask should still be blocked (parent no longer auto-updates from it)
-        assertIs<TaskStatus.Blocked>(repo.getById(subtask.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(subtask.id)!!.status)
     }
 
     @Test
     fun `delete subtask updates grandparent status through hierarchy`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val grandparent = repo.add(
+        val grandparent = repo.addTask(
             spaceId,
             title = "Grandparent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask1 = repo.add(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
-        val subtask2 = repo.add(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
 
         repo.addConnection(parent.id, grandparent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
@@ -1058,16 +1058,16 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
 
         // Hierarchy: grandparent -> parent -> subtask1 (Done), subtask2 (Open)
         // Parent should be Open, Grandparent should be Open
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
-        assertEquals(TaskStatus.Open, repo.getById(grandparent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(grandparent.id)!!.status)
 
         // Delete the Open subtask
-        repo.delete(subtask2.id)
+        repo.deleteTask(subtask2.id)
 
         // Parent should become Done (only Done subtask remains)
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
         // Grandparent should also become Done (its only subtask is now Done)
-        assertEquals(TaskStatus.Done, repo.getById(grandparent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(grandparent.id)!!.status)
     }
 
     // ==================== Timeline isAutomatic Flag Tests ====================
@@ -1077,7 +1077,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create parent with auto-update enabled
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -1085,7 +1085,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Create subtask
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Open,
@@ -1093,7 +1093,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Update subtask to Done - parent should auto-update to Done
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
 
         val timeline = repo.getStatusTimeline(parent.id)
         // Should have: initial Open, then auto-updated to Done
@@ -1107,7 +1107,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `manual status update when autoUpdateStatusFromSubtasks enabled throws exception`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -1116,7 +1116,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
 
         // Attempting to manually change status when autoUpdateStatusFromSubtasks is enabled should throw
         assertFailsWith<IllegalArgumentException> {
-            repo.update(repo.getById(parent.id)!!.copy(status = TaskStatus.InProgress))
+            repo.updateTask(repo.getTaskById(parent.id)!!.copy(status = TaskStatus.InProgress))
         }
     }
 
@@ -1125,7 +1125,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create parent with auto-update DISABLED initially
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -1133,7 +1133,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Create a Done subtask
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Done,
@@ -1141,14 +1141,14 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         )!!
 
         // Parent should still be Open (auto-update disabled)
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Now enable auto-update via update() - this should trigger automatic status calculation
-        val updatedParent = repo.getById(parent.id)!!
-        repo.update(updatedParent.copy(autoUpdateStatusFromSubtasks = true))
+        val updatedParent = repo.getTaskById(parent.id)!!
+        repo.updateTask(updatedParent.copy(autoUpdateStatusFromSubtasks = true))
 
         // Parent should now be Done
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // The timeline entry for this change should have automatic change reason
         val timeline = repo.getStatusTimeline(parent.id)
@@ -1163,12 +1163,12 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `changing blocker IDs in Blocked status records timeline entry`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
-        val task = repo.add(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker1.id)))!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
+        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker1.id)))!!
 
         // Change blocker IDs via updateStatus
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2, "Should have at least initial Blocked and updated Blocked")
@@ -1181,11 +1181,11 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `changing comment in Blocked status records timeline entry`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.add(spaceId, title = "Blocker")!!
-        val task = repo.add(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker.id), "Original comment"))!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
+        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker.id), "Original comment"))!!
 
         // Change comment via update
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Updated comment")))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Updated comment")))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2, "Should have at least initial Blocked and updated Blocked")
@@ -1198,10 +1198,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `changing reason in Declined status records timeline entry`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val task = repo.add(spaceId, title = "Task", status = TaskStatus.Declined("Original reason"))!!
+        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Declined("Original reason"))!!
 
         // Change reason via updateStatus
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.Declined("Updated reason")))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Declined("Updated reason")))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2, "Should have at least initial Declined and updated Declined")
@@ -1214,13 +1214,13 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `changing blocker IDs via update records timeline entry`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
-        val task = repo.add(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker1.id)))!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
+        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker1.id)))!!
 
         // Change blocker IDs via update() (not updateStatus)
-        val updated = repo.getById(task.id)!!
-        repo.update(updated.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
+        val updated = repo.getTaskById(task.id)!!
+        repo.updateTask(updated.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2, "Should have at least initial Blocked and updated Blocked")

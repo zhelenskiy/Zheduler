@@ -88,8 +88,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `deleteSpace removes space and all its tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.add(spaceId, title = "Task 1")
-        repo.add(spaceId, title = "Task 2")
+        repo.addTask(spaceId, title = "Task 1")
+        repo.addTask(spaceId, title = "Task 2")
         assertEquals(2, repo.getAll(spaceId).size)
 
         val result = repo.deleteSpace(spaceId)
@@ -110,9 +110,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         // Create space and add tasks
         val space1 = repo.createSpace("Original Space", "TEST")!!
-        repo.add(space1.id, title = "Task 1")
-        repo.add(space1.id, title = "Task 2")
-        repo.add(space1.id, title = "Task 3")
+        repo.addTask(space1.id, title = "Task 1")
+        repo.addTask(space1.id, title = "Task 2")
+        repo.addTask(space1.id, title = "Task 3")
         assertEquals(3, repo.getAll(space1.id).size)
 
         // Delete the space
@@ -131,8 +131,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         // Create space and add tasks
         val space1 = repo.createSpace("Original Space", "ORIG")!!
-        val task1 = repo.add(space1.id, title = "Task 1")!!
-        val task2 = repo.add(space1.id, title = "Task 2")!!
+        val task1 = repo.addTask(space1.id, title = "Task 1")!!
+        val task2 = repo.addTask(space1.id, title = "Task 2")!!
         val oldTaskIds = listOf(task1.id, task2.id)
 
         // Delete the space
@@ -140,16 +140,16 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         // Old task IDs should not be retrievable
         oldTaskIds.forEach { taskId ->
-            assertNull(repo.getById(taskId))
+            assertNull(repo.getTaskById(taskId))
         }
 
         // Create new space and add tasks
         val space2 = repo.createSpace("New Space", "NEW")!!
-        repo.add(space2.id, title = "New Task")
+        repo.addTask(space2.id, title = "New Task")
 
         // Old task IDs should still not be retrievable
         oldTaskIds.forEach { taskId ->
-            assertNull(repo.getById(taskId))
+            assertNull(repo.getTaskById(taskId))
         }
     }
 
@@ -159,8 +159,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         // Create space with connected tasks
         val space1 = repo.createSpace("Original", "ORIG")!!
-        val parent = repo.add(space1.id, title = "Parent", autoUpdateStatusFromSubtasks = true)!!
-        val child = repo.add(space1.id, title = "Child")!!
+        val parent = repo.addTask(space1.id, title = "Parent", autoUpdateStatusFromSubtasks = true)!!
+        val child = repo.addTask(space1.id, title = "Child")!!
         repo.addConnection(child.id, parent.id, ConnectionType.SubtaskOf)
 
         assertEquals(1, repo.getSubtasks(parent.id).size)
@@ -174,8 +174,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         // No tasks or connections should exist
         assertTrue(repo.getAll(space2.id).isEmpty())
-        assertNull(repo.getById(parent.id))
-        assertNull(repo.getById(child.id))
+        assertNull(repo.getTaskById(parent.id))
+        assertNull(repo.getTaskById(child.id))
     }
 
     @Test
@@ -184,9 +184,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         // Create space with task that has status changes
         val space1 = repo.createSpace("Original", "ORIG")!!
-        val task = repo.add(space1.id, title = "Task")!!
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.InProgress))
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.Done))
+        val task = repo.addTask(space1.id, title = "Task")!!
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.InProgress))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Done))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2)
@@ -199,7 +199,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         // Create new space
         val space2 = repo.createSpace("New", "NEW")!!
-        val newTask = repo.add(space2.id, title = "New Task")!!
+        val newTask = repo.addTask(space2.id, title = "New Task")!!
 
         // New task should have fresh timeline (only initial entry)
         assertEquals(1, repo.getStatusTimeline(newTask.id).size)
@@ -216,23 +216,23 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val space2 = repo.createSpace("Space 2", "TWO")!!
 
         // Create a blocker task in space 1
-        val blocker = repo.add(space1.id, title = "Blocker Task", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(space1.id, title = "Blocker Task", status = TaskStatus.Open)!!
 
         // Create a blocked task in space 2 that is blocked by the task in space 1
-        val blockedTask = repo.add(
+        val blockedTask = repo.addTask(
             space2.id,
             title = "Blocked Task",
             status = TaskStatus.Blocked(setOf(blocker.id))
         )!!
 
         // Verify the task is blocked
-        assertIs<TaskStatus.Blocked>(repo.getById(blockedTask.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blockedTask.id)!!.status)
 
         // Delete space 1 (which contains the blocker)
         repo.deleteSpace(space1.id)
 
         // The task in space 2 should now be unblocked (InProgress)
-        val updatedTask = repo.getById(blockedTask.id)!!
+        val updatedTask = repo.getTaskById(blockedTask.id)!!
         assertEquals(
             TaskStatus.InProgress,
             updatedTask.status,
@@ -250,11 +250,11 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val space3 = repo.createSpace("Space 3", "THREE")!!
 
         // Create blocker tasks in space 1 and space 2
-        val blocker1 = repo.add(space1.id, title = "Blocker 1")!!
-        val blocker2 = repo.add(space2.id, title = "Blocker 2")!!
+        val blocker1 = repo.addTask(space1.id, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(space2.id, title = "Blocker 2")!!
 
         // Create a blocked task in space 3 blocked by both
-        val blockedTask = repo.add(
+        val blockedTask = repo.addTask(
             space3.id,
             title = "Blocked Task",
             status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
@@ -264,7 +264,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.deleteSpace(space1.id)
 
         // Task should still be blocked, but only by blocker2
-        val updatedTask = repo.getById(blockedTask.id)!!
+        val updatedTask = repo.getTaskById(blockedTask.id)!!
         val status = updatedTask.status
         assertIs<TaskStatus.Blocked>(status)
         assertEquals(setOf(blocker2.id), status.blockerTaskIds)
@@ -282,34 +282,34 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     // ==================== Task CRUD Tests ====================
 
     @Test
-    fun `add task with invalid spaceId returns null`() = runTest {
+    fun `addTask with invalid spaceId returns null`() = runTest {
         val repo = createEmptyRepository()
-        val task = repo.add("invalid-space-id", title = "Test")
+        val task = repo.addTask("invalid-space-id", title = "Test")
         assertNull(task)
     }
 
     @Test
-    fun `add task with valid space creates task with correct id format`() = runTest {
+    fun `addTask with valid space creates task with correct id format`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Test Task")
+        val task = repo.addTask(spaceId, title = "Test Task")
         assertNotNull(task)
         assertTrue(task.id.startsWith("TEST-"))
         assertEquals("Test Task", task.title)
     }
 
     @Test
-    fun `add task increments id counter`() = runTest {
+    fun `addTask increments id counter`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")
-        val task2 = repo.add(spaceId, title = "Task 2")
+        val task1 = repo.addTask(spaceId, title = "Task 1")
+        val task2 = repo.addTask(spaceId, title = "Task 2")
         assertEquals("TEST-1", task1?.id)
         assertEquals("TEST-2", task2?.id)
     }
 
     @Test
-    fun `add task with custom id uses custom id`() = runTest {
+    fun `addTask with custom id uses custom id`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Test", customId = "CUSTOM-123")
+        val task = repo.addTask(spaceId, title = "Test", customId = "CUSTOM-123")
         assertEquals("CUSTOM-123", task?.id)
     }
 
@@ -321,22 +321,22 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         assertEquals(peek1, peek2)
         assertEquals("TEST-1", peek1)
 
-        repo.add(spaceId, title = "Task 1")
+        repo.addTask(spaceId, title = "Task 1")
         val peek3 = repo.peekNextId(spaceId)
         assertEquals("TEST-2", peek3)
     }
 
     @Test
-    fun `getById returns null for non-existent task`() = runTest {
+    fun `getTaskById returns null for non-existent task`() = runTest {
         val (repo, _) = createRepositoryWithSpace()
-        assertNull(repo.getById("NON-EXISTENT"))
+        assertNull(repo.getTaskById("NON-EXISTENT"))
     }
 
     @Test
-    fun `getById returns task for existing id`() = runTest {
+    fun `getTaskById returns task for existing id`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Test")!!
-        val retrieved = repo.getById(task.id)
+        val task = repo.addTask(spaceId, title = "Test")!!
+        val retrieved = repo.getTaskById(task.id)
         assertEquals(task.id, retrieved?.id)
         assertEquals(task.title, retrieved?.title)
     }
@@ -347,9 +347,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val space1 = repo.createSpace("Space 1", "ONE")!!
         val space2 = repo.createSpace("Space 2", "TWO")!!
 
-        repo.add(space1.id, title = "Task in Space 1")
-        repo.add(space2.id, title = "Task in Space 2")
-        repo.add(space2.id, title = "Another in Space 2")
+        repo.addTask(space1.id, title = "Task in Space 1")
+        repo.addTask(space2.id, title = "Task in Space 2")
+        repo.addTask(space2.id, title = "Another in Space 2")
 
         assertEquals(2, repo.getAll(space2.id).size)
         assertTrue(repo.getAll(space2.id).all { it.id.startsWith("TWO-") })
@@ -357,23 +357,11 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     }
 
     @Test
-    fun `getAllExcept excludes specified task`() = runTest {
+    fun `updateTask modifies task`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        repo.add(spaceId, title = "Task 2")
-        repo.add(spaceId, title = "Task 3")
-
-        val result = repo.getAllExcept(spaceId, task1.id)
-        assertEquals(2, result.size)
-        assertFalse(result.any { it.id == task1.id })
-    }
-
-    @Test
-    fun `update task modifies task`() = runTest {
-        val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Original")!!
+        val task = repo.addTask(spaceId, title = "Original")!!
         val updated = task.copy(title = "Updated", description = "New description")
-        val result = repo.update(updated)
+        val result = repo.updateTask(updated)
 
         assertNotNull(result)
         assertEquals("Updated", result.title)
@@ -384,21 +372,21 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     fun `update non-existent task returns null`() = runTest {
         val (repo, _) = createRepositoryWithSpace()
         val fakeTask = Task(id = "FAKE-1", title = "Fake", spaceId = "fake")
-        assertNull(repo.update(fakeTask))
+        assertNull(repo.updateTask(fakeTask))
     }
 
     @Test
-    fun `delete removes task`() = runTest {
+    fun `deleteTask removes task`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Test")!!
-        assertTrue(repo.delete(task.id))
-        assertNull(repo.getById(task.id))
+        val task = repo.addTask(spaceId, title = "Test")!!
+        assertTrue(repo.deleteTask(task.id))
+        assertNull(repo.getTaskById(task.id))
     }
 
     @Test
     fun `delete non-existent task returns false`() = runTest {
         val (repo, _) = createRepositoryWithSpace()
-        assertFalse(repo.delete("NON-EXISTENT"))
+        assertFalse(repo.deleteTask("NON-EXISTENT"))
     }
 
     // ==================== Task Status Tests ====================
@@ -406,17 +394,17 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `updateStatus changes task status`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Test", status = TaskStatus.Open)!!
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.InProgress))
-        assertEquals(TaskStatus.InProgress, repo.getById(task.id)?.status)
+        val task = repo.addTask(spaceId, title = "Test", status = TaskStatus.Open)!!
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.InProgress))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(task.id)?.status)
     }
 
     @Test
     fun `updateStatus records status change in timeline`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Test", status = TaskStatus.Open)!!
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.InProgress))
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.Done))
+        val task = repo.addTask(spaceId, title = "Test", status = TaskStatus.Open)!!
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.InProgress))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Done))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertEquals(3, timeline.size) // Initial + 2 changes
@@ -426,9 +414,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     }
 
     @Test
-    fun `update on non-existent task returns null`() = runTest {
+    fun `updateTask on non-existent task returns null`() = runTest {
         val (repo, _) = createRepositoryWithSpace()
-        val nonExistent = repo.getById("NON-EXISTENT")
+        val nonExistent = repo.getTaskById("NON-EXISTENT")
         assertNull(nonExistent)
         // Can't call update on null, so just verify getById returns null
     }
@@ -438,9 +426,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getAllTags returns all unique tags across tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.add(spaceId, title = "Task 1", tags = setOf("tag1", "tag2"))
-        repo.add(spaceId, title = "Task 2", tags = setOf("tag2", "tag3"))
-        repo.add(spaceId, title = "Task 3", tags = setOf("tag1", "tag3", "tag4"))
+        repo.addTask(spaceId, title = "Task 1", tags = setOf("tag1", "tag2"))
+        repo.addTask(spaceId, title = "Task 2", tags = setOf("tag2", "tag3"))
+        repo.addTask(spaceId, title = "Task 3", tags = setOf("tag1", "tag3", "tag4"))
 
         val allTags = repo.getAllTags()
         assertEquals(setOf("tag1", "tag2", "tag3", "tag4"), allTags)
@@ -528,7 +516,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         repo.addTag("predefinedTag")
 
-        val task = repo.add(spaceId, title = "Task", tags = setOf("predefinedTag", "newTag"))!!
+        val task = repo.addTask(spaceId, title = "Task", tags = setOf("predefinedTag", "newTag"))!!
         assertEquals(setOf("predefinedTag", "newTag"), task.tags)
         assertEquals(setOf("predefinedTag", "newTag"), repo.getAllTags())
     }
@@ -536,13 +524,13 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `deleteTag does not remove tag from existing tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Task", tags = setOf("tag1", "tag2"))!!
+        val task = repo.addTask(spaceId, title = "Task", tags = setOf("tag1", "tag2"))!!
 
         repo.deleteTag("tag1")
 
         // Tag is removed from allTags but task still has it
         assertEquals(setOf("tag2"), repo.getAllTags())
-        val updatedTask = repo.getById(task.id)!!
+        val updatedTask = repo.getTaskById(task.id)!!
         assertEquals(setOf("tag1", "tag2"), updatedTask.tags)
     }
 
@@ -627,13 +615,13 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `addConnection creates symmetric connection`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
 
-        val task1Updated = repo.getById(task1.id)!!
-        val task2Updated = repo.getById(task2.id)!!
+        val task1Updated = repo.getTaskById(task1.id)!!
+        val task2Updated = repo.getTaskById(task2.id)!!
 
         assertTrue(task1Updated.connections.any {
             it.targetTaskId == task2.id && it.type == ConnectionType.DependsOn
@@ -646,12 +634,12 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `addConnection with SubtaskOf creates ParentOf symmetric`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(spaceId, title = "Parent")!!
-        val child = repo.add(spaceId, title = "Child")!!
+        val parent = repo.addTask(spaceId, title = "Parent")!!
+        val child = repo.addTask(spaceId, title = "Child")!!
 
         repo.addConnection(child.id, parent.id, ConnectionType.SubtaskOf)
 
-        val parentUpdated = repo.getById(parent.id)!!
+        val parentUpdated = repo.getTaskById(parent.id)!!
         assertTrue(parentUpdated.connections.any {
             it.targetTaskId == child.id && it.type == ConnectionType.ParentOf
         })
@@ -660,12 +648,12 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `addConnection with RelatesTo creates symmetric RelatesTo`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.RelatesTo)
 
-        val task2Updated = repo.getById(task2.id)!!
+        val task2Updated = repo.getTaskById(task2.id)!!
         assertTrue(task2Updated.connections.any {
             it.targetTaskId == task1.id && it.type == ConnectionType.RelatesTo
         })
@@ -674,21 +662,21 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `addConnection to non-existent task returns false`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Task")!!
+        val task = repo.addTask(spaceId, title = "Task")!!
         assertFalse(repo.addConnection(task.id, "NON-EXISTENT", ConnectionType.DependsOn))
     }
 
     @Test
     fun `removeConnection removes symmetric connection`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
         repo.removeConnection(task1.id, task2.id, ConnectionType.DependsOn)
 
-        val task1Updated = repo.getById(task1.id)!!
-        val task2Updated = repo.getById(task2.id)!!
+        val task1Updated = repo.getTaskById(task1.id)!!
+        val task2Updated = repo.getTaskById(task2.id)!!
 
         assertFalse(task1Updated.connections.any { it.targetTaskId == task2.id })
         assertFalse(task2Updated.connections.any { it.targetTaskId == task1.id })
@@ -697,9 +685,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getDependencies returns tasks this task depends on`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
-        val task3 = repo.add(spaceId, title = "Task 3")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
         repo.addConnection(task1.id, task3.id, ConnectionType.DependsOn)
@@ -713,9 +701,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getDependents returns tasks that depend on this task`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
-        val dependent1 = repo.add(spaceId, title = "Dependent 1")!!
-        val dependent2 = repo.add(spaceId, title = "Dependent 2")!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
+        val dependent1 = repo.addTask(spaceId, title = "Dependent 1")!!
+        val dependent2 = repo.addTask(spaceId, title = "Dependent 2")!!
 
         repo.addConnection(dependent1.id, blocker.id, ConnectionType.DependsOn)
         repo.addConnection(dependent2.id, blocker.id, ConnectionType.DependsOn)
@@ -727,9 +715,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getSubtasks returns all subtasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(spaceId, title = "Parent")!!
-        val child1 = repo.add(spaceId, title = "Child 1")!!
-        val child2 = repo.add(spaceId, title = "Child 2")!!
+        val parent = repo.addTask(spaceId, title = "Parent")!!
+        val child1 = repo.addTask(spaceId, title = "Child 1")!!
+        val child2 = repo.addTask(spaceId, title = "Child 2")!!
 
         repo.addConnection(child1.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(child2.id, parent.id, ConnectionType.SubtaskOf)
@@ -741,9 +729,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getParentTasks returns all parent tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent1 = repo.add(spaceId, title = "Parent 1")!!
-        val parent2 = repo.add(spaceId, title = "Parent 2")!!
-        val child = repo.add(spaceId, title = "Child")!!
+        val parent1 = repo.addTask(spaceId, title = "Parent 1")!!
+        val parent2 = repo.addTask(spaceId, title = "Parent 2")!!
+        val child = repo.addTask(spaceId, title = "Child")!!
 
         repo.addConnection(child.id, parent1.id, ConnectionType.SubtaskOf)
         repo.addConnection(child.id, parent2.id, ConnectionType.SubtaskOf)
@@ -753,15 +741,15 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     }
 
     @Test
-    fun `delete task removes connections from other tasks`() = runTest {
+    fun `deleteTask removes connections from other tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
-        repo.delete(task1.id)
+        repo.deleteTask(task1.id)
 
-        val task2Updated = repo.getById(task2.id)!!
+        val task2Updated = repo.getTaskById(task2.id)!!
         assertTrue(task2Updated.connections.isEmpty())
     }
 
@@ -770,8 +758,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `wouldCreateCycle detects direct cycle in DependsOn`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
 
@@ -782,9 +770,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `wouldCreateCycle detects indirect cycle in DependsOn`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
-        val task3 = repo.add(spaceId, title = "Task 3")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
         repo.addConnection(task2.id, task3.id, ConnectionType.DependsOn)
@@ -796,9 +784,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `wouldCreateCycle allows non-cyclic DependsOn`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
-        val task3 = repo.add(spaceId, title = "Task 3")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
 
@@ -809,7 +797,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `wouldCreateCycle detects self-reference`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Task")!!
+        val task = repo.addTask(spaceId, title = "Task")!!
 
         assertTrue(repo.wouldCreateCycle(task.id, task.id, ConnectionType.DependsOn))
     }
@@ -817,8 +805,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `wouldCreateCycle allows RelatesTo connections`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.RelatesTo)
 
@@ -829,8 +817,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `wouldCreateCycle detects cycle in SubtaskOf`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.SubtaskOf)
 
@@ -841,9 +829,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `wouldCreateCycle with uncommitted connections`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
-        val task3 = repo.add(spaceId, title = "Task 3")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
 
         // Existing: task1 depends on task2 (task1 -> task2 in dependency direction)
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
@@ -861,51 +849,51 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `blocked task unblocks when all blockers are Done`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
-        val blocked = repo.add(
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
             status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
         )!!
 
-        repo.update(repo.getById(blocker1.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Done))
         // Still blocked because blocker2 is not done
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
-        repo.update(repo.getById(blocker2.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(blocker2.id)!!.copy(status = TaskStatus.Done))
         // Now should be unblocked (InProgress)
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
     }
 
     @Test
     fun `blocked task unblocks when blockers are Declined`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
-        val blocked = repo.add(
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
             status = TaskStatus.Blocked(setOf(blocker.id))
         )!!
 
-        repo.update(repo.getById(blocker.id)!!.copy(status = TaskStatus.Declined("Not needed")))
-        assertEquals(TaskStatus.InProgress, repo.getById(blocked.id)!!.status)
+        repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Declined("Not needed")))
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
     }
 
     @Test
     fun `blocked task stays blocked when blocker is still Open`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
-        val blocked = repo.add(
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
+        val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
             status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
         )!!
 
-        repo.update(repo.getById(blocker1.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Done))
         // blocker2 is still Open, so blocked task stays blocked
-        assertIs<TaskStatus.Blocked>(repo.getById(blocked.id)!!.status)
+        assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
     }
 
     // ==================== Total Priority/DueDate Tests ====================
@@ -914,12 +902,12 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     fun `totalDueDate considers dependent tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
-        val blocker = repo.add(spaceId, title = "Blocker", dueDate = now + 7.days)!!
-        val dependent = repo.add(spaceId, title = "Dependent", dueDate = now + 3.days)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", dueDate = now + 7.days)!!
+        val dependent = repo.addTask(spaceId, title = "Dependent", dueDate = now + 3.days)!!
 
         repo.addConnection(dependent.id, blocker.id, ConnectionType.DependsOn)
 
-        val blockerWithTotals = repo.getByIdWithTotals(blocker.id)!!
+        val blockerWithTotals = repo.getTasksByIdWithTotals(blocker.id)!!
         // Blocker's total due date should be the closer one (3 days from now)
         assertEquals(dependent.dueDate, blockerWithTotals.totalDueDate)
     }
@@ -927,21 +915,21 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `totalPriority considers dependent tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker", priority = Priority.LOW)!!
-        val dependent = repo.add(spaceId, title = "Dependent", priority = Priority.HIGH)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker", priority = Priority.LOW)!!
+        val dependent = repo.addTask(spaceId, title = "Dependent", priority = Priority.HIGH)!!
 
         repo.addConnection(dependent.id, blocker.id, ConnectionType.DependsOn)
 
-        val blockerWithTotals = repo.getByIdWithTotals(blocker.id)!!
+        val blockerWithTotals = repo.getTasksByIdWithTotals(blocker.id)!!
         assertEquals(Priority.HIGH, blockerWithTotals.totalPriority)
     }
 
     @Test
     fun `totalPriority with no dependencies returns own priority`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Task", priority = Priority.MEDIUM)!!
+        val task = repo.addTask(spaceId, title = "Task", priority = Priority.MEDIUM)!!
 
-        val taskWithTotals = repo.getByIdWithTotals(task.id)!!
+        val taskWithTotals = repo.getTasksByIdWithTotals(task.id)!!
         assertEquals(Priority.MEDIUM, taskWithTotals.totalPriority)
     }
 
@@ -972,10 +960,10 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        val blocker = repo.add(spaceId, title = "Blocker", dueDate = null)!!
-        val dep1 = repo.add(spaceId, title = "Dependent 1", dueDate = now + 10.days)!!
-        val dep2 = repo.add(spaceId, title = "Dependent 2", dueDate = now + 10.days)!!
-        val sharedBlocked = repo.add(
+        val blocker = repo.addTask(spaceId, title = "Blocker", dueDate = null)!!
+        val dep1 = repo.addTask(spaceId, title = "Dependent 1", dueDate = now + 10.days)!!
+        val dep2 = repo.addTask(spaceId, title = "Dependent 2", dueDate = now + 10.days)!!
+        val sharedBlocked = repo.addTask(
             spaceId,
             title = "Shared Blocked",
             status = TaskStatus.Blocked(setOf(dep1.id, dep2.id)),
@@ -986,7 +974,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.addConnection(dep1.id, blocker.id, ConnectionType.DependsOn)
         repo.addConnection(dep2.id, blocker.id, ConnectionType.DependsOn)
 
-        val blockerWithTotals = repo.getByIdWithTotals(blocker.id)!!
+        val blockerWithTotals = repo.getTasksByIdWithTotals(blocker.id)!!
 
         // blocker's total due date should be the earliest: sharedBlocked's due date (2 days)
         // This should be reached through BOTH dep1 and dep2 paths
@@ -1014,10 +1002,10 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.add(spaceId, title = "Blocker", priority = Priority.LOW)!!
-        val dep1 = repo.add(spaceId, title = "Dependent 1", priority = Priority.MEDIUM)!!
-        val dep2 = repo.add(spaceId, title = "Dependent 2", priority = Priority.MEDIUM)!!
-        val sharedBlocked = repo.add(
+        val blocker = repo.addTask(spaceId, title = "Blocker", priority = Priority.LOW)!!
+        val dep1 = repo.addTask(spaceId, title = "Dependent 1", priority = Priority.MEDIUM)!!
+        val dep2 = repo.addTask(spaceId, title = "Dependent 2", priority = Priority.MEDIUM)!!
+        val sharedBlocked = repo.addTask(
             spaceId,
             title = "Shared Blocked",
             status = TaskStatus.Blocked(setOf(dep1.id, dep2.id)),
@@ -1027,7 +1015,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.addConnection(dep1.id, blocker.id, ConnectionType.DependsOn)
         repo.addConnection(dep2.id, blocker.id, ConnectionType.DependsOn)
 
-        val blockerWithTotals = repo.getByIdWithTotals(blocker.id)!!
+        val blockerWithTotals = repo.getTasksByIdWithTotals(blocker.id)!!
 
         // blocker's total priority should be HIGH (from sharedBlocked)
         assertEquals(Priority.HIGH, blockerWithTotals.totalPriority)
@@ -1062,10 +1050,10 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        val root = repo.add(spaceId, title = "Root", dueDate = null)!!
-        val left = repo.add(spaceId, title = "Left", dueDate = now + 5.days)!!
-        val right = repo.add(spaceId, title = "Right", dueDate = now + 5.days)!!
-        val bottom = repo.add(spaceId, title = "Bottom", dueDate = now + 1.days)!!
+        val root = repo.addTask(spaceId, title = "Root", dueDate = null)!!
+        val left = repo.addTask(spaceId, title = "Left", dueDate = now + 5.days)!!
+        val right = repo.addTask(spaceId, title = "Right", dueDate = now + 5.days)!!
+        val bottom = repo.addTask(spaceId, title = "Bottom", dueDate = now + 1.days)!!
 
         // root is dependency of both left and right (IsDependencyOf connections from root to left/right)
         repo.addConnection(left.id, root.id, ConnectionType.DependsOn)
@@ -1083,7 +1071,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         //
         // The traversal should find bottom's due date through BOTH paths
 
-        val rootWithTotals = repo.getByIdWithTotals(root.id)!!
+        val rootWithTotals = repo.getTasksByIdWithTotals(root.id)!!
 
         // root's total due date should be bottom's due date (1 day) - the earliest
         assertEquals(bottom.dueDate, rootWithTotals.totalDueDate)
@@ -1095,17 +1083,17 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val root = repo.add(spaceId, title = "Root", priority = Priority.LOW)!!
-        val left = repo.add(spaceId, title = "Left", priority = Priority.MEDIUM)!!
-        val right = repo.add(spaceId, title = "Right", priority = Priority.MEDIUM)!!
-        val bottom = repo.add(spaceId, title = "Bottom", priority = Priority.HIGH)!!
+        val root = repo.addTask(spaceId, title = "Root", priority = Priority.LOW)!!
+        val left = repo.addTask(spaceId, title = "Left", priority = Priority.MEDIUM)!!
+        val right = repo.addTask(spaceId, title = "Right", priority = Priority.MEDIUM)!!
+        val bottom = repo.addTask(spaceId, title = "Bottom", priority = Priority.HIGH)!!
 
         repo.addConnection(left.id, root.id, ConnectionType.DependsOn)
         repo.addConnection(right.id, root.id, ConnectionType.DependsOn)
         repo.addConnection(bottom.id, left.id, ConnectionType.DependsOn)
         repo.addConnection(bottom.id, right.id, ConnectionType.DependsOn)
 
-        val rootWithTotals = repo.getByIdWithTotals(root.id)!!
+        val rootWithTotals = repo.getTasksByIdWithTotals(root.id)!!
 
         // root's total priority should be HIGH (from bottom)
         assertEquals(Priority.HIGH, rootWithTotals.totalPriority)
@@ -1116,8 +1104,8 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `exportSpaceToJson and importSpaceFromJson roundtrip`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1", tags = setOf("tag1"))!!
-        val task2 = repo.add(spaceId, title = "Task 2", priority = Priority.HIGH)!!
+        val task1 = repo.addTask(spaceId, title = "Task 1", tags = setOf("tag1"))!!
+        val task2 = repo.addTask(spaceId, title = "Task 2", priority = Priority.HIGH)!!
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
 
         val json = repo.exportSpaceToJson(spaceId)

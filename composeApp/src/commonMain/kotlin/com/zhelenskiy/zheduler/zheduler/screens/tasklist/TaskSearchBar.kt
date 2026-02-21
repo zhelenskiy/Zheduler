@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
-import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
 import kotlin.time.ExperimentalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -203,10 +202,10 @@ private fun buildFilterChips(filterState: TaskFilterState): List<Pair<String, St
             val maxPeriod = maxStr?.let { parseCompactTimeToPeriod(it) }
 
             when {
-                minPeriod != null && maxPeriod != null && minStr == maxStr -> "Time: ${formatPeriod(minPeriod)}"
-                minPeriod != null && maxPeriod != null -> "Time: ${formatPeriod(minPeriod)}-${formatPeriod(maxPeriod)}"
-                minPeriod != null -> "Time: ≥${formatPeriod(minPeriod)}"
-                maxPeriod != null -> "Time: ≤${formatPeriod(maxPeriod)}"
+                minPeriod != null && maxPeriod != null && minStr == maxStr -> "Time: ${minPeriod.toBriefString()}"
+                minPeriod != null && maxPeriod != null -> "Time: ${minPeriod.toBriefString()}-${maxPeriod.toBriefString()}"
+                minPeriod != null -> "Time: ≥${minPeriod.toBriefString()}"
+                maxPeriod != null -> "Time: ≤${maxPeriod.toBriefString()}"
                 else -> "Time: Custom"
             }
         } else {

@@ -424,7 +424,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     fun `processRecurrenceTrigger does not change dueDate but resets status`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val originalDueDate = instant(2024, 1, 15, 9, 0)
-        val task = repo.add(
+        val task = repo.addTask(
             spaceId = spaceId,
             title = "Recurring task",
             status = TaskStatus.Done,
@@ -452,7 +452,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     fun `processRecurrenceTrigger does not change dueDate but resets status when recurrence ends`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val originalDueDate = instant(2024, 1, 15, 9, 0)
-        var task = repo.add(
+        var task = repo.addTask(
             spaceId = spaceId,
             title = "Recurring task",
             status = TaskStatus.Done,
@@ -466,7 +466,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             resetStatusOnRecurrence = TaskStatus.Open
         )!!
         // Manually set occurrence count to simulate that the task has already occurred once
-        task = repo.update(task.copy(recurrenceState = RecurrenceState(occurrenceCount = 1)))!!
+        task = repo.updateTask(task.copy(recurrenceState = RecurrenceState(occurrenceCount = 1)))!!
 
         val updated = repo.processRecurrenceTrigger(
             task.id,

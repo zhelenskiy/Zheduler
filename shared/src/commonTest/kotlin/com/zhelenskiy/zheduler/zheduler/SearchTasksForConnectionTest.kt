@@ -24,9 +24,9 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "First Task")!!
-        val task2 = repo.add(space.id, "Second Task")!!
-        val task3 = repo.add(space.id, "Third Task")!!
+        val task1 = repo.addTask(space.id, "First Task")!!
+        val task2 = repo.addTask(space.id, "Second Task")!!
+        val task3 = repo.addTask(space.id, "Third Task")!!
 
         val results = repo.searchTasksForConnection(space.id, task1.id, "", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -41,8 +41,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Task One")!!
-        val task2 = repo.add(space.id, "Task Two")!!
+        val task1 = repo.addTask(space.id, "Task One")!!
+        val task2 = repo.addTask(space.id, "Task Two")!!
 
         val results = repo.searchTasksForConnection(space.id, task1.id, "Task", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -57,9 +57,9 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "First Task")!!
-        val task2 = repo.add(space.id, "Second Task")!!
-        repo.add(space.id, "Third Task")
+        val task1 = repo.addTask(space.id, "First Task")!!
+        val task2 = repo.addTask(space.id, "Second Task")!!
+        repo.addTask(space.id, "Third Task")
 
         // Search by part of task1's ID
         val idPart = task1.id.substring(0, 5)
@@ -74,8 +74,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "First Task")!!
-        val task2 = repo.add(space.id, "Second Task")!!
+        val task1 = repo.addTask(space.id, "First Task")!!
+        val task2 = repo.addTask(space.id, "Second Task")!!
 
         // Search with lowercase version of ID
         val results = repo.searchTasksForConnection(space.id, task2.id, task1.id.lowercase(), emptySet(), ConnectionType.RelatesTo, emptySet())
@@ -91,9 +91,9 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Important Meeting")!!
-        repo.add(space.id, "Code Review")
-        val task3 = repo.add(space.id, "Another Meeting")!!
+        val task1 = repo.addTask(space.id, "Important Meeting")!!
+        repo.addTask(space.id, "Code Review")
+        val task3 = repo.addTask(space.id, "Another Meeting")!!
 
         val results = repo.searchTasksForConnection(space.id, task3.id, "Meeting", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -106,8 +106,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Important MEETING")!!
-        val task2 = repo.add(space.id, "Code Review")!!
+        val task1 = repo.addTask(space.id, "Important MEETING")!!
+        val task2 = repo.addTask(space.id, "Code Review")!!
 
         val results = repo.searchTasksForConnection(space.id, task2.id, "meeting", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -120,8 +120,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Review Pull Request")!!
-        val task2 = repo.add(space.id, "Write Documentation")!!
+        val task1 = repo.addTask(space.id, "Review Pull Request")!!
+        val task2 = repo.addTask(space.id, "Write Documentation")!!
 
         val results = repo.searchTasksForConnection(space.id, task2.id, "Pull", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -136,9 +136,9 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Review Code")!!
-        val task2 = repo.add(space.id, "Fix Bug")!!
-        val task3 = repo.add(space.id, "Other Task")!!
+        val task1 = repo.addTask(space.id, "Review Code")!!
+        val task2 = repo.addTask(space.id, "Fix Bug")!!
+        val task3 = repo.addTask(space.id, "Other Task")!!
 
         // Search for "TST" which appears in IDs
         val results = repo.searchTasksForConnection(space.id, task3.id, "TST", emptySet(), ConnectionType.RelatesTo, emptySet())
@@ -156,10 +156,10 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "First Task")!!
-        val task2 = repo.add(space.id, "Second Task")!!
-        val task3 = repo.add(space.id, "Third Task")!!
-        val task4 = repo.add(space.id, "Fourth Task")!!
+        val task1 = repo.addTask(space.id, "First Task")!!
+        val task2 = repo.addTask(space.id, "Second Task")!!
+        val task3 = repo.addTask(space.id, "Third Task")!!
+        val task4 = repo.addTask(space.id, "Fourth Task")!!
 
         // Exclude task2 and task3
         val excludeIds = setOf(task2.id, task3.id)
@@ -174,9 +174,9 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Important Meeting")!!
-        val task2 = repo.add(space.id, "Another Meeting")!!
-        val task3 = repo.add(space.id, "Code Review")!!
+        val task1 = repo.addTask(space.id, "Important Meeting")!!
+        val task2 = repo.addTask(space.id, "Another Meeting")!!
+        val task3 = repo.addTask(space.id, "Code Review")!!
 
         // Search for "Meeting" but exclude task2
         val results = repo.searchTasksForConnection(space.id, task3.id, "Meeting", setOf(task2.id), ConnectionType.RelatesTo, emptySet())
@@ -193,9 +193,9 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val space1 = repo.createSpace("Space One", "SPA")!!
         val space2 = repo.createSpace("Space Two", "SPB")!!
 
-        val task1 = repo.add(space1.id, "Task in Space 1")!!
-        val task2 = repo.add(space2.id, "Task in Space 2")!!
-        val task3 = repo.add(space1.id, "Another Task in Space 1")!!
+        val task1 = repo.addTask(space1.id, "Task in Space 1")!!
+        val task2 = repo.addTask(space2.id, "Task in Space 2")!!
+        val task3 = repo.addTask(space1.id, "Another Task in Space 1")!!
 
         val results = repo.searchTasksForConnection(space1.id, task1.id, "", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -211,8 +211,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "First Task")!!
-        repo.add(space.id, "Second Task")
+        val task1 = repo.addTask(space.id, "First Task")!!
+        repo.addTask(space.id, "Second Task")
 
         val results = repo.searchTasksForConnection(space.id, task1.id, "NonExistentQuery", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -224,8 +224,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "First Task")!!
-        val task2 = repo.add(space.id, "Second Task")!!
+        val task1 = repo.addTask(space.id, "First Task")!!
+        val task2 = repo.addTask(space.id, "Second Task")!!
 
         // Exclude task2, and task1 is the current task
         val results = repo.searchTasksForConnection(space.id, task1.id, "", setOf(task2.id), ConnectionType.RelatesTo, emptySet())
@@ -240,8 +240,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Task: Important!")!!
-        val task2 = repo.add(space.id, "Normal Task")!!
+        val task1 = repo.addTask(space.id, "Task: Important!")!!
+        val task2 = repo.addTask(space.id, "Normal Task")!!
 
         val results = repo.searchTasksForConnection(space.id, task2.id, "Important!", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -256,8 +256,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Apple Task")!!
-        val task2 = repo.add(space.id, "Banana Task")!!
+        val task1 = repo.addTask(space.id, "Apple Task")!!
+        val task2 = repo.addTask(space.id, "Banana Task")!!
 
         val results = repo.searchTasksForConnection(space.id, task2.id, "A", emptySet(), ConnectionType.RelatesTo, emptySet())
 
@@ -270,8 +270,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Test", "TST")!!
 
-        val task1 = repo.add(space.id, "Task One")!!
-        val task2 = repo.add(space.id, "Task Two", connections = setOf(TaskConnection(task1.id, ConnectionType.RelatesTo)))!!
+        val task1 = repo.addTask(space.id, "Task One")!!
+        val task2 = repo.addTask(space.id, "Task Two", connections = setOf(TaskConnection(task1.id, ConnectionType.RelatesTo)))!!
 
         val results = repo.searchTasksForConnection(space.id, task1.id, "", emptySet(), ConnectionType.RelatesTo, emptySet())
 

@@ -20,7 +20,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         val taskIds = withContext(dispatcher) {
             (1..numTasks).map { i ->
                 async {
-                    repo.add(
+                    repo.addTask(
                         spaceId = spaceId,
                         title = "Task $i",
                         description = "Description $i",
@@ -68,7 +68,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
     @Test
     fun `concurrent updates to same task should not lose data`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(
+        val task = repo.addTask(
             spaceId = spaceId,
             title = "Original",
             description = "Original Description",
@@ -82,14 +82,14 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         withContext(dispatcher) {
             (1..numUpdates).map { i ->
                 async {
-                    val currentTask = repo.getById(task.id)!!
-                    repo.update(currentTask.copy(title = "Update $i"))
+                    val currentTask = repo.getTaskById(task.id)!!
+                    repo.updateTask(currentTask.copy(title = "Update $i"))
                 }
             }.awaitAll()
         }
 
         // Task should still exist and have one of the titles
-        val finalTask = repo.getById(task.id)
+        val finalTask = repo.getTaskById(task.id)
         assertNotNull(finalTask)
         assertTrue(finalTask.title.startsWith("Update ") || finalTask.title == "Original")
     }
@@ -97,7 +97,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
     @Test
     fun `concurrent status updates should maintain consistency`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(
+        val task = repo.addTask(
             spaceId = spaceId,
             title = "Task",
             description = "Description",
@@ -116,14 +116,14 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
             statuses.flatMap { status ->
                 (1..10).map {
                     async {
-                        repo.update(repo.getById(task.id)!!.copy(status = status))
+                        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = status))
                     }
                 }
             }.awaitAll()
         }
 
         // Task should still exist with a valid status
-        val finalTask = repo.getById(task.id)
+        val finalTask = repo.getTaskById(task.id)
         assertNotNull(finalTask)
         assertTrue(finalTask.status in statuses)
     }
@@ -131,8 +131,8 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
     @Test
     fun `concurrent connection additions should not create duplicates`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId = spaceId, title = "Task 1", description = "", status = TaskStatus.Open)!!
-        val task2 = repo.add(spaceId = spaceId, title = "Task 2", description = "", status = TaskStatus.Open)!!
+        val task1 = repo.addTask(spaceId = spaceId, title = "Task 1", description = "", status = TaskStatus.Open)!!
+        val task2 = repo.addTask(spaceId = spaceId, title = "Task 2", description = "", status = TaskStatus.Open)!!
 
         val numAttempts = 50
         val dispatcher = Dispatchers.Default
@@ -150,7 +150,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         assertTrue(results.all { it }, "All connection additions should succeed")
 
         // But only one connection should exist
-        val task1Updated = repo.getById(task1.id)!!
+        val task1Updated = repo.getTaskById(task1.id)!!
         val dependsOnConnections = task1Updated.connections.filter { it.type == ConnectionType.DependsOn }
         assertEquals(1, dependsOnConnections.size, "Only one DependsOn connection should exist")
     }
@@ -158,7 +158,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
     @Test
     fun `concurrent deletes should not cause errors`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(
+        val task = repo.addTask(
             spaceId = spaceId,
             title = "Task to delete",
             description = "",
@@ -172,7 +172,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         val results = withContext(dispatcher) {
             (1..numAttempts).map {
                 async {
-                    repo.delete(task.id)
+                    repo.deleteTask(task.id)
                 }
             }.awaitAll()
         }
@@ -182,25 +182,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         assertEquals(1, successCount, "Only one delete should succeed")
 
         // Task should be gone
-        assertNull(repo.getById(task.id))
-    }
-
-    @Test
-    fun `concurrent generateNextId calls should produce unique IDs`() = runTest {
-        val (repo, spaceId) = createRepositoryWithSpace()
-        val numIds = 100
-        val dispatcher = Dispatchers.Default
-
-        val ids = withContext(dispatcher) {
-            (1..numIds).map {
-                async {
-                    repo.generateNextId(spaceId)
-                }
-            }.awaitAll()
-        }
-
-        // All IDs should be unique
-        assertEquals(numIds, ids.toSet().size, "All generated IDs should be unique")
+        assertNull(repo.getTaskById(task.id))
     }
 
     @Test
@@ -210,7 +192,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
 
         // Create some initial tasks
         repeat(10) { i ->
-            repo.add(spaceId = spaceId, title = "Task $i", description = "", status = TaskStatus.Open)
+            repo.addTask(spaceId = spaceId, title = "Task $i", description = "", status = TaskStatus.Open)
         }
 
         // Perform concurrent reads and writes
@@ -220,7 +202,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
             // Writers - add new tasks
             repeat(20) { i ->
                 jobs.add(async {
-                    repo.add(spaceId = spaceId, title = "New Task $i", description = "", status = TaskStatus.Open)
+                    repo.addTask(spaceId = spaceId, title = "New Task $i", description = "", status = TaskStatus.Open)
                 })
             }
 
@@ -237,7 +219,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
                     val tasks = repo.getAll(spaceId)
                     if (tasks.isNotEmpty()) {
                         val randomTask = tasks.random()
-                        repo.update(repo.getById(randomTask.id)!!.copy(status = TaskStatus.InProgress))
+                        repo.updateTask(repo.getTaskById(randomTask.id)!!.copy(status = TaskStatus.InProgress))
                     }
                 })
             }
@@ -264,7 +246,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
 
         // Add some tasks to the space
         repeat(5) { i ->
-            repo.add(spaceId = space.id, title = "Task $i", description = "", status = TaskStatus.Open)
+            repo.addTask(spaceId = space.id, title = "Task $i", description = "", status = TaskStatus.Open)
         }
 
         val numAttempts = 20

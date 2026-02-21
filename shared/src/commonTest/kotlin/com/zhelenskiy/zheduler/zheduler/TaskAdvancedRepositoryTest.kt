@@ -30,8 +30,8 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `exportSpaceToJson returns valid JSON`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.add(spaceId, title = "Task 1", tags = setOf("tag1", "tag2"))
-        repo.add(spaceId, title = "Task 2", priority = Priority.HIGH)
+        repo.addTask(spaceId, title = "Task 1", tags = setOf("tag1", "tag2"))
+        repo.addTask(spaceId, title = "Task 2", priority = Priority.HIGH)
 
         val json = repo.exportSpaceToJson(spaceId)
 
@@ -44,7 +44,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `exportSpaceToJson with prettyPrint formats nicely`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.add(spaceId, title = "Task")
+        repo.addTask(spaceId, title = "Task")
 
         val compactJson = repo.exportSpaceToJson(spaceId, prettyPrint = false)
         val prettyJson = repo.exportSpaceToJson(spaceId, prettyPrint = true)
@@ -69,7 +69,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val repo = createEmptyRepository()
         val space = repo.createSpace("Other", "OTHER")!!
         val spaceId = space.id
-        repo.add(spaceId, title = "Original Task")
+        repo.addTask(spaceId, title = "Original Task")
 
         val json = repo.exportSpaceToJson(spaceId)!!
 
@@ -85,8 +85,8 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `importSpaceFromJson preserves task connections`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Parent")!!
-        val task2 = repo.add(spaceId, title = "Child")!!
+        val task1 = repo.addTask(spaceId, title = "Parent")!!
+        val task2 = repo.addTask(spaceId, title = "Child")!!
         repo.addConnection(task2.id, task1.id, ConnectionType.SubtaskOf)
 
         val json = repo.exportSpaceToJson(spaceId)!!
@@ -106,9 +106,9 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `importSpaceFromJson preserves status timeline`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Task")!!
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.InProgress))
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.Done))
+        val task = repo.addTask(spaceId, title = "Task")!!
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.InProgress))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Done))
 
         val json = repo.exportSpaceToJson(spaceId)!!
 
@@ -124,8 +124,8 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `importSpaceFromJson remaps blocked status blocker IDs`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
-        repo.add(spaceId, title = "Blocked", status = TaskStatus.Blocked(setOf(blocker.id)))
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
+        repo.addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(setOf(blocker.id)))
 
         val json = repo.exportSpaceToJson(spaceId)!!
 
@@ -146,14 +146,14 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `groupTasksByResolutionStatus separates correctly`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
-        repo.add(spaceId, title = "Open task", status = TaskStatus.Open)
-        repo.add(spaceId, title = "InProgress task", status = TaskStatus.InProgress)
-        repo.add(spaceId, title = "Done task", status = TaskStatus.Done)
-        repo.add(spaceId, title = "Declined task", status = TaskStatus.Declined("reason"))
-        repo.add(spaceId, title = "Blocked task", status = TaskStatus.Blocked(setOf(blocker.id)))
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
+        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "InProgress task", status = TaskStatus.InProgress)
+        repo.addTask(spaceId, title = "Done task", status = TaskStatus.Done)
+        repo.addTask(spaceId, title = "Declined task", status = TaskStatus.Declined("reason"))
+        repo.addTask(spaceId, title = "Blocked task", status = TaskStatus.Blocked(setOf(blocker.id)))
 
-        val allTasks = repo.getAllWithTotals(spaceId)
+        val allTasks = repo.getAllTasksWithTotals(spaceId)
         val grouped = repo.groupTasksByResolutionStatus(allTasks)
 
         // Unresolved: Open, InProgress
@@ -171,11 +171,11 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        repo.add(spaceId, title = "Low priority far", priority = Priority.LOW, dueDate = now + 10.days)
-        repo.add(spaceId, title = "High priority close", priority = Priority.HIGH, dueDate = now + 1.days)
-        repo.add(spaceId, title = "Medium priority mid", priority = Priority.MEDIUM, dueDate = now + 5.days)
+        repo.addTask(spaceId, title = "Low priority far", priority = Priority.LOW, dueDate = now + 10.days)
+        repo.addTask(spaceId, title = "High priority close", priority = Priority.HIGH, dueDate = now + 1.days)
+        repo.addTask(spaceId, title = "Medium priority mid", priority = Priority.MEDIUM, dueDate = now + 5.days)
 
-        val allTasks = repo.getAllWithTotals(spaceId)
+        val allTasks = repo.getAllTasksWithTotals(spaceId)
         val grouped = repo.groupTasksByResolutionStatus(allTasks)
 
         // Should be sorted: closest due date first, then highest priority
@@ -262,7 +262,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        val task = repo.add(
+        val task = repo.addTask(
             spaceId,
             title = "Recurring",
             recurrenceRule = RecurrenceRule.AfterTimeout(
@@ -280,7 +280,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        val task = repo.add(
+        val task = repo.addTask(
             spaceId,
             title = "Recurring",
             status = TaskStatus.Done,
@@ -306,7 +306,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val pastDue = Clock.System.now() - 1.hours
 
-        repo.add(
+        repo.addTask(
             spaceId,
             title = "Past due recurring",
             dueDate = pastDue,
@@ -326,10 +326,10 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getStatusChangesByDate returns changes grouped by date`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Task")!!
+        val task = repo.addTask(spaceId, title = "Task")!!
 
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.InProgress))
-        repo.update(repo.getById(task.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.InProgress))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Done))
 
         val now = Clock.System.now()
         val nowKotlinx = kotlinx.datetime.Instant.fromEpochMilliseconds(now.toEpochMilliseconds())
@@ -345,7 +345,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getStatusChangesByDate returns empty for month with no changes`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.add(spaceId, title = "Task") // Creates initial status entry
+        repo.addTask(spaceId, title = "Task") // Creates initial status entry
 
         // Request a month far in the future
         val changes = repo.getStatusChangesByDate(spaceId, 2099, 12)
@@ -356,7 +356,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getCalculatedStatusFromSubtasks returns null for task without subtasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Standalone task")!!
+        val task = repo.addTask(spaceId, title = "Standalone task")!!
 
         assertNull(repo.getCalculatedStatusFromSubtasks(task.id))
     }
@@ -364,20 +364,20 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getCalculatedStatusFromSubtasks returns calculated status for task with subtasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(spaceId, title = "Parent", autoUpdateStatusFromSubtasks = false)!!
-        val child1 = repo.add(
+        val parent = repo.addTask(spaceId, title = "Parent", autoUpdateStatusFromSubtasks = false)!!
+        val child1 = repo.addTask(
             spaceId,
             title = "Child 1",
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val child2 = repo.add(
+        val child2 = repo.addTask(
             spaceId,
             title = "Child 2",
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(child1.id)!!.copy(status = TaskStatus.Done))
-        repo.update(repo.getById(child2.id)!!.copy(status = TaskStatus.Open))
+        repo.updateTask(repo.getTaskById(child1.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(child2.id)!!.copy(status = TaskStatus.Open))
 
         val calculatedStatus = repo.getCalculatedStatusFromSubtasks(parent.id)
         // With one Done and one Open, should be Open (Open takes priority over Done)
@@ -389,10 +389,10 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getConnectionsByType returns grouped connections`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
-        val task3 = repo.add(spaceId, title = "Task 3")!!
-        val task4 = repo.add(spaceId, title = "Task 4")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
+        val task4 = repo.addTask(spaceId, title = "Task 4")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
         repo.addConnection(task1.id, task3.id, ConnectionType.RelatesTo)
@@ -412,9 +412,9 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getRelatedTasks returns only RelatesTo connections`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.add(spaceId, title = "Task 1")!!
-        val task2 = repo.add(spaceId, title = "Task 2")!!
-        val task3 = repo.add(spaceId, title = "Task 3")!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
 
         repo.addConnection(task1.id, task2.id, ConnectionType.RelatesTo)
         repo.addConnection(task1.id, task3.id, ConnectionType.DependsOn)
@@ -444,10 +444,10 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val space1 = repo.createSpace("Space 1", "ONE")!!
         val space2 = repo.createSpace("Space 2", "TWO")!!
 
-        val task1 = repo.add(space1.id, title = "Task in Space 1")!!
+        val task1 = repo.addTask(space1.id, title = "Task in Space 1")!!
 
         // Should still be able to get task from other space by ID
-        val retrieved = repo.getById(task1.id)
+        val retrieved = repo.getTaskById(task1.id)
         assertNotNull(retrieved)
         assertEquals("Task in Space 1", retrieved.title)
     }
@@ -455,10 +455,10 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `update preserves tags in allTags`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.add(spaceId, title = "Task", tags = setOf("tag1"))!!
+        val task = repo.addTask(spaceId, title = "Task", tags = setOf("tag1"))!!
 
         val updated = task.copy(tags = setOf("tag1", "tag2", "tag3"))
-        repo.update(updated)
+        repo.updateTask(updated)
 
         val allTags = repo.getAllTags()
         assertTrue(allTags.containsAll(setOf("tag1", "tag2", "tag3")))
@@ -469,25 +469,25 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create 3-level hierarchy
-        val grandparent = repo.add(spaceId, title = "Grandparent", autoUpdateStatusFromSubtasks = true)!!
-        val parent = repo.add(
+        val grandparent = repo.addTask(spaceId, title = "Grandparent", autoUpdateStatusFromSubtasks = true)!!
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             autoUpdateStatusFromSubtasks = true,
             connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf))
         )!!
-        val child = repo.add(
+        val child = repo.addTask(
             spaceId,
             title = "Child",
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         // Update child to Done
-        repo.update(repo.getById(child.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(child.id)!!.copy(status = TaskStatus.Done))
 
         // Both parent and grandparent should be Done
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
-        assertEquals(TaskStatus.Done, repo.getById(grandparent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(grandparent.id)!!.status)
     }
 
 }
