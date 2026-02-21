@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.AutomaticChangeReason
+import com.zhelenskiy.zheduler.zheduler.AutomaticChangeReason.UpdatedFromSubtasks
 import com.zhelenskiy.zheduler.zheduler.Task
 
 /**
@@ -25,7 +26,7 @@ fun AutomaticChangeIndicator(
 
     LaunchedEffect(reason) {
         val tasks = mutableMapOf<String, Task>()
-        (reason as? AutomaticChangeReason.UpdatedFromSubtasks)?.relatedTaskIds?.forEach { taskId ->
+        (reason as? UpdatedFromSubtasks)?.relatedTaskIds?.forEach { taskId ->
             getTaskById(taskId)?.let { task ->
                 tasks[taskId] = task
             }
@@ -46,7 +47,7 @@ fun AutomaticChangeIndicator(
         color = MaterialTheme.colorScheme.tertiary
     )
 
-    (reason as? AutomaticChangeReason.UpdatedFromSubtasks)?.relatedTaskIds?.forEach { taskId ->
+    (reason as? UpdatedFromSubtasks)?.relatedTaskIds?.forEach { taskId ->
         val relatedTask = relatedTasks[taskId]
         ConnectedTaskChip(
             task = relatedTask,

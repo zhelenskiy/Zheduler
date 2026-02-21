@@ -178,7 +178,8 @@ fun NewTaskScreen(
                     onCreateNewTaskWithConnection = null, // Can't create nested new tasks
                     getTaskById = viewModel::getTaskById,
                     getAllTags = viewModel::getAllTags,
-                    getAvailableTasks = viewModel::getAvailableTasks,
+                    filterTags = viewModel::filterTags,
+                    filterTasksForSelection = viewModel::filterTasksForSelection,
                     searchTasksForConnection = viewModel::searchTasksForConnection,
                     getCalculatedStatusFromSubtasks = viewModel::getCalculatedStatusFromSubtasks,
                     currentSpaceIdPrefix = currentSpaceIdPrefix,

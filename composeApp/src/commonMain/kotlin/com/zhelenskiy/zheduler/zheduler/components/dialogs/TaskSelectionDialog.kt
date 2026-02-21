@@ -19,20 +19,17 @@ import com.zhelenskiy.zheduler.zheduler.Task
 @Composable
 fun TaskSelectionDialog(
     title: String,
-    availableTasks: List<Task>,
+    filterTasks: suspend (String) -> List<Task>,
     selectedTaskIds: Set<String>,
     onDismiss: () -> Unit,
     onTasksSelected: (Set<String>) -> Unit
 ) {
     var currentSelection by remember { mutableStateOf(selectedTaskIds) }
     var searchQuery by remember { mutableStateOf("") }
+    var filteredTasks by remember { mutableStateOf<List<Task>>(emptyList()) }
 
-    val filteredTasks = remember(searchQuery, availableTasks) {
-        if (searchQuery.isBlank()) availableTasks
-        else availableTasks.filter {
-            it.id.contains(searchQuery, ignoreCase = true) ||
-            it.title.contains(searchQuery, ignoreCase = true)
-        }
+    LaunchedEffect(searchQuery) {
+        filteredTasks = filterTasks(searchQuery)
     }
 
     AlertDialog(

@@ -4,11 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.with
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,7 +33,8 @@ import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 @Composable
 fun StatusSelectionDialog(
     currentStatus: TaskStatus,
-    availableTasks: List<Task>,
+    filterTasks: suspend (String) -> List<Task>,
+    getTaskById: suspend (String) -> Task?,
     onDismiss: () -> Unit,
     onStatusSelected: (TaskStatus) -> Unit
 ) {
@@ -54,7 +51,8 @@ fun StatusSelectionDialog(
             StatusSelectionDialogContent(
                 selectedStatusType = selectedStatusType,
                 onStatusTypeSelected = { selectedStatusType = it },
-                availableTasks = availableTasks,
+                filterTasks = filterTasks,
+                getTaskById = getTaskById,
                 lastSelectedForType = lastSelectedForType,
             )
         },
@@ -75,7 +73,8 @@ fun StatusSelectionDialog(
 private fun StatusSelectionDialogContent(
     selectedStatusType: TaskStatus,
     onStatusTypeSelected: (TaskStatus) -> Unit,
-    availableTasks: List<Task>,
+    filterTasks: suspend (String) -> List<Task>,
+    getTaskById: suspend (String) -> Task?,
     lastSelectedForType: Map<String, TaskStatus>,
 ) {
     Column(
@@ -92,7 +91,8 @@ private fun StatusSelectionDialogContent(
         BlockedStatusOption(
             selectedStatusType = selectedStatusType,
             onStatusTypeSelected = onStatusTypeSelected,
-            availableTasks = availableTasks,
+            filterTasks = filterTasks,
+            getTaskById = getTaskById,
             lastSelectedForType = lastSelectedForType,
         )
 
@@ -147,7 +147,8 @@ private fun StatusRadioOption(
 private fun ColumnScope.BlockedStatusOption(
     selectedStatusType: TaskStatus,
     onStatusTypeSelected: (TaskStatus) -> Unit,
-    availableTasks: List<Task>,
+    filterTasks: suspend (String) -> List<Task>,
+    getTaskById: suspend (String) -> Task?,
     lastSelectedForType: Map<String, TaskStatus>,
 ) {
     var showBlockerSelection by remember { mutableStateOf(false) }
@@ -169,7 +170,7 @@ private fun ColumnScope.BlockedStatusOption(
             onBlockedCommentChange = {
                 onStatusTypeSelected(status.copy(comment = it))
             },
-            availableTasks = availableTasks,
+            getTaskById = getTaskById,
             onShowBlockerSelection = { showBlockerSelection = true }
         )
     }
@@ -177,7 +178,7 @@ private fun ColumnScope.BlockedStatusOption(
     if (showBlockerSelection) {
         TaskSelectionDialog(
             title = "Select Blocking Tasks",
-            availableTasks = availableTasks,
+            filterTasks = filterTasks,
             selectedTaskIds = status.blockerTaskIds,
             onDismiss = { showBlockerSelection = false },
             onTasksSelected = { taskIds ->
@@ -194,7 +195,7 @@ private fun BlockedStatusDetails(
     onBlockerTaskIdsChange: (Set<String>) -> Unit,
     blockedComment: String,
     onBlockedCommentChange: (String) -> Unit,
-    availableTasks: List<Task>,
+    getTaskById: suspend (String) -> Task?,
     onShowBlockerSelection: () -> Unit
 ) {
     Column(modifier = Modifier.padding(start = 40.dp)) {
@@ -211,7 +212,7 @@ private fun BlockedStatusDetails(
             Spacer(modifier = Modifier.height(8.dp))
             BlockerTasksList(
                 blockerTaskIds = blockerTaskIds,
-                availableTasks = availableTasks,
+                getTaskById = getTaskById,
                 onRemoveTask = { taskId ->
                     onBlockerTaskIdsChange(blockerTaskIds - taskId)
                 }
@@ -233,14 +234,17 @@ private fun BlockedStatusDetails(
 @Composable
 private fun BlockerTasksList(
     blockerTaskIds: Set<String>,
-    availableTasks: List<Task>,
+    getTaskById: suspend (String) -> Task?,
     onRemoveTask: (String) -> Unit
 ) {
     val items = blockerTaskIds.toList()
     AnimatedContent(items, transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) {
         LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
             items(items) { taskId ->
-                val task = availableTasks.find { it.id == taskId }
+                var task by remember(taskId) { mutableStateOf<Task?>(null) }
+                LaunchedEffect(taskId) {
+                    task = getTaskById(taskId)
+                }
                 ConnectedTaskChip(
                     task = task,
                     taskId = taskId,

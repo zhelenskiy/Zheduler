@@ -103,6 +103,17 @@ class SqlDelightTaskRepository(
         queries.getTasksBySpaceExcept(spaceId, excludeTaskId).awaitAsList()
             .map { loadTaskWithConnections(it) }
 
+    override suspend fun filterTasksForSelection(
+        spaceId: String,
+        excludeTaskId: String,
+        searchQuery: String
+    ): List<Task> =
+        queries.searchTasksForConnection(
+            spaceId = spaceId,
+            id = excludeTaskId,
+            searchQuery = searchQuery
+        ).awaitAsList().map { loadTaskWithConnections(it) }
+
     /**
      * Search tasks for connection dialog with SQL filtering and cycle detection.
      * Filters by spaceId, excludes current task, optionally filters by search query,
@@ -245,6 +256,15 @@ class SqlDelightTaskRepository(
 
     override suspend fun getAllTags(): Set<String> =
         queries.getAllTags().awaitAsList().toSet()
+
+    override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> {
+        val filteredTags = queries.filterTags(searchQuery).awaitAsList()
+        return if (excludeTags.isEmpty()) {
+            filteredTags
+        } else {
+            filteredTags.filter { it !in excludeTags }
+        }
+    }
 
     override suspend fun addTag(tag: String): Boolean {
         if (tag.isBlank()) return false

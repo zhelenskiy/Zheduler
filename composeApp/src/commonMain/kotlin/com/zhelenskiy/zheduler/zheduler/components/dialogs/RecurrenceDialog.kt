@@ -164,7 +164,8 @@ private fun TimeBasedTypeSelector(
 @Composable
 fun RecurrenceDialog(
     currentRule: RecurrenceRule?,
-    availableTasks: List<Task>,
+    filterTasks: suspend (String) -> List<Task>,
+    getTaskById: suspend (String) -> Task?,
     onDismiss: () -> Unit,
     onRecurrenceSelected: (RecurrenceRule?) -> Unit
 ) {
@@ -218,7 +219,8 @@ fun RecurrenceDialog(
 
                         ResetToStatusButton(
                             selectedStatus = resetToStatus,
-                            availableTasks = availableTasks,
+                            filterTasks = filterTasks,
+                            getTaskById = getTaskById,
                             onStatusSelected = { resetToStatus = it },
                         )
 
@@ -911,7 +913,8 @@ val allStatusDefaultValues = listOf(
 @Composable
 private fun ResetToStatusButton(
     selectedStatus: TaskStatus,
-    availableTasks: List<Task>,
+    filterTasks: suspend (String) -> List<Task>,
+    getTaskById: suspend (String) -> Task?,
     onStatusSelected: (TaskStatus) -> Unit,
 ) {
     var showResetStatusDialog by remember { mutableStateOf(false) }
@@ -919,7 +922,8 @@ private fun ResetToStatusButton(
     if (showResetStatusDialog) {
         StatusSelectionDialog(
             currentStatus = selectedStatus,
-            availableTasks = availableTasks,
+            filterTasks = filterTasks,
+            getTaskById = getTaskById,
             onDismiss = { showResetStatusDialog = false },
             onStatusSelected = { status ->
                 onStatusSelected(status)

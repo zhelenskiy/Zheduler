@@ -131,6 +131,19 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tasks.values.filter { it.spaceId == spaceId && it.id != excludeTaskId }
     }
 
+    override suspend fun filterTasksForSelection(
+        spaceId: String,
+        excludeTaskId: String,
+        searchQuery: String
+    ): List<Task> = mutex.withLock {
+        tasks.values.filter { task ->
+            task.spaceId == spaceId && task.id != excludeTaskId &&
+            (searchQuery.isBlank() ||
+             task.id.contains(searchQuery, ignoreCase = true) ||
+             task.title.contains(searchQuery, ignoreCase = true))
+        }
+    }
+
     override suspend fun searchTasksForConnection(
         spaceId: String,
         excludeTaskId: String,
@@ -191,6 +204,15 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     override suspend fun getAllTags(): Set<String> = mutex.withLock { allTags.toSet() }
+
+    override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> = mutex.withLock {
+        val availableTags = allTags.filter { it !in excludeTags }
+        if (searchQuery.isBlank()) {
+            availableTags.sorted()
+        } else {
+            availableTags.filter { it.contains(searchQuery, ignoreCase = true) }.sorted()
+        }
+    }
 
     override suspend fun addTag(tag: String): Boolean = mutex.withLock {
         if (tag.isBlank()) return@withLock false

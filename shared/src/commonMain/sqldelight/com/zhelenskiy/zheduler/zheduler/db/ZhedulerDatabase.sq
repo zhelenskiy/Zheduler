@@ -76,6 +76,8 @@ CREATE TABLE tags (
     name TEXT NOT NULL PRIMARY KEY
 );
 
+CREATE INDEX idx_tags_name ON tags(name);
+
 -- Filter states per space
 CREATE TABLE filter_states (
     spaceId TEXT NOT NULL PRIMARY KEY,
@@ -231,6 +233,11 @@ INSERT OR REPLACE INTO space_next_ids(spaceId, nextId) VALUES (?, ?);
 -- Tag queries
 getAllTags:
 SELECT name FROM tags;
+
+filterTags:
+SELECT name FROM tags
+WHERE (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%')
+ORDER BY name ASC;
 
 insertTag:
 INSERT OR IGNORE INTO tags(name) VALUES (?);

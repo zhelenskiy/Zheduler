@@ -1,8 +1,15 @@
 package com.zhelenskiy.zheduler.zheduler.components.dialogs
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -15,99 +22,34 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun TagSelectionDialog(
-    existingTags: Set<String>,
     selectedTags: Set<String>,
+    filterTags: suspend (String, Set<String>) -> List<String>,
     onDismiss: () -> Unit,
     onTagSelected: (String) -> Unit
 ) {
     var tagText by remember { mutableStateOf("") }
+    var filteredTags by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    val availableTags = existingTags.filter { it !in selectedTags }
-    val filteredTags = remember(availableTags, tagText) {
-        if (tagText.isBlank()) availableTags.sorted()
-        else availableTags.filter { it.contains(tagText, ignoreCase = true) }.sorted()
+    LaunchedEffect(tagText, selectedTags) {
+        filteredTags = filterTags(tagText, selectedTags)
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Tag") },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = tagText,
-                    onValueChange = { tagText = it },
-                    label = { Text(if (availableTags.isNotEmpty()) "New tag or search" else "New tag") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (tagText.isNotEmpty()) {
-                            IconButton(onClick = { tagText = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (tagText.isNotBlank()) {
-                                onTagSelected(tagText.trim())
-                            }
-                        }
-                    )
-                )
-
-                Column(
-                    modifier = Modifier.animateContentSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (filteredTags.isNotEmpty()) {
-                        HorizontalDivider()
-                        Text(
-                            text = "Select existing tag:",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        filteredTags.forEach { tag ->
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onTagSelected(tag) },
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = MaterialTheme.shapes.small
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.LocalOffer,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(tag)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            TagSelectionContent(
+                tagText = tagText,
+                onTagTextChange = { tagText = it },
+                filteredTags = filteredTags,
+                onTagSelected = onTagSelected
+            )
         },
         confirmButton = {
             TextButton(
@@ -127,4 +69,134 @@ fun TagSelectionDialog(
             }
         }
     )
+}
+
+@Composable
+private fun TagSelectionContent(
+    tagText: String,
+    onTagTextChange: (String) -> Unit,
+    filteredTags: List<String>,
+    onTagSelected: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TagSearchTextField(
+            value = tagText,
+            onValueChange = onTagTextChange,
+            hasFilteredTags = filteredTags.isNotEmpty(),
+            onDone = {
+                if (tagText.isNotBlank()) {
+                    onTagSelected(tagText.trim())
+                }
+            }
+        )
+
+        FilteredTagsList(
+            tags = filteredTags,
+            onTagSelected = onTagSelected
+        )
+    }
+}
+
+@Composable
+private fun TagSearchTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    hasFilteredTags: Boolean,
+    onDone: () -> Unit
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = {
+            Text(if (hasFilteredTags) "New tag or search" else "New tag")
+        },
+        leadingIcon = {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+        },
+        trailingIcon = {
+            if (value.isNotEmpty()) {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(
+                        Icons.Default.Clear,
+                        contentDescription = "Clear",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone() })
+    )
+}
+
+@Composable
+private fun ColumnScope.FilteredTagsList(
+    tags: List<String>,
+    onTagSelected: (String) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        HorizontalDivider()
+        AnimatedContent(tags.isNotEmpty()) {
+            Text(
+                text = if (it) "Select existing tag:" else "No existing tags found",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        AnimatedContent(tags, transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) {
+            LazyColumn(
+                modifier = Modifier.sizeIn(maxHeight = 200.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(tags) { tag ->
+                    TagListItem(
+                        tag = tag,
+                        modifier = Modifier.animateItem(),
+                        onClick = { onTagSelected(tag) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TagListItem(
+    tag: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.LocalOffer,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(tag)
+        }
+    }
 }

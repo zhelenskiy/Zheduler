@@ -79,6 +79,21 @@ interface TaskRepository {
     suspend fun getAllExcept(spaceId: String, excludeTaskId: String): List<Task>
 
     /**
+     * Filter tasks for selection dialog (e.g., blocker selection).
+     * Uses SQL-based filtering for efficient search on id and title fields.
+     *
+     * @param spaceId The space to search in
+     * @param excludeTaskId The current task ID to exclude
+     * @param searchQuery Optional search query to filter by id or title (case-insensitive)
+     * @return List of tasks matching the criteria
+     */
+    suspend fun filterTasksForSelection(
+        spaceId: String,
+        excludeTaskId: String,
+        searchQuery: String = ""
+    ): List<Task>
+
+    /**
      * Search tasks for connection dialog with filtering.
      * Filters by spaceId, excludes current task, optionally filters by search query,
      * and checks for cycles. Uses SQL indexes for efficient search on id and title fields.
@@ -133,6 +148,14 @@ interface TaskRepository {
      * @return Set of all tag strings
      */
     suspend fun getAllTags(): Set<String>
+
+    /**
+     * Filter tags by search query, excluding already selected tags.
+     * @param searchQuery The search query to filter tags (empty returns all)
+     * @param excludeTags Tags to exclude from results
+     * @return Sorted list of matching tags
+     */
+    suspend fun filterTags(searchQuery: String = "", excludeTags: Set<String> = emptySet()): List<String>
 
     /**
      * Add a new tag to the global tag list.

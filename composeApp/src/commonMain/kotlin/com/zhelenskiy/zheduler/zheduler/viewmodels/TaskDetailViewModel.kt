@@ -162,7 +162,13 @@ class TaskDetailViewModel(
 
     override suspend fun getAllTags(): Set<String> = repository.getAllTags()
 
+    override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> =
+        repository.filterTags(searchQuery, excludeTags)
+
     override suspend fun getAvailableTasks(): List<Task> = repository.getAllExcept(spaceId, taskId)
+
+    override suspend fun filterTasksForSelection(searchQuery: String): List<Task> =
+        repository.filterTasksForSelection(spaceId, taskId, searchQuery)
 
     override suspend fun searchTasksForConnection(
         searchQuery: String,
