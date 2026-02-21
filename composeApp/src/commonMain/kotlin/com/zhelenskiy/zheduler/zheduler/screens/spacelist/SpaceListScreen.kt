@@ -1,7 +1,8 @@
 package com.zhelenskiy.zheduler.zheduler.screens.spacelist
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -19,7 +20,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewModelScope
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.dialogs.FileKitType
 import kotlinx.coroutines.launch
@@ -37,6 +37,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceSearchOption
 import io.github.vinceglb.filekit.dialogs.compose.SaverResultLauncher
 import io.github.vinceglb.filekit.readString
 import kotlinx.coroutines.CoroutineScope
+import com.zhelenskiy.zheduler.zheduler.screens.calendar.AnimatedVisibility
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,7 +124,7 @@ fun SpaceListScreen(
                 .padding(padding)
         ) {
             // Search bar visible when spaces exist
-            if (spaces.isNotEmpty()) {
+            if (spaces?.isNotEmpty() == true) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -194,18 +195,18 @@ fun SpaceListScreen(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = spaces.isEmpty(),
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut()
+                AnimatedVisibility(
+                    visible = spaces?.isEmpty() == true,
+                    enter = fadeIn(),
+                    exit = fadeOut()
                 ) {
                     EmptyState(message = "No spaces yet. Create one to get started!")
                 }
 
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = spaces.isNotEmpty() && filteredSpaces.isEmpty(),
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut()
+                AnimatedVisibility(
+                    visible = spaces?.isNotEmpty() == true && filteredSpaces?.isEmpty() == true,
+                    enter = fadeIn(),
+                    exit = fadeOut()
                 ) {
                     EmptySearchResults(
                         message = "No spaces match your search",
@@ -214,10 +215,10 @@ fun SpaceListScreen(
                     )
                 }
 
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = filteredSpaces.isNotEmpty(),
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut()
+                AnimatedVisibility(
+                    visible = filteredSpaces?.isNotEmpty() == true,
+                    enter = fadeIn(),
+                    exit = fadeOut()
                 ) {
                     LazyColumn(
                         modifier = Modifier
@@ -226,7 +227,7 @@ fun SpaceListScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
-                        items(filteredSpaces, key = { it.id }) { space ->
+                        items(filteredSpaces ?: emptyList(), key = { it.id }) { space ->
                             Card(
                                 modifier = Modifier
                                     .animateItem()
@@ -273,6 +274,11 @@ fun SpaceListScreen(
                                 }
                             }
                         }
+                    }
+                }
+                AnimatedVisibility(spaces == null || filteredSpaces == null, enter = fadeIn(), exit = fadeOut()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(48.dp))
                     }
                 }
             }
@@ -338,12 +344,9 @@ fun SpaceListScreen(
     // Export space dialog
     spaceToExport?.let { space ->
         ExportSpaceDialog(
+            coroutineScope = coroutineScope,
             space = space,
             onDismiss = { spaceToExport = null },
-            onExport = { jsonData ->
-                clipboardManager.setText(AnnotatedString(jsonData))
-                spaceToExport = null
-            },
             viewModel = viewModel,
             snackbarHostState = snackbarHostState
         )
@@ -383,14 +386,13 @@ fun SpaceListScreen(
 
 @Composable
 private fun ExportSpaceDialog(
+    coroutineScope: CoroutineScope,
     space: Space,
     onDismiss: () -> Unit,
-    onExport: (String) -> Unit,
     viewModel: SpaceListViewModel,
     snackbarHostState: SnackbarHostState
 ) {
     var prettyPrint by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
 
     val fileSaverLauncher = getFileSaverLauncher(coroutineScope, viewModel, space, prettyPrint, snackbarHostState, onDismiss)
@@ -432,10 +434,12 @@ private fun ExportSpaceDialog(
                                     clipboardManager.setText(AnnotatedString(jsonData))
                                 }
                                 onDismiss()
-                                if (jsonData != null) {
-                                    snackbarHostState.showSnackbar("Copied to clipboard")
-                                } else {
-                                    snackbarHostState.showSnackbar("Failed to export space")
+                                coroutineScope.launch {
+                                    if (jsonData != null) {
+                                        snackbarHostState.showSnackbar("Copied to clipboard")
+                                    } else {
+                                        snackbarHostState.showSnackbar("Failed to export space")
+                                    }
                                 }
                             }
                         },

@@ -1,10 +1,8 @@
 package com.zhelenskiy.zheduler.zheduler.components.dialogs
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,7 +32,7 @@ fun TagSelectionDialog(
     onTagSelected: (String) -> Unit
 ) {
     var tagText by remember { mutableStateOf("") }
-    var filteredTags by remember { mutableStateOf<List<String>>(emptyList()) }
+    var filteredTags by remember { mutableStateOf<List<String>?>(null) }
 
     LaunchedEffect(tagText, selectedTags) {
         filteredTags = filterTags(tagText, selectedTags)
@@ -75,9 +73,10 @@ fun TagSelectionDialog(
 private fun TagSelectionContent(
     tagText: String,
     onTagTextChange: (String) -> Unit,
-    filteredTags: List<String>,
+    filteredTags: List<String>?,
     onTagSelected: (String) -> Unit
 ) {
+    if (filteredTags == null) return
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -139,7 +138,7 @@ private fun TagSearchTextField(
 }
 
 @Composable
-private fun ColumnScope.FilteredTagsList(
+private fun FilteredTagsList(
     tags: List<String>,
     onTagSelected: (String) -> Unit
 ) {
@@ -157,7 +156,7 @@ private fun ColumnScope.FilteredTagsList(
 
         AnimatedContent(tags, transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) {
             LazyColumn(
-                modifier = Modifier.sizeIn(maxHeight = 200.dp),
+                modifier = Modifier.sizeIn(maxHeight = 200.dp).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(tags) { tag ->

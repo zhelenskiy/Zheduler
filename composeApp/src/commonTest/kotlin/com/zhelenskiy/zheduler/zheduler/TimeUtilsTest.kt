@@ -4,19 +4,16 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.util.formatCompactDateTime
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
-import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
-import kotlin.time.Duration.Companion.hours
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -35,13 +32,13 @@ class TimeUtilsTest {
             minutes = 6,
             seconds = 7
         )
-        assertEquals("1y 2mo 3w 4d 5h 6m 7s", formatPeriod(period))
+        assertEquals("1y 2mo 3w 4d 5h 6m 7s", period.toBriefString())
     }
 
     @Test
     fun `formatPeriod skips zero components`() {
         val period = RecurrencePeriod(years = 1, days = 5)
-        assertEquals("1y 5d", formatPeriod(period))
+        assertEquals("1y 5d", period.toBriefString())
     }
 
     // ==================== formatDueDate Tests ====================
@@ -139,7 +136,7 @@ class TimeUtilsTest {
         for (input in testCases) {
             val period = parseCompactTimeToPeriod(input)
             if (period != null) {
-                val formatted = formatPeriod(period)
+                val formatted = period.toBriefString()
                 val reparsed = parseCompactTimeToPeriod(formatted)
                 assertEquals(period, reparsed, "Roundtrip failed for: $input -> $formatted")
             }
@@ -167,7 +164,7 @@ class TimeUtilsTest {
     @Test
     fun `formatPeriod with single unit has no trailing space`() {
         val period = RecurrencePeriod(hours = 1)
-        val result = formatPeriod(period)
+        val result = period.toBriefString()
         assertFalse(result.endsWith(" "))
         assertFalse(result.startsWith(" "))
     }

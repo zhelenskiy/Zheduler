@@ -36,7 +36,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         parentStatus: TaskStatus = TaskStatus.Open,
         subtaskStatuses: List<TaskStatus>
     ): Pair<Task, List<Task>> {
-        val parent = add(
+        val parent = addTask(
             spaceId,
             title = "Parent Task",
             status = parentStatus,
@@ -44,15 +44,15 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         )!!
 
         val subtasks = subtaskStatuses.mapIndexed { index, status ->
-            val subtask = add(
+            val subtask = addTask(
                 spaceId,
                 title = "Subtask $index",
                 status = TaskStatus.Open, // Add as Open first
                 connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
             )!!
             // Now update to desired status to trigger parent update
-            update(getById(subtask.id)!!.copy(status = status))
-            getById(subtask.id)!!
+            updateTask(getTaskById(subtask.id)!!.copy(status = status))
+            getTaskById(subtask.id)!!
         }
 
         return parent to subtasks
@@ -63,7 +63,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `no subtasks - parent status unchanged`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.InProgress,
@@ -71,7 +71,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         )!!
 
         // Parent status should remain unchanged with no subtasks
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     // ===== Rule 1: All same status =====
@@ -85,7 +85,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Open, TaskStatus.Open, TaskStatus.Open)
         )
 
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -97,7 +97,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Done, TaskStatus.Done)
         )
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -109,39 +109,39 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.InProgress, TaskStatus.InProgress)
         )
 
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `all subtasks Blocked - parent becomes Blocked with combined blockers`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id))))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id))))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(setOf(blocker1.id, blocker2.id), parentStatus.blockerTaskIds)
     }
@@ -149,33 +149,33 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `all subtasks Blocked with comments - parent combines comments with blocker IDs`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "Comment 1")))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "Comment 2")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "Comment 1")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "Comment 2")))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(setOf(blocker1.id, blocker2.id), parentStatus.blockerTaskIds)
         assertEquals("${blocker1.id}: Comment 1\n${blocker2.id}: Comment 2", parentStatus.comment)
@@ -184,32 +184,32 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `all subtasks Blocked with same blockers but different comments - combines comments`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Comment 1")))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Comment 2")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Comment 1")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Comment 2")))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(setOf(blocker.id), parentStatus.blockerTaskIds)
         // Comments should be combined even if blockers are the same
@@ -219,33 +219,33 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `all subtasks Blocked with empty comments - parent has empty comment`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "")))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "")))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(setOf(blocker1.id, blocker2.id), parentStatus.blockerTaskIds)
         assertEquals("", parentStatus.comment)
@@ -254,33 +254,33 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `all subtasks Blocked with mixed empty and non-empty comments - combines only non-empty`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker1 = repo.add(spaceId, title = "Blocker 1")!!
-        val blocker2 = repo.add(spaceId, title = "Blocker 2")!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "")))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "Important comment")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "Important comment")))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(setOf(blocker1.id, blocker2.id), parentStatus.blockerTaskIds)
         assertEquals("${blocker2.id}: Important comment", parentStatus.comment)
@@ -298,7 +298,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             )
         )
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
         assertEquals("Subtasks declined with reasons:\nReason 1\nReason 2", parentStatus.reason)
     }
@@ -314,38 +314,38 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Done, TaskStatus.InProgress, TaskStatus.Open)
         )
 
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `InProgress takes priority over Blocked`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.InProgress))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.InProgress))
 
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     // ===== Rule 3: Any Open (but no InProgress) =====
@@ -353,32 +353,32 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `Open takes priority over Blocked`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Done,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Open))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Open))
 
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -390,7 +390,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Done, TaskStatus.Open)
         )
 
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -402,7 +402,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Declined("reason"), TaskStatus.Open)
         )
 
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
     }
 
     // ===== Rule 4: Any Blocked (but no InProgress/Open) =====
@@ -410,32 +410,32 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `Blocked with Done - parent becomes Blocked`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(setOf(blocker.id), parentStatus.blockerTaskIds)
     }
@@ -443,32 +443,32 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `Blocked with Declined - parent becomes Blocked`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Declined("reason")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Declined("reason")))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
     }
 
@@ -483,7 +483,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Done, TaskStatus.Declined("reason"))
         )
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     // ===== Corner case: Single subtask =====
@@ -497,7 +497,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Open)
         )
 
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -509,29 +509,29 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Done)
         )
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
     fun `single Blocked subtask with empty blockers - parent becomes Blocked`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(emptySet(), parentStatus.blockerTaskIds)
     }
@@ -541,30 +541,30 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `multiple Blocked subtasks with empty blockers - parent has empty blockers`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(emptySet(), parentStatus.blockerTaskIds)
     }
@@ -572,32 +572,32 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `Blocked with empty and non-empty blockers - combines correctly`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.add(spaceId, title = "Blocker")!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
         assertEquals(setOf(blocker.id), parentStatus.blockerTaskIds)
     }
@@ -607,24 +607,24 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `autoUpdateStatusFromSubtasks disabled - parent status unchanged`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.InProgress,
             autoUpdateStatusFromSubtasks = false
         )!!
 
-        val subtask = repo.add(
+        val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
 
         // Parent should remain InProgress since auto-update is disabled
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 
     // ===== Corner case: Many subtasks =====
@@ -638,7 +638,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = List(100) { TaskStatus.Done }
         )
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
     }
 
     @Test
@@ -651,7 +651,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = statuses
         )
 
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
     }
 
     // ===== Corner case: Status update propagation =====
@@ -659,20 +659,20 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `updating subtask status updates parent`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.InProgress, // Start with different status
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
@@ -680,16 +680,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         )!!
 
         // Trigger initial update
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Open))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status)
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Open))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
         // Update first subtask to Done
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Open, repo.getById(parent.id)!!.status) // Still Open because one is Open
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status) // Still Open because one is Open
 
         // Update second subtask to Done
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Done))
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status) // Now Done
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status) // Now Done
     }
 
     // ===== Corner case: Declined reasons =====
@@ -697,30 +697,30 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     @Test
     fun `all Declined with different reasons - combines all reasons`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val subtask1 = repo.add(
+        val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
-        val subtask2 = repo.add(
+        val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
             status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.update(repo.getById(subtask1.id)!!.copy(status = TaskStatus.Declined("First reason")))
-        repo.update(repo.getById(subtask2.id)!!.copy(status = TaskStatus.Declined("Second reason")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Declined("First reason")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Declined("Second reason")))
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
         // Should combine all declined reasons
         assertEquals("Subtasks declined with reasons:\nFirst reason\nSecond reason", parentStatus.reason)
@@ -735,7 +735,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Declined(""))
         )
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
         assertEquals("Subtask declined without a reason", parentStatus.reason)
     }
@@ -749,7 +749,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Declined(""), TaskStatus.Declined(""))
         )
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
         assertEquals("Subtasks declined without a reason", parentStatus.reason)
     }
@@ -763,7 +763,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Declined("Only reason"), TaskStatus.Declined(""))
         )
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
         assertEquals("Subtasks declined with a reason:\n[Only reason]", parentStatus.reason)
     }
@@ -777,7 +777,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.Declined("Single reason"))
         )
 
-        val parentStatus = repo.getById(parent.id)!!.status
+        val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
         assertEquals("Subtask declined with a reason:\n[Single reason]", parentStatus.reason)
     }
@@ -788,14 +788,14 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
     fun `nested parent hierarchy - grandparent gets updated`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val grandparent = repo.add(
+        val grandparent = repo.addTask(
             spaceId,
             title = "Grandparent",
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
-        val parent = repo.add(
+        val parent = repo.addTask(
             spaceId,
             title = "Parent",
             status = TaskStatus.Open,
@@ -803,7 +803,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf))
         )!!
 
-        val child = repo.add(
+        val child = repo.addTask(
             spaceId,
             title = "Child",
             status = TaskStatus.Open,
@@ -811,10 +811,10 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         )!!
 
         // Update child to Done - should propagate up
-        repo.update(repo.getById(child.id)!!.copy(status = TaskStatus.Done))
+        repo.updateTask(repo.getTaskById(child.id)!!.copy(status = TaskStatus.Done))
 
-        assertEquals(TaskStatus.Done, repo.getById(parent.id)!!.status)
-        assertEquals(TaskStatus.Done, repo.getById(grandparent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
+        assertEquals(TaskStatus.Done, repo.getTaskById(grandparent.id)!!.status)
     }
 
     // ===== Corner case: Same status class check =====
@@ -828,6 +828,6 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
             subtaskStatuses = listOf(TaskStatus.InProgress, TaskStatus.InProgress, TaskStatus.InProgress)
         )
 
-        assertEquals(TaskStatus.InProgress, repo.getById(parent.id)!!.status)
+        assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
     }
 }

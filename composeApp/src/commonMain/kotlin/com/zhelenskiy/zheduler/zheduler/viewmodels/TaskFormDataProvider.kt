@@ -11,10 +11,22 @@ import com.zhelenskiy.zheduler.zheduler.TaskStatus
  * to follow the DRY principle.
  */
 interface TaskFormDataProvider {
+    /**
+     * Retrieves a task by its unique identifier.
+     *
+     * @param id The unique identifier of the task to retrieve.
+     * @return The task with the specified identifier, or null if no such task exists.
+     */
     suspend fun getTaskById(id: String): Task?
-    suspend fun getAllTags(): Set<String>
+
+    /**
+     * Filter tags based on search query and exclude list.
+     *
+     * @param searchQuery The search query to filter tags by.
+     * @param excludeTags A set of tags to exclude from the results.
+     * @return A list of tags that match the search query and are not in the exclude list.
+     */
     suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String>
-    suspend fun getAvailableTasks(): List<Task>
 
     /**
      * Filter tasks for selection dialog (e.g., blocker selection in StatusSelectionDialog).
@@ -42,13 +54,24 @@ interface TaskFormDataProvider {
         existingConnections: Set<TaskConnection>
     ): List<Task>
 
-    suspend fun wouldCreateCycle(
-        currentId: String,
-        targetId: String,
-        connectionType: ConnectionType,
-        existingConnections: Set<TaskConnection>
-    ): Boolean
+    /**
+     * Calculates and retrieves the aggregate status of a task based on the statuses of its subtasks.
+     *
+     * @param id The unique identifier of the parent task whose subtasks' statuses will be evaluated.
+     * @return The calculated status of the task based on its subtasks, or null if the task or its subtasks
+     *         are not found.
+     */
     suspend fun getCalculatedStatusFromSubtasks(id: String): TaskStatus?
+
+    /**
+     * Retrieves the prefix associated with the current space's unique identifier.
+     *
+     * @return The prefix of the current space's ID, or null if the prefix cannot be determined.
+     */
     suspend fun getCurrentSpaceIdPrefix(): String?
+
+    /**
+     * Retrieves all prefixes for all spaces.
+     */
     suspend fun getAllSpacePrefixes(): List<String>
 }

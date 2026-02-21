@@ -57,11 +57,6 @@ fun NewTaskScreen(
     } else {
         rememberTaskFormState(initialConnections = initialConnections)
     }
-    var showTagDialog by remember { mutableStateOf(false) }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showStatusDialog by remember { mutableStateOf(false) }
-    var showConnectionDialog by remember { mutableStateOf(false) }
-    var showRecurrenceDialog by remember { mutableStateOf(false) }
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
 
     fun handleBackPress() {
@@ -165,19 +160,8 @@ fun NewTaskScreen(
                     prefilledTask = prefilledTask,
                     prefilledConnection = initialConnections.firstOrNull(),
                     onTaskClick = onTaskClick,
-                    showTagDialog = showTagDialog,
-                    onShowTagDialog = { showTagDialog = it },
-                    showDatePicker = showDatePicker,
-                    onShowDatePicker = { showDatePicker = it },
-                    showStatusDialog = showStatusDialog,
-                    onShowStatusDialog = { showStatusDialog = it },
-                    showConnectionDialog = showConnectionDialog,
-                    onShowConnectionDialog = { showConnectionDialog = it },
-                    showRecurrenceDialog = showRecurrenceDialog,
-                    onShowRecurrenceDialog = { showRecurrenceDialog = it },
                     onCreateNewTaskWithConnection = null, // Can't create nested new tasks
                     getTaskById = viewModel::getTaskById,
-                    getAllTags = viewModel::getAllTags,
                     filterTags = viewModel::filterTags,
                     filterTasksForSelection = viewModel::filterTasksForSelection,
                     searchTasksForConnection = viewModel::searchTasksForConnection,

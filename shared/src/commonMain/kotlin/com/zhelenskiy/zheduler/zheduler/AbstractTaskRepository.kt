@@ -45,11 +45,12 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * @return true if adding this connection would create a cycle
      */
     override suspend fun wouldCreateCycle(
-        fromTaskId: String,
+        fromTaskId: String?,
         toTaskId: String,
         type: ConnectionType,
         currentConnections: Set<TaskConnection>
     ): Boolean {
+        if (fromTaskId == null) return false
         // Only DependsOn/IsDependencyOf and SubtaskOf/ParentOf can create cycles
         if (type == ConnectionType.RelatesTo) return false
 
@@ -278,7 +279,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      */
     protected suspend fun areAllBlockersResolved(blockerIds: Set<String>): Boolean {
         return blockerIds.all { blockerTaskId ->
-            val blockerTask = getById(blockerTaskId)
+            val blockerTask = getTaskById(blockerTaskId)
             blockerTask != null &&
                 (blockerTask.status is TaskStatus.Done || blockerTask.status is TaskStatus.Declined)
         }
@@ -384,7 +385,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         triggerEvent: RecurrenceTriggerEvent,
         triggerTime: Instant
     ): Task? {
-        val task = getById(taskId) ?: return null
+        val task = getTaskById(taskId) ?: return null
 
         val updatedRecurrenceData = RecurrenceService.processRecurrence(
             rule = task.recurrenceRule ?: return task,
@@ -671,7 +672,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * @param parentTaskId The ID of the parent task to potentially update
      */
     protected suspend fun updateParentStatusIfNeeded(parentTaskId: String) {
-        val parentTask = getById(parentTaskId) ?: return
+        val parentTask = getTaskById(parentTaskId) ?: return
         if (!parentTask.autoUpdateStatusFromSubtasks) return
 
         val calculatedStatus = getCalculatedStatusFromSubtasks(parentTaskId)
@@ -696,45 +697,45 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * Get all tasks that this task depends on
      */
     override suspend fun getDependencies(taskId: String): List<Task> {
-        val task = getById(taskId) ?: return emptyList()
+        val task = getTaskById(taskId) ?: return emptyList()
         val targetIds = task.connections
             .filter { it.type == ConnectionType.DependsOn }
             .map { it.targetTaskId }
             .toSet()
-        return getByIds(targetIds)
+        return getTasksByIds(targetIds)
     }
 
     /**
      * Get all tasks that depend on this task
      */
     override suspend fun getDependents(taskId: String): List<Task> {
-        val task = getById(taskId) ?: return emptyList()
+        val task = getTaskById(taskId) ?: return emptyList()
         val targetIds = task.connections
             .filter { it.type == ConnectionType.IsDependencyOf }
             .map { it.targetTaskId }
             .toSet()
-        return getByIds(targetIds)
+        return getTasksByIds(targetIds)
     }
 
     /**
      * Get all related tasks (RelatesTo connection)
      */
     override suspend fun getRelatedTasks(taskId: String): List<Task> {
-        val task = getById(taskId) ?: return emptyList()
+        val task = getTaskById(taskId) ?: return emptyList()
         val targetIds = task.connections
             .filter { it.type == ConnectionType.RelatesTo }
             .map { it.targetTaskId }
             .toSet()
-        return getByIds(targetIds)
+        return getTasksByIds(targetIds)
     }
 
     /**
      * Get connections grouped by type
      */
     override suspend fun getConnectionsByType(taskId: String): Map<ConnectionType, List<Task>> {
-        val task = getById(taskId) ?: return emptyMap()
+        val task = getTaskById(taskId) ?: return emptyMap()
         val allTargetIds = task.connections.map { it.targetTaskId }.toSet()
-        val tasksById = getByIds(allTargetIds).associateBy { it.id }
+        val tasksById = getTasksByIds(allTargetIds).associateBy { it.id }
         return task.connections
             .groupBy { it.type }
             .mapValues { (_, connections) ->
@@ -744,7 +745,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
 
     override suspend fun resolveConnections(connections: Set<TaskConnection>): Map<ConnectionType, List<Task>> {
         val allTargetIds = connections.map { it.targetTaskId }.toSet()
-        val tasksById = getByIds(allTargetIds).associateBy { it.id }
+        val tasksById = getTasksByIds(allTargetIds).associateBy { it.id }
         return connections.groupBy { it.type }.mapValues { (_, connectionsInType) ->
             connectionsInType.mapNotNull { tasksById[it.targetTaskId] }
         }

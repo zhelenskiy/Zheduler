@@ -135,7 +135,7 @@ SELECT * FROM tasks WHERE spaceId = ? AND id != ?;
 
 searchTasksForConnection:
 SELECT * FROM tasks
-WHERE spaceId = ? AND id != ?
+WHERE spaceId = ? AND (:id IS NULL OR id != :id)
   AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%');
 
 getTaskById:

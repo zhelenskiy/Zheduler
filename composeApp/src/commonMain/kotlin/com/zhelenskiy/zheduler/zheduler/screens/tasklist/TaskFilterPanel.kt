@@ -220,8 +220,8 @@ fun TaskFilterPanel(
                                 // Complex status properties
                                 AnimatedVisibility(
                                     visible = filterState.statusFilters.any { it is TaskStatus.Blocked },
-                                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-                                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()
+                                    enter = fadeIn() + expandVertically(),
+                                    exit = fadeOut() + shrinkVertically()
                                 ) {
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedTextField(
@@ -247,8 +247,8 @@ fun TaskFilterPanel(
 
                                 AnimatedVisibility(
                                     visible = filterState.statusFilters.any { it is TaskStatus.Declined },
-                                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-                                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()
+                                    enter = fadeIn() + expandVertically(),
+                                    exit = fadeOut() + shrinkVertically()
                                 ) {
                                     OutlinedTextField(
                                         value = filterState.declinedReason,

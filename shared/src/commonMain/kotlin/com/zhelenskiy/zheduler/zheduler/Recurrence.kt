@@ -1073,75 +1073,12 @@ object RecurrenceService {
     }
 }
 
-///**
-// * Brief human-readable description of a recurrence rule for task cards
-// */
-//fun RecurrenceRule?.toBriefString(): String {
-//    if (this == null) return ""
-//    return triggers.joinToString(" & ") {
-//        when (it) {
-//            is RecurrenceTrigger.AfterTimeout if it.period != null -> "Every ${it.period.toBriefString()}"
-//            is RecurrenceTrigger.AfterTimeout -> "Once"
-//            is RecurrenceTrigger.AtFixedPoints -> it.pattern.toBriefString()
-//            is RecurrenceTrigger.StatusChange -> "On ${it.requiredStatuses.joinToString()}"
-//        }
-//    }
-//}
-//
-///**
-// * Human-readable description of a recurrence rule
-// */
-//fun RecurrenceRule?.toDisplayString(): String {
-//    if (this == null) return "Does not repeat"
-//    return triggers.joinToString("&") { trigger ->
-//        when (trigger) {
-//            is RecurrenceTrigger.AfterTimeout if trigger.period != null -> {
-//                val period = trigger.period
-//                val periodStr = buildString {
-//                    if (period.years > 0) append("${period.years} year${if (period.years > 1) "s" else ""} ")
-//                    if (period.months > 0) append("${period.months} month${if (period.months > 1) "s" else ""} ")
-//                    if (period.weeks > 0) append("${period.weeks} week${if (period.weeks > 1) "s" else ""} ")
-//                    if (period.days > 0) append("${period.days} day${if (period.days > 1) "s" else ""} ")
-//                    if (period.hours > 0) append("${period.hours} hour${if (period.hours > 1) "s" else ""} ")
-//                    if (period.minutes > 0) append("${period.minutes} minute${if (period.minutes > 1) "s" else ""} ")
-//                    if (period.seconds > 0) append("${period.seconds} second${if (period.seconds > 1) "s" else ""}")
-//                }.trim()
-//                val triggerInfo = triggerSuffix()
-//                "Every $periodStr$triggerInfo\nReset to ${resetToStatus.displayName}${terminationSuffix()}"
-//            }
-//            is RecurrenceTrigger.AfterTimeout -> listOf("Once", triggerSuffix().takeIf { it.isNotEmpty() })
-//                .joinToString(" ", postfix = "\nReset to ${resetToStatus.displayName}${terminationSuffix()}")
-//
-//            is RecurrenceTrigger.AtFixedPoints -> {
-//                val triggerInfo = triggerSuffix()
-//                trigger.pattern.toFullString() + "${trigger.timezoneSuffix()}$triggerInfo\nReset to ${resetToStatus.displayName}${terminationSuffix()}"
-//            }
-//            is RecurrenceTrigger.StatusChange -> "On status ${trigger.requiredStatuses.joinToString()}"
-//        }
-//    }
-//}
-//
-//private fun RecurrenceRule.triggerSuffix(): String = triggers.filterIsInstance<RecurrenceTrigger.StatusChange>().joinToString {
-////    when (it) {
-////        is RecurrenceTrigger.StatusChange -> {
-//            "\non status ${it.requiredStatuses.joinToString("/") { it.displayName }}"
-////        }
-////    }
-//}
-
 private fun RecurrenceTrigger.AtFixedPoints.timezoneSuffix(): String = when (val tz = timezone) {
     is RecurrenceTimeZone.SystemDefault -> ""
     is RecurrenceTimeZone.Specific -> " (${tz.zoneId})"
 }
 
-//private fun RecurrenceRule.terminationSuffix(): String {
-//    val parts = mutableListOf<String>()
-//    termination.maxOccurrences?.let { parts.add(if (it == 1) "$it time" else "$it times") }
-//    termination.endDate?.let { parts.add("${if (parts.isEmpty()) "Until" else "until"} ${formatDate(it)}") }
-//    return if (parts.isEmpty()) "" else parts.joinToString(", ", prefix = "\n")
-//}
-
-private fun formatDate(instant: Instant): String {
+fun formatDate(instant: Instant): String {
     val dt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
     val hour = dt.hour.toString().padStart(2, '0')
     val minute = dt.minute.toString().padStart(2, '0')

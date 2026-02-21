@@ -6,7 +6,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.*
-import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +20,7 @@ private const val KEY_FORM_PRIORITY = "formPriority"
 private const val KEY_FORM_ESTIMATED_TIME = "formEstimatedTime"
 private const val KEY_FORM_TAGS = "formTags"
 private const val KEY_FORM_DUE_DATE = "formDueDate"
+private const val KEY_SHOW_HISTORY = "showHistory"
 
 /**
  * Persisted form state for surviving process death during nested navigation
@@ -35,7 +35,7 @@ data class PersistedFormState(
 )
 
 class TaskDetailViewModel(
-    private val repository: SqlDelightTaskRepository,
+    private val repository: TaskRepository,
     private val spaceId: String,
     private val taskId: String,
     private val savedStateHandle: SavedStateHandle,
@@ -51,7 +51,6 @@ class TaskDetailViewModel(
     private val _connectionsByType = MutableStateFlow<Map<ConnectionType, List<Task>>>(emptyMap())
     val connectionsByType: StateFlow<Map<ConnectionType, List<Task>>> = _connectionsByType.asStateFlow()
 
-    // Editing state managed by ViewModel
     private val _isEditing = MutableStateFlow(savedStateHandle.get<Boolean>(KEY_IS_EDITING) ?: startInEditMode)
     val isEditing: StateFlow<Boolean> = _isEditing.asStateFlow()
 
@@ -61,7 +60,7 @@ class TaskDetailViewModel(
 
     fun loadTask() {
         viewModelScope.launch {
-            _taskWithTotals.value = repository.getByIdWithTotals(taskId)
+            _taskWithTotals.value = repository.getTasksByIdWithTotals(taskId)
             _connectionsByType.value = repository.getConnectionsByType(taskId)
             _taskLoadAttempted.value = true
         }
@@ -80,9 +79,9 @@ class TaskDetailViewModel(
      * Restore persisted form state from SavedStateHandle (when returning from nested task creation)
      */
     fun getPersistedFormState(): PersistedFormState {
-        val tags = savedStateHandle.get<String>(KEY_FORM_TAGS)?.let { tagsStr ->
-            if (tagsStr.isNotEmpty()) tagsStr.split(",").toSet() else emptySet()
-        } ?: emptySet()
+        val tags = savedStateHandle.get<String>(KEY_FORM_TAGS)
+            ?.let { tagsStr -> if (tagsStr.isNotEmpty()) tagsStr.split(",").toSet() else emptySet() }
+            ?: emptySet()
 
         val dueDate = savedStateHandle.get<Long>(KEY_FORM_DUE_DATE)?.let { epochMillis ->
             Instant.fromEpochMilliseconds(epochMillis)
@@ -136,7 +135,7 @@ class TaskDetailViewModel(
      */
     fun saveTask(updatedTask: Task) {
         viewModelScope.launch {
-            repository.update(updatedTask)
+            repository.updateTask(updatedTask)
             setEditing(false)
             clearPersistedFormState()
             loadTask()
@@ -151,21 +150,10 @@ class TaskDetailViewModel(
         clearPersistedFormState()
     }
 
-    fun updateTask(task: Task) {
-        viewModelScope.launch {
-            repository.update(task)
-            loadTask()
-        }
-    }
-
-    override suspend fun getTaskById(id: String): Task? = repository.getById(id)
-
-    override suspend fun getAllTags(): Set<String> = repository.getAllTags()
+    override suspend fun getTaskById(id: String): Task? = repository.getTaskById(id)
 
     override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> =
         repository.filterTags(searchQuery, excludeTags)
-
-    override suspend fun getAvailableTasks(): List<Task> = repository.getAllExcept(spaceId, taskId)
 
     override suspend fun filterTasksForSelection(searchQuery: String): List<Task> =
         repository.filterTasksForSelection(spaceId, taskId, searchQuery)
@@ -175,24 +163,14 @@ class TaskDetailViewModel(
         excludeTaskIds: Set<String>,
         connectionType: ConnectionType,
         existingConnections: Set<TaskConnection>
-    ): List<Task> {
-        // Repository handles all filtering including SQL-based search and cycle detection
-        return repository.searchTasksForConnection(
-            spaceId = spaceId,
-            excludeTaskId = taskId,
-            searchQuery = searchQuery,
-            excludeTaskIds = excludeTaskIds,
-            connectionType = connectionType,
-            existingConnections = existingConnections
-        )
-    }
-
-    override suspend fun wouldCreateCycle(
-        currentId: String,
-        targetId: String,
-        connectionType: ConnectionType,
-        existingConnections: Set<TaskConnection>
-    ): Boolean = repository.wouldCreateCycle(currentId, targetId, connectionType, existingConnections)
+    ): List<Task> = repository.searchTasksForConnection(
+        spaceId = spaceId,
+        excludeTaskId = taskId,
+        searchQuery = searchQuery,
+        excludeTaskIds = excludeTaskIds,
+        connectionType = connectionType,
+        existingConnections = existingConnections
+    )
 
     override suspend fun getCalculatedStatusFromSubtasks(id: String): TaskStatus? =
         repository.getCalculatedStatusFromSubtasks(id)

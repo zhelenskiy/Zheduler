@@ -5,7 +5,6 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.*
-import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,14 +14,15 @@ import kotlin.time.ExperimentalTime
 enum class TaskListViewMode {
     Chronological, Priority;
 
-    val displayName: String get() = when (this) {
-        Chronological -> "Chronological"
-        Priority -> "Priority"
-    }
+    val displayName: String
+        get() = when (this) {
+            Chronological -> "Chronological"
+            Priority -> "Priority"
+        }
 }
 
 class TaskListViewModel(
-    private val repository: SqlDelightTaskRepository,
+    private val repository: TaskRepository,
     private val spaceId: String
 ) : ViewModel() {
 
@@ -44,7 +44,7 @@ class TaskListViewModel(
 
     fun loadTasks() {
         viewModelScope.launch {
-            _tasksWithTotals.value = repository.getAllWithTotals(spaceId)
+            _tasksWithTotals.value = repository.getAllTasksWithTotals(spaceId)
             _currentSpace.value = repository.getSpaceById(spaceId)
             _allTags.value = repository.getAllTags()
             _spaceLoadAttempted.value = true
@@ -55,38 +55,22 @@ class TaskListViewModel(
         return repository.getFilterState(spaceId)
     }
 
-    suspend fun hasActiveFilters(): Boolean {
-        return getFilterCriteria().hasActiveFilters
-    }
-
-    suspend fun clearAllFilters() {
-        repository.saveFilterState(spaceId, TaskFilterCriteria())
-    }
-
     fun deleteTask(taskId: String) {
         viewModelScope.launch {
-            repository.delete(taskId)
+            repository.deleteTask(taskId)
             loadTasks()
         }
     }
 
     fun updateTaskStatus(taskId: String, status: TaskStatus) {
         viewModelScope.launch {
-            val task = repository.getById(taskId)
+            val task = repository.getTaskById(taskId)
             if (task != null) {
-                repository.update(task.copy(status = status))
-                loadTasks()
+                repository.updateTask(task.copy(status = status))
             }
+            loadTasks()
         }
     }
-
-    suspend fun getAllTasks(): List<Task> = repository.getAll(spaceId)
-
-    /**
-     * Get filtered tasks based on current filter state
-     */
-    suspend fun getFilteredTasks(): List<TaskWithTotals> =
-        repository.getAllWithTotalsFiltered(spaceId, getFilterCriteria())
 
     /**
      * Get filtered tasks based on the provided criteria
@@ -99,14 +83,6 @@ class TaskListViewModel(
      */
     suspend fun getTasksGroupedByResolutionStatus(): GroupedTasks {
         val filteredTasks = repository.getAllWithTotalsFiltered(spaceId, getFilterCriteria())
-        return repository.groupTasksByResolutionStatus(filteredTasks)
-    }
-
-    /**
-     * Get tasks grouped by resolution status
-     */
-    suspend fun getTasksGroupedByResolutionStatus(criteria: TaskFilterCriteria): GroupedTasks {
-        val filteredTasks = repository.getAllWithTotalsFiltered(spaceId, criteria)
         return repository.groupTasksByResolutionStatus(filteredTasks)
     }
 }

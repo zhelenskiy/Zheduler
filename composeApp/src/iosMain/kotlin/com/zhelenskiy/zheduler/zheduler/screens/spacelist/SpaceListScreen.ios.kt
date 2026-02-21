@@ -26,8 +26,8 @@ internal actual fun getFileSaverLauncher(
                 val jsonData = viewModel.exportSpaceToJson(space.id, prettyPrint)
                 if (jsonData != null) {
                     it.writeStringToFile(jsonData)
-                    snackbarHostState.showSnackbar("Space exported to ${it.name}")
                     onDismiss()
+                    snackbarHostState.showSnackbar("Space exported to ${it.name}")
                 } else {
                     snackbarHostState.showSnackbar("Failed to export space")
                 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -32,7 +33,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Modifier.Companion
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -43,9 +43,8 @@ import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
 import com.zhelenskiy.zheduler.zheduler.components.common.AutomaticChangeIndicator
-import com.zhelenskiy.zheduler.zheduler.components.common.ConnectedTaskChip
-import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
+import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarViewModel
 import kotlinx.datetime.*
 import kotlin.time.Clock
@@ -53,7 +52,7 @@ import kotlin.time.ExperimentalTime
 
 @Suppress("UnusedReceiverParameter")
 @Composable
-public fun BoxScope.AnimatedVisibility(
+fun BoxScope.AnimatedVisibility(
     visible: Boolean,
     modifier: Modifier = Modifier,
     enter: EnterTransition = fadeIn() + expandIn(),
@@ -80,6 +79,48 @@ data class YearMonth(val year: Int, val month: Month) {
         return (nextMonth.toEpochDays() - firstDay().toEpochDays()).toInt()
     }
 }
+
+private fun YearMonth.toPreviousMonth(): YearMonth =
+    if (month == Month.JANUARY) {
+        YearMonth(year - 1, Month.DECEMBER)
+    } else {
+        YearMonth(year, Month.entries[month.ordinal - 1])
+    }
+
+private fun YearMonth.toNextMonth(): YearMonth =
+    if (month == Month.DECEMBER) {
+        YearMonth(year + 1, Month.JANUARY)
+    } else {
+        YearMonth(year, Month.entries[month.ordinal + 1])
+    }
+
+private fun getMonthTransitionAnimation(isNavigatingForward: Boolean?) =
+    when (isNavigatingForward) {
+        true -> slideInHorizontally { width -> width } + fadeIn() togetherWith
+                slideOutHorizontally { width -> -width } + fadeOut()
+
+        false -> slideInHorizontally { width -> -width } + fadeIn() togetherWith
+                slideOutHorizontally { width -> width } + fadeOut()
+
+        null -> fadeIn() togetherWith fadeOut()
+    }
+
+private fun getEventEnterAnimation(isNavigatingForward: Boolean?) =
+    when (isNavigatingForward) {
+        true -> slideInHorizontally { width -> width } + fadeIn()
+        false -> slideInHorizontally { width -> -width } + fadeIn()
+        null -> fadeIn()
+    }
+
+private fun getEventExitAnimation(isNavigatingForward: Boolean?) =
+    when (isNavigatingForward) {
+        true -> slideOutHorizontally { width -> -width } + fadeOut()
+        false -> slideOutHorizontally { width -> width } + fadeOut()
+        null -> fadeOut()
+    }
+
+private fun isDateInMonth(date: LocalDate?, yearMonth: YearMonth): Boolean =
+    date?.let { it.year == yearMonth.year && it.month == yearMonth.month } ?: false
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -134,79 +175,45 @@ fun CalendarScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
-                Column(
-                    modifier = Modifier
-                        .widthIn(max = 400.dp)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.Top
-                ) {
-                    // Month navigation header
-                    MonthNavigationHeader(
-                        yearMonth = currentMonth,
-                        onPreviousMonth = {
-                            isNavigatingForward = false
-                            currentMonth = if (currentMonth.month == Month.JANUARY) {
-                                YearMonth(currentMonth.year - 1, Month.DECEMBER)
-                            } else {
-                                YearMonth(currentMonth.year, Month.entries[currentMonth.month.ordinal - 1])
-                            }
-                        },
-                        onNextMonth = {
-                            isNavigatingForward = true
-                            currentMonth = if (currentMonth.month == Month.DECEMBER) {
-                                YearMonth(currentMonth.year + 1, Month.JANUARY)
-                            } else {
-                                YearMonth(currentMonth.year, Month.entries[currentMonth.month.ordinal + 1])
-                            }
-                        }
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Top
+            ) {
+                MonthNavigationHeader(
+                    yearMonth = currentMonth,
+                    onPreviousMonth = {
+                        isNavigatingForward = false
+                        currentMonth = currentMonth.toPreviousMonth()
+                    },
+                    onNextMonth = {
+                        isNavigatingForward = true
+                        currentMonth = currentMonth.toNextMonth()
+                    }
+                )
+
+                AnimatedContent(
+                    targetState = currentMonth,
+                    transitionSpec = {
+                        getMonthTransitionAnimation(isNavigatingForward)
+                    },
+                    label = "calendar_month_animation"
+                ) { targetMonth ->
+                    CalendarGrid(
+                        yearMonth = targetMonth,
+                        selectedDate = selectedDate,
+                        statusChangesByDate = statusChangesByDate,
+                        onDateSelected = { selectedDate = it; isNavigatingForward = null },
                     )
-
-                    val slideAnimation = when (isNavigatingForward) {
-                        true -> {
-                            slideInHorizontally { width -> width } + fadeIn() togetherWith
-                                    slideOutHorizontally { width -> -width } + fadeOut()
-                        }
-                        false -> {
-                            slideInHorizontally { width -> -width } + fadeIn() togetherWith
-                                    slideOutHorizontally { width -> width } + fadeOut()
-                        }
-                        null -> fadeIn() togetherWith fadeOut()
-                    }
-                    // Calendar grid with slide animation
-                    AnimatedContent(
-                        targetState = currentMonth,
-                        transitionSpec = {
-                            slideAnimation
-                        },
-                        label = "calendar_month_animation"
-                    ) { targetMonth ->
-                        CalendarGrid(
-                            yearMonth = targetMonth,
-                            selectedDate = selectedDate,
-                            statusChangesByDate = statusChangesByDate,
-                            onDateSelected = { selectedDate = it; isNavigatingForward = null },
-                        )
-                    }
                 }
+            }
 
-            // Selected date events - only show if selected date is in current month
-            val showEvents = selectedDate?.let { date ->
-                date.year == currentMonth.year && date.month == currentMonth.month
-            } ?: false
-
-            val visible = showEvents && selectedDate != null
+            val visible = isDateInMonth(selectedDate, currentMonth)
             AnimatedVisibility(
                 visible = visible,
-                enter = when (isNavigatingForward) {
-                    true -> slideInHorizontally { width -> width } + fadeIn()
-                    false -> slideInHorizontally { width -> -width } + fadeIn()
-                    null -> fadeIn()
-                },
-                exit = when (isNavigatingForward) {
-                    true -> slideOutHorizontally { width -> -width } + fadeOut()
-                    false -> slideOutHorizontally { width -> width } + fadeOut()
-                    null -> fadeOut()
-                }
+                enter = getEventEnterAnimation(isNavigatingForward),
+                exit = getEventExitAnimation(isNavigatingForward)
             ) {
                 selectedDate?.let { targetDate ->
                     Column(Modifier.fillMaxWidth()) {
@@ -254,6 +261,51 @@ private fun MonthNavigationHeader(
     }
 }
 
+data class CalendarLayoutInfo(
+    val firstDayOfWeek: Int,
+    val daysInMonth: Int,
+    val startOffset: Int
+) {
+    companion object {
+        fun from(yearMonth: YearMonth): CalendarLayoutInfo {
+            val firstDay = yearMonth.firstDay()
+            val firstDayOfWeek = firstDay.dayOfWeek.isoDayNumber
+            val daysInMonth = yearMonth.lengthOfMonth()
+            val startOffset = firstDayOfWeek - 1
+            return CalendarLayoutInfo(firstDayOfWeek, daysInMonth, startOffset)
+        }
+    }
+
+    fun hasAnyDayInWeek(week: Int): Boolean {
+        val startIndex = week * 7
+        return (startIndex until startIndex + 7).any { cellIndex ->
+            val dayNumber = cellIndex - startOffset + 1
+            dayNumber in 1..daysInMonth
+        }
+    }
+
+    fun getDayNumber(week: Int, dayInWeek: Int): Int? {
+        val cellIndex = week * 7 + dayInWeek
+        val dayNumber = cellIndex - startOffset + 1
+        return if (dayNumber in 1..daysInMonth) dayNumber else null
+    }
+}
+
+@Composable
+private fun WeekDayHeaders(daysOfWeek: List<String>, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.fillMaxWidth()) {
+        daysOfWeek.forEach { day ->
+            Text(
+                text = day,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
 @Composable
 private fun CalendarGrid(
     yearMonth: YearMonth,
@@ -264,44 +316,21 @@ private fun CalendarGrid(
 ) {
     val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date }
     val daysOfWeek = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    val layoutInfo = remember(yearMonth) { CalendarLayoutInfo.from(yearMonth) }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // Day of week headers
-        Row(modifier = Modifier.fillMaxWidth()) {
-            daysOfWeek.forEach { day ->
-                Text(
-                    text = day,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
+        WeekDayHeaders(daysOfWeek)
         Spacer(modifier = Modifier.height(4.dp))
 
         // Calendar days
-        val firstDay = yearMonth.firstDay()
-        val firstDayOfWeek = firstDay.dayOfWeek.isoDayNumber
-        val daysInMonth = yearMonth.lengthOfMonth()
-        val startOffset = firstDayOfWeek - 1
-
-        for (week in 0 until 6) {
-            val startIndex = week * 7
-            val hasAnyDayInWeek = (startIndex until startIndex + 7).any { cellIndex ->
-                val dayNumber = cellIndex - startOffset + 1
-                dayNumber in 1..daysInMonth
-            }
-
-            if (!hasAnyDayInWeek && week > 0) break
+        for (week in 0..5) {
+            if (!layoutInfo.hasAnyDayInWeek(week) && week > 0) break
 
             Row(modifier = Modifier.fillMaxWidth()) {
-                for (dayInWeek in 0 until 7) {
-                    val cellIndex = startIndex + dayInWeek
-                    val dayNumber = cellIndex - startOffset + 1
+                for (dayInWeek in 0..6) {
+                    val dayNumber = layoutInfo.getDayNumber(week, dayInWeek)
 
-                    if (dayNumber in 1..daysInMonth) {
+                    if (dayNumber != null) {
                         val date = LocalDate(yearMonth.year, yearMonth.month, dayNumber)
                         val changeCount = statusChangesByDate[date]?.size ?: 0
                         val isSelected = date == selectedDate
@@ -377,6 +406,11 @@ private fun CalendarDayCell(
 
             if (changeCount > 0) {
                 val dotCount = minOf(changeCount, 3)
+                val backgroundColor = if (isSelected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.padding(top = 2.dp)
@@ -386,13 +420,7 @@ private fun CalendarDayCell(
                             modifier = Modifier
                                 .size(4.dp)
                                 .clip(CircleShape)
-                                .background(
-                                    if (isSelected) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.primary
-                                    }
-                                )
+                                .background(backgroundColor)
                         )
                     }
                 }
@@ -429,32 +457,57 @@ private fun SelectedDateEvents(
         }
         Box {
             AnimatedVisibility(events.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                eventsLast.forEach { event ->
-                    StatusChangeCard(
-                        event = event,
-                        onClick = { onTaskClick(event.task.id) },
-                        getTaskById = getTaskById,
-                        onTaskClick = onTaskClick
-                    )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    eventsLast.forEach { event ->
+                        StatusChangeCard(
+                            event = event,
+                            onClick = { onTaskClick(event.task.id) },
+                            getTaskById = getTaskById,
+                            onTaskClick = onTaskClick
+                        )
+                    }
+                }
+                DisposableEffect(Unit) {
+                    onDispose { eventsLast = events }
                 }
             }
-            DisposableEffect(Unit) {
-                onDispose { eventsLast = events }
+            AnimatedVisibility(events.isEmpty(), enter = fadeIn(), exit = fadeOut()) {
+                Text(
+                    text = "No status changes",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
-        AnimatedVisibility(events.isEmpty(), enter = fadeIn(), exit = fadeOut()) {
-            Text(
-                text = "No status changes",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-            }
     }
+}
+
+private suspend fun loadBlockerTasks(
+    event: StatusChangeEvent,
+    getTaskById: suspend (String) -> Task?
+): Map<String, Task> {
+    val tasks = mutableMapOf<String, Task>()
+    val prevStatus = event.statusChange.previousStatus
+    val newStatus = event.statusChange.newStatus
+
+    val blockerIds = buildSet {
+        if (prevStatus is TaskStatus.Blocked) {
+            addAll(prevStatus.blockerTaskIds)
+        }
+        if (newStatus is TaskStatus.Blocked) {
+            addAll(newStatus.blockerTaskIds)
+        }
+    }
+
+    blockerIds.forEach { blockerId ->
+        getTaskById(blockerId)?.let { task ->
+            tasks[blockerId] = task
+        }
+    }
+    return tasks
 }
 
 @Composable
@@ -468,25 +521,7 @@ private fun StatusChangeCard(
     var blockerTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
 
     LaunchedEffect(event) {
-        val tasks = mutableMapOf<String, Task>()
-        val prevStatus = event.statusChange.previousStatus
-        val newStatus = event.statusChange.newStatus
-
-        val blockerIds = buildSet {
-            if (prevStatus is TaskStatus.Blocked) {
-                addAll(prevStatus.blockerTaskIds)
-            }
-            if (newStatus is TaskStatus.Blocked) {
-                addAll(newStatus.blockerTaskIds)
-            }
-        }
-
-        blockerIds.forEach { blockerId ->
-            getTaskById(blockerId)?.let { task ->
-                tasks[blockerId] = task
-            }
-        }
-        blockerTasks = tasks
+        blockerTasks = loadBlockerTasks(event, getTaskById)
     }
 
     Surface(
@@ -501,129 +536,67 @@ private fun StatusChangeCard(
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            // Task ID and title on one line
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = event.task.id,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = event.task.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            TaskInfoRow(event)
+            TaskStatusChangeRow(event, blockerTasks, onTaskClick, getTaskById)
+        }
+    }
+}
 
-            // Status change row - compact
-            FlowRow(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(top = 4.dp).fillMaxWidth(),
-                itemVerticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = formatTimeOnly(event.statusChange.timestamp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace
-                )
+@Composable
+private fun TaskInfoRow(event: StatusChangeEvent) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = event.task.id,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace
+        )
+        Text(
+            text = event.task.title,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
 
-                // Show previous status with details
-                event.statusChange.previousStatus?.let { prevStatus ->
-                    StatusBadge(status = prevStatus)
-                    when (prevStatus) {
-                        is TaskStatus.Blocked -> {
-                            // Show blocker tasks if any
-                            if (prevStatus.blockerTaskIds.isNotEmpty()) {
-                                Text(
-                                    text = "by",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                                prevStatus.blockerTaskIds.forEach { blockerId ->
-                                    val blockerTask = blockerTasks[blockerId]
-                                    ConnectedTaskChip(
-                                        task = blockerTask,
-                                        taskId = blockerId,
-                                        onClick = { blockerTask?.let { onTaskClick(it.id) } }
-                                    )
-                                }
-                            }
-                            // Show comment if any
-                            if (prevStatus.comment.isNotEmpty()) {
-                                Text(
-                                    text = prevStatus.comment,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        is TaskStatus.Declined -> {
-                            // Show decline reason
-                            Text(
-                                text = prevStatus.reason,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        else -> {}
-                    }
-                    Text("→", style = MaterialTheme.typography.labelSmall)
-                }
+@Composable
+private fun TaskStatusChangeRow(
+    event: StatusChangeEvent,
+    blockerTasks: Map<String, Task>,
+    onTaskClick: (String) -> Unit,
+    getTaskById: suspend (String) -> Task?
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = formatTimeOnly(event.statusChange.timestamp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace
+        )
 
-                // Show new status with details
-                StatusBadge(status = event.statusChange.newStatus)
-                when (val newStatus = event.statusChange.newStatus) {
-                    is TaskStatus.Blocked -> {
-                        // Show blocker tasks if any
-                        if (newStatus.blockerTaskIds.isNotEmpty()) {
-                            Text(
-                                text = "by",
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                            newStatus.blockerTaskIds.forEach { blockerId ->
-                                val blockerTask = blockerTasks[blockerId]
-                                ConnectedTaskChip(
-                                    task = blockerTask,
-                                    taskId = blockerId,
-                                    onClick = { blockerTask?.let { onTaskClick(it.id) } }
-                                )
-                            }
-                        }
-                        // Show comment if any
-                        if (newStatus.comment.isNotEmpty()) {
-                            Text(
-                                text = newStatus.comment,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    is TaskStatus.Declined -> {
-                        // Show decline reason
-                        Text(
-                            text = newStatus.reason,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    else -> {}
-                }
+        TaskStatusChange(
+            change = event.statusChange,
+            blockerTasks = blockerTasks,
+            onBlockerTaskClick = onTaskClick
+        )
 
-                event.statusChange.automaticChangeReason?.let{
-                    AutomaticChangeIndicator(
-                        reason = it,
-                        getTaskById = getTaskById,
-                        onTaskClick = onTaskClick
-                    )
-                }
-            }
+        event.statusChange.automaticChangeReason?.let {
+            AutomaticChangeIndicator(
+                reason = it,
+                getTaskById = getTaskById,
+                onTaskClick = onTaskClick
+            )
         }
     }
 }

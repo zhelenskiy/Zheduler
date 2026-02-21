@@ -31,14 +31,13 @@ import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.TimeRecurrenceTrigger
 import com.zhelenskiy.zheduler.zheduler.TimeOfDay
-import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 import com.zhelenskiy.zheduler.zheduler.components.common.TimeZoneSelector
 import com.zhelenskiy.zheduler.zheduler.components.common.icon
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.NoData
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.Success
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
+import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
-import com.zhelenskiy.zheduler.zheduler.util.formatPeriod
 import kotlinx.datetime.*
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -448,7 +447,7 @@ private fun AfterTimeoutConfiguration(
     onTriggerSelected: (TimeRecurrenceTrigger?) -> Unit
 ) {
     // Compact format
-    var periodText by remember { mutableStateOf(oldTimeTrigger?.period?.let(::formatPeriod) ?: "") }
+    var periodText by remember { mutableStateOf(oldTimeTrigger?.period?.let { it.toBriefString() } ?: "") }
     var startTime by remember {
         mutableStateOf(
             when (oldTimeTrigger) {
@@ -939,42 +938,14 @@ private fun ResetToStatusButton(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("Reset to status", style = MaterialTheme.typography.titleSmall)
-            StatusBadge(
+            TaskStatus(
                 status = selectedStatus,
-                modifier = Modifier
+                blockerTasks = null,
+                onBlockerTaskClick = null,
+                badgeModifier = Modifier
                     .clickable(onClick = { showResetStatusDialog = true })
                     .padding(6.dp)
             )
-        }
-        when (selectedStatus) {
-            is TaskStatus.Blocked -> {
-                if (selectedStatus.blockerTaskIds.isNotEmpty()) {
-                    Text(
-                        "Blocked by: ${selectedStatus.blockerTaskIds.joinToString(", ")}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (selectedStatus.comment.isNotEmpty()) {
-                    Text(
-                        selectedStatus.comment,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            is TaskStatus.Declined -> {
-                if (selectedStatus.reason.isNotEmpty()) {
-                    Text(
-                        selectedStatus.reason,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            else -> {}
         }
     }
 }
