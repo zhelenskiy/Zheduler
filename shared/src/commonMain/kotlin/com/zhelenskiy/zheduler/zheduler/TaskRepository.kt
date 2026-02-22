@@ -17,6 +17,12 @@ interface TaskRepository {
     // ============ Space management ============
 
     /**
+     * Check if there are any spaces in the repository.
+     * @return true if there are spaces, false otherwise
+     */
+    suspend fun hasSpaces(): Boolean
+
+    /**
      * Get all spaces in the repository.
      * @return List of all spaces
      */
@@ -183,7 +189,7 @@ interface TaskRepository {
      * @param connections Set of connections to other tasks (optional)
      * @param notifications List of notification settings (optional)
      * @param customId Custom task ID (optional, generates auto-incrementing ID if not provided)
-     * @param recurrenceRule Rule for recurring tasks (defaults to None)
+     * @param recurrenceRules List of recurrence rules for recurring tasks (defaults to empty)
      * @param resetStatusOnRecurrence Status to reset to when recurrence triggers (defaults to Open)
      * @param autoUpdateStatusFromSubtasks Whether to automatically update status based on subtasks (defaults to false)
      * @return The created task, or null if creation failed
@@ -200,7 +206,7 @@ interface TaskRepository {
         connections: Set<TaskConnection> = emptySet(),
         notifications: List<TaskNotification> = emptyList(),
         customId: String? = null,
-        recurrenceRule: RecurrenceRule? = null,
+        recurrenceRules: List<RecurrenceRule> = emptyList(),
         resetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
         autoUpdateStatusFromSubtasks: Boolean = false
     ): Task?

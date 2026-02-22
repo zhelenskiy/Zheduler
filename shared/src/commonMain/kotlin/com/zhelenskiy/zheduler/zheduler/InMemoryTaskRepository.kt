@@ -44,6 +44,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     private val viewModeBySpaceId = mutableMapOf<String, String>()
     private val filterPanelOpenBySpaceId = mutableMapOf<String, Boolean>()
 
+    override suspend fun hasSpaces(): Boolean = mutex.withLock { spaces.isNotEmpty() }
+
     override suspend fun getAllSpaces(): List<Space> = mutex.withLock { spaces.values.toList() }
 
     override suspend fun getSpaceById(id: String): Space? = mutex.withLock { spaces[id] }
@@ -272,14 +274,14 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
         customId: String?,
-        recurrenceRule: RecurrenceRule?,
+        recurrenceRules: List<RecurrenceRule>,
         resetStatusOnRecurrence: TaskStatus,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
         if (!spaces.containsKey(spaceId)) return@withLock null
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
-        val recurrenceState = RecurrenceService.initializeRecurrence(recurrenceRule)
+        val recurrenceState = RecurrenceService.initializeRecurrence(recurrenceRules)
 
         val task = Task(
             id = taskId,
@@ -293,7 +295,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             connections = connections,
             notifications = notifications,
             spaceId = spaceId,
-            recurrenceRule = recurrenceRule,
+            recurrenceRules = recurrenceRules,
             recurrenceState = recurrenceState,
             resetStatusOnRecurrence = resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks

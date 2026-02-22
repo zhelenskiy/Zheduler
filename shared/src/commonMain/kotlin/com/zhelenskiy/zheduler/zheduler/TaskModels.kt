@@ -225,7 +225,7 @@ data class Task(
     val connections: Set<TaskConnection> = emptySet(),
     val notifications: List<TaskNotification> = emptyList(), // Notifications before deadline
     val spaceId: String, // ID of the space this task belongs to
-    val recurrenceRule: RecurrenceRule? = null,
+    val recurrenceRules: List<RecurrenceRule> = emptyList(), // Multiple recurrence rules
     val recurrenceState: RecurrenceState = RecurrenceState(),
     val resetStatusOnRecurrence: TaskStatus = TaskStatus.Open, // Status to reset to when recurring
     val autoUpdateStatusFromSubtasks: Boolean = false // Automatically update status based on subtasks
@@ -233,7 +233,7 @@ data class Task(
     /**
      * Check if this task is recurring
      */
-    val isRecurring: Boolean get() = recurrenceRule != null
+    val isRecurring: Boolean get() = recurrenceRules.isNotEmpty()
 
     /**
      * Check if this task is missed (overdue and not resolved).

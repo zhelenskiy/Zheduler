@@ -51,7 +51,7 @@ fun SpaceListScreen(
     useDynamicColors: Boolean,
     onDynamicColorsChange: (Boolean) -> Unit
 ) {
-    val spaces by viewModel.spaces.collectAsState()
+    val hasSpaces by viewModel.hasSpaces.collectAsState()
     val allTags by viewModel.allTags.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchOptions by viewModel.searchOptions.collectAsState()
@@ -69,7 +69,6 @@ fun SpaceListScreen(
     var showEraseAllDataDialog by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
     var importedSpaceName by remember { mutableStateOf<String?>(null) }
 
@@ -124,7 +123,7 @@ fun SpaceListScreen(
                 .padding(padding)
         ) {
             // Search bar visible when spaces exist
-            if (spaces?.isNotEmpty() == true) {
+            if (hasSpaces == true) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -196,7 +195,7 @@ fun SpaceListScreen(
 
             Box(modifier = Modifier.fillMaxSize()) {
                 AnimatedVisibility(
-                    visible = spaces?.isEmpty() == true,
+                    visible = hasSpaces == false,
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
@@ -204,7 +203,7 @@ fun SpaceListScreen(
                 }
 
                 AnimatedVisibility(
-                    visible = spaces?.isNotEmpty() == true && filteredSpaces?.isEmpty() == true,
+                    visible = hasSpaces == true && filteredSpaces?.isEmpty() == true,
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
@@ -276,7 +275,7 @@ fun SpaceListScreen(
                         }
                     }
                 }
-                AnimatedVisibility(spaces == null || filteredSpaces == null, enter = fadeIn(), exit = fadeOut()) {
+                AnimatedVisibility(hasSpaces == null || filteredSpaces == null, enter = fadeIn(), exit = fadeOut()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(48.dp))
                     }

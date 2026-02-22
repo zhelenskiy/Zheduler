@@ -3,11 +3,15 @@
 package com.zhelenskiy.zheduler.zheduler.components.form
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -16,17 +20,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.common.ConnectedTaskChip
-import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 import com.zhelenskiy.zheduler.zheduler.components.common.TagChip
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.*
 import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.time.ExperimentalTime
 
 @Composable
@@ -66,7 +72,9 @@ private fun TitleField(formState: TaskFormState) {
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
         isError = formState.title.isBlank(),
-        supportingText = if (formState.title.isBlank()) { { Text("Title is required") } } else null
+        supportingText = if (formState.title.isBlank()) {
+            { Text("Title is required") }
+        } else null
     )
 }
 
@@ -206,54 +214,209 @@ private fun RecurrenceSection(
     filterTasksForSelection: suspend (String) -> List<Task>,
     getTaskById: suspend (String) -> Task?
 ) {
-    var showRecurrenceDialog by remember { mutableStateOf(false) }
+    var editingRuleIndex by remember { mutableStateOf<Int?>(null) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showRecurrenceDialog = true }
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(
-                Icons.Default.Refresh,
-                contentDescription = null,
-                tint = if (formState.recurrenceRule != null) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "Repeat", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    text = formState.recurrenceRule.toFullString(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = null,
+                    tint = if (formState.recurrenceRules.isNotEmpty()) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
+                Text(
+                    text = "Recurrence rules:",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { editingRuleIndex = formState.recurrenceRules.size }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add recurrence rule")
+                }
             }
-            Icon(
-                Icons.Default.Edit,
-                contentDescription = "Edit recurrence",
-                modifier = Modifier.size(16.dp)
-            )
+
+            AnimatedContent(
+                targetState = formState.recurrenceRules.size,
+                transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }
+            ) {
+                if (it > 0) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 400.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(formState.recurrenceRules.size) { index ->
+                            RecurrenceRuleItem(
+                                rule = formState.recurrenceRules[index],
+                                onEdit = { editingRuleIndex = index },
+                                onDelete = {
+                                    val mutableRules = formState.recurrenceRules.toMutableList()
+                                    mutableRules.removeAt(index)
+                                    formState.recurrenceRules = mutableRules
+                                },
+                                index = index,
+                                onTaskClick = null,
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
-    if (showRecurrenceDialog) {
-        RecurrenceDialog(
-            currentRule = formState.recurrenceRule,
+    if (editingRuleIndex != null) {
+        val index = editingRuleIndex!!
+        SingleRecurrenceRuleDialog(
+            currentRule = formState.recurrenceRules.getOrNull(index),
             filterTasks = filterTasksForSelection,
             getTaskById = getTaskById,
-            onDismiss = { showRecurrenceDialog = false },
+            onDismiss = { editingRuleIndex = null },
             onRecurrenceSelected = { rule ->
-                formState.recurrenceRule = rule
-                showRecurrenceDialog = false
+                if (rule != null) {
+                    val mutableRules = formState.recurrenceRules.toMutableList()
+                    if (index < mutableRules.size) {
+                        mutableRules[index] = rule
+                    } else {
+                        mutableRules.add(rule)
+                    }
+                    formState.recurrenceRules = mutableRules
+                }
+                editingRuleIndex = null
             }
         )
     }
+}
+
+@Composable
+fun RecurrenceRuleItem(
+    rule: RecurrenceRule,
+    onEdit: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    index: Int,
+    onTaskClick: ((String) -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Rule #${index + 1}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                RecurrenceRuleDetails(rule = rule, onTaskClick = onTaskClick)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onEdit != null) {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(20.dp))
+                    }
+                }
+                if (onDelete != null) {
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RecurrenceRuleDetails(rule: RecurrenceRule, onTaskClick: ((String) -> Unit)?) {
+    val style = MaterialTheme.typography.bodySmall
+    Column {
+        val timeRecurrenceTriggerString = rule.timeRecurrenceTrigger?.let { timeTrigger ->
+            when (timeTrigger) {
+                is RecurrenceTrigger.AfterTimeout -> timeTrigger.period
+                    ?.let { "Every ${it.toFullString()} since ${formatDate(timeTrigger.firstOccurrence)}" }
+                    ?: "At ${formatDate(timeTrigger.firstOccurrence)}"
+
+                is RecurrenceTrigger.AtFixedPoints -> timeTrigger.pattern.toFullString() + timeTrigger.timezoneSuffix()
+            }
+        }
+        val badgeModifier = Modifier.border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.secondary,
+            shape = MaterialTheme.shapes.small,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            if (timeRecurrenceTriggerString != null) {
+                if (rule.statusChangeTrigger != null) {
+                    Text("$timeRecurrenceTriggerString on ", style = style)
+                } else {
+                    Text(timeRecurrenceTriggerString, style = style)
+                }
+            } else if (rule.statusChangeTrigger != null) {
+                Text("On ", style = style)
+            }
+            rule.statusChangeTrigger?.let { trigger ->
+                Text(if (trigger.requiredStatuses.size == 1) "status " else "statuses ", style = style)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    trigger.requiredStatuses.forEach {
+                        TaskStatus(
+                            status = it,
+                            blockerTasks = null,
+                            onBlockerTaskClick = onTaskClick,
+                            modifier = Modifier,
+                            badgeModifier = badgeModifier,
+                            blockerTaskModifier = badgeModifier,
+                        )
+                    }
+                }
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
+            Text("Reset to ", style = style)
+            TaskStatus(
+                status = rule.resetToStatus,
+                blockerTasks = null,
+                onBlockerTaskClick = onTaskClick,
+                modifier = Modifier,
+                badgeModifier = badgeModifier,
+                blockerTaskModifier = badgeModifier,
+            )
+        }
+        Text(rule.termination.toFullString(), style = style)
+    }
+}
+
+private fun RecurrenceTrigger.AtFixedPoints.timezoneSuffix(): String = when (val tz = timezone) {
+    is RecurrenceTimeZone.SystemDefault -> ""
+    is RecurrenceTimeZone.Specific -> " (${tz.zoneId})"
 }
 
 @Composable
@@ -281,7 +444,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                             text = "No notifications",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f).padding(start = 8.dp)
+                            modifier = Modifier.padding(start = 8.dp)
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
@@ -347,43 +510,47 @@ private fun TagsSection(
 ) {
     var showTagDialog by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Tags:",
-                style = MaterialTheme.typography.titleSmall
-            )
-
-            if (formState.tags.isEmpty()) {
+    AnimatedContent(
+        formState.tags,
+        transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) { tags ->
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    text = "No tags selected",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
+                    text = "Tags:",
+                    style = MaterialTheme.typography.titleSmall
                 )
-            } else {
-                FlowRow(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    formState.tags.forEach { tag ->
-                        TagChip(
-                            tag = tag,
-                            onRemove = { formState.tags -= tag }
-                        )
+
+                if (tags.isEmpty()) {
+                    Text(
+                        text = "No tags selected",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        tags.forEach { tag ->
+                            TagChip(
+                                tag = tag,
+                                onRemove = { formState.tags -= tag }
+                            )
+                        }
                     }
                 }
-            }
 
-            IconButton(onClick = { showTagDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add tag")
+                IconButton(onClick = { showTagDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add tag")
+                }
             }
         }
     }
@@ -413,88 +580,98 @@ private fun ConnectionsSection(
     val coroutineScope = rememberCoroutineScope()
     var showConnectionDialog by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Connections:",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                if (formState.connections.isEmpty()) {
-                    Text(
-                        text = "No connections",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f).padding(start = 8.dp)
-                    )
-                }
-                IconButton(onClick = { showConnectionDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add connection")
-                }
-            }
-
-            if (formState.connections.isNotEmpty()) {
-                ConnectionType.entries.forEach { connectionType ->
-                    val connectionsForType = formState.connections.filter { it.type == connectionType }
-                    if (connectionsForType.isNotEmpty()) {
-                        Text(
-                            text = connectionType.displayName,
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                        connectionsForType.forEach { connection ->
-                            val connectedTask = connectedTasks[connection.targetTaskId]
-                            ConnectedTaskChip(
-                                task = connectedTask,
-                                taskId = connection.targetTaskId,
-                                onRemove = { formState.connections -= connection },
-                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
-                }
-            }
-
-            // Auto-update status from subtasks toggle
-            val hasSubtasks = formState.connections.any { it.type == ConnectionType.ParentOf }
-            if (hasSubtasks) {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+    AnimatedContent(
+        formState.connections,
+        transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) { connections ->
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Connections:",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    if (connections.isEmpty()) {
                         Text(
-                            text = "Auto-update status from subtasks",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Automatically sets status based on subtask statuses",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "No connections",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp)
                         )
                     }
-                    Switch(
-                        checked = formState.autoUpdateStatusFromSubtasks,
-                        onCheckedChange = { enabled ->
-                            formState.autoUpdateStatusFromSubtasks = enabled
-                            // When enabled, recalculate status from subtasks
-                            if (enabled) {
-                                coroutineScope.launch {
-                                    val calculatedStatus = getCalculatedStatusFromSubtasks(taskId)
-                                    if (calculatedStatus != null) {
-                                        formState.status = calculatedStatus
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { showConnectionDialog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add connection")
+                    }
+                }
+
+                if (connections.isNotEmpty()) {
+                    ConnectionType.entries.forEach { connectionType ->
+                        val connectionsForType = connections.filter { it.type == connectionType }
+                        if (connectionsForType.isNotEmpty()) {
+                            Text(
+                                text = connectionType.displayName,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            FlowRow(
+                                itemVerticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                connectionsForType.forEach { connection ->
+                                    val connectedTask = connectedTasks[connection.targetTaskId]
+                                    ConnectedTaskChip(
+                                        task = connectedTask,
+                                        taskId = connection.targetTaskId,
+                                        onRemove = { formState.connections -= connection },
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                    }
+                }
+
+                // Auto-update status from subtasks toggle
+                val hasSubtasks = connections.any { it.type == ConnectionType.ParentOf }
+                if (hasSubtasks) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Auto-update status from subtasks",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Automatically sets status based on subtask statuses",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = formState.autoUpdateStatusFromSubtasks,
+                            onCheckedChange = { enabled ->
+                                formState.autoUpdateStatusFromSubtasks = enabled
+                                // When enabled, recalculate status from subtasks
+                                if (enabled) {
+                                    coroutineScope.launch {
+                                        val calculatedStatus = getCalculatedStatusFromSubtasks(taskId)
+                                        if (calculatedStatus != null) {
+                                            formState.status = calculatedStatus
+                                        }
                                     }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -514,12 +691,13 @@ private fun ConnectionsSection(
 }
 
 @Composable
-private fun DescriptionSection(
+private fun ColumnScope.DescriptionSection(
     formState: TaskFormState,
     currentSpaceIdPrefix: String?,
     allSpacePrefixes: List<String>,
     connectedTasks: Map<String, Task>,
-    onTaskClick: (String) -> Unit
+    onTaskClick: (String) -> Unit,
+    scrollState: ScrollState
 ) {
     val descriptionLabel = currentSpaceIdPrefix
         ?.let { "Description (Markdown, use $it-# to reference)" }
@@ -535,18 +713,29 @@ private fun DescriptionSection(
         minLines = 5
     )
 
-    if (formState.description.isNotEmpty()) {
-        Text(
-            text = "Preview:",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        SimpleMarkdownText(
-            markdown = formState.description,
-            allSpacePrefixes = allSpacePrefixes,
-            getTaskById = { taskId -> connectedTasks[taskId] },
-            onTaskClick = onTaskClick
-        )
+    var scrollToPosition by remember { mutableStateOf<Float?>(null) }
+    AnimatedVisibility(
+        visible = formState.description.isNotBlank(),
+        modifier = Modifier.onGloballyPositioned { coordinates ->
+            scrollToPosition = coordinates.positionInParent().y // Get the y position
+        }
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "Preview:",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SimpleMarkdownText(
+                markdown = formState.description,
+                allSpacePrefixes = allSpacePrefixes,
+                getTaskById = { taskId -> connectedTasks[taskId] },
+                onTaskClick = onTaskClick,
+            )
+            LaunchedEffect(Unit) {
+                scrollToPosition?.let { scrollState.animateScrollTo(it.roundToInt()) }
+            }
+        }
     }
 }
 
@@ -562,7 +751,6 @@ fun TaskFormContent(
     prefilledConnection: TaskConnection? = null,
     onTaskClick: (String) -> Unit,
     onCreateNewTaskWithConnection: ((ConnectionType) -> Unit)?,
-    // Data providers (instead of repository)
     getTaskById: suspend (String) -> Task?,
     filterTags: suspend (String, Set<String>) -> List<String>,
     filterTasksForSelection: suspend (String) -> List<Task>,
@@ -584,10 +772,11 @@ fun TaskFormContent(
         connectedTasks = tasks
     }
 
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -603,7 +792,14 @@ fun TaskFormContent(
         DueDatePicker(formState)
         NotificationsSection(formState)
         TagsSection(formState, filterTags)
-        ConnectionsSection(formState, taskId, connectedTasks, searchTasksForConnection, getCalculatedStatusFromSubtasks, onCreateNewTaskWithConnection)
-        DescriptionSection(formState, currentSpaceIdPrefix, allSpacePrefixes, connectedTasks, onTaskClick)
+        ConnectionsSection(
+            formState,
+            taskId,
+            connectedTasks,
+            searchTasksForConnection,
+            getCalculatedStatusFromSubtasks,
+            onCreateNewTaskWithConnection
+        )
+        DescriptionSection(formState, currentSpaceIdPrefix, allSpacePrefixes, connectedTasks, onTaskClick, scrollState)
     }
 }
