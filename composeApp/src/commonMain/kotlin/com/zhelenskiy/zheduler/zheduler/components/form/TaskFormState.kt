@@ -19,7 +19,7 @@ class TaskFormState(
     initialStatus: TaskStatus,
     initialConnections: Set<TaskConnection>,
     initialNotifications: List<String>, // Compact time strings (e.g., "1d", "2h 30m")
-    initialRecurrenceRule: RecurrenceRule?,
+    initialRecurrenceRules: List<RecurrenceRule>,
     initialResetStatusOnRecurrence: TaskStatus,
     initialAutoUpdateStatusFromSubtasks: Boolean
 ) {
@@ -32,7 +32,7 @@ class TaskFormState(
     var status by mutableStateOf(initialStatus)
     var connections by mutableStateOf(initialConnections)
     var notifications by mutableStateOf(initialNotifications)
-    var recurrenceRule by mutableStateOf(initialRecurrenceRule)
+    var recurrenceRules by mutableStateOf(initialRecurrenceRules)
     var resetStatusOnRecurrence by mutableStateOf(initialResetStatusOnRecurrence)
     var autoUpdateStatusFromSubtasks by mutableStateOf(initialAutoUpdateStatusFromSubtasks)
 
@@ -66,7 +66,7 @@ class TaskFormState(
                 ?.mapNotNull { parseCompactTimeToPeriod(it) }
                 ?.map { TaskNotification(it) }
                 ?: emptyList(),
-            recurrenceRule = recurrenceRule,
+            recurrenceRules = recurrenceRules,
             resetStatusOnRecurrence = resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
         )
@@ -82,7 +82,7 @@ class TaskFormState(
         status = task.status
         connections = task.connections
         notifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() }
-        recurrenceRule = task.recurrenceRule
+        recurrenceRules = task.recurrenceRules
         resetStatusOnRecurrence = task.resetStatusOnRecurrence
         autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
     }
@@ -101,7 +101,7 @@ class TaskFormState(
                 status != task.status ||
                 connections != task.connections ||
                 notifications != expectedNotifications ||
-                recurrenceRule != task.recurrenceRule ||
+                recurrenceRules != task.recurrenceRules ||
                 resetStatusOnRecurrence != task.resetStatusOnRecurrence ||
                 autoUpdateStatusFromSubtasks != task.autoUpdateStatusFromSubtasks
     }
@@ -116,7 +116,7 @@ class TaskFormState(
                 status != TaskStatus.Open ||
                 connections != initialConnections ||
                 notifications.isNotEmpty() ||
-                recurrenceRule != null ||
+                recurrenceRules.isNotEmpty() ||
                 resetStatusOnRecurrence != TaskStatus.Open ||
                 autoUpdateStatusFromSubtasks
     }
@@ -132,7 +132,7 @@ data class ParsedTaskValues(
     val status: TaskStatus,
     val connections: Set<TaskConnection>,
     val notifications: List<TaskNotification> = emptyList(),
-    val recurrenceRule: RecurrenceRule? = null,
+    val recurrenceRules: List<RecurrenceRule> = emptyList(),
     val resetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
     val autoUpdateStatusFromSubtasks: Boolean = false
 )
@@ -148,7 +148,7 @@ fun rememberTaskFormState(
     initialStatus: TaskStatus = TaskStatus.Open,
     initialConnections: Set<TaskConnection> = emptySet(),
     initialNotifications: List<String> = emptyList(),
-    initialRecurrenceRule: RecurrenceRule? = null,
+    initialRecurrenceRules: List<RecurrenceRule> = emptyList(),
     initialResetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
     initialAutoUpdateStatusFromSubtasks: Boolean = false
 ): TaskFormState {
@@ -163,7 +163,7 @@ fun rememberTaskFormState(
             initialStatus = initialStatus,
             initialConnections = initialConnections,
             initialNotifications = initialNotifications,
-            initialRecurrenceRule = initialRecurrenceRule,
+            initialRecurrenceRules = initialRecurrenceRules,
             initialResetStatusOnRecurrence = initialResetStatusOnRecurrence,
             initialAutoUpdateStatusFromSubtasks = initialAutoUpdateStatusFromSubtasks
         )
@@ -177,13 +177,13 @@ fun rememberTaskFormState(task: Task): TaskFormState {
             initialTitle = task.title,
             initialDescription = task.description,
             initialPriority = task.priority?.value?.toString() ?: "",
-            initialEstimatedTime = task.estimatedTime?.let { it.toBriefString() } ?: "",
+            initialEstimatedTime = task.estimatedTime?.toBriefString() ?: "",
             initialTags = task.tags,
             initialDueDate = task.dueDate,
             initialStatus = task.status,
             initialConnections = task.connections,
             initialNotifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() },
-            initialRecurrenceRule = task.recurrenceRule,
+            initialRecurrenceRules = task.recurrenceRules,
             initialResetStatusOnRecurrence = task.resetStatusOnRecurrence,
             initialAutoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
         )

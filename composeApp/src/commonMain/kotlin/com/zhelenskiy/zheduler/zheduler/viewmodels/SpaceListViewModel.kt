@@ -26,8 +26,10 @@ class SpaceListViewModel(
     private val repository: TaskRepository
 ) : ViewModel() {
 
-    private val _spaces = MutableStateFlow<List<Space>?>(null)
-    val spaces: StateFlow<List<Space>?> = _spaces.asStateFlow()
+    private val spaceUpdates = MutableStateFlow(Any())
+
+    private val _hasSpaces = MutableStateFlow<Boolean?>(null)
+    val hasSpaces: StateFlow<Boolean?> = _hasSpaces.asStateFlow()
 
     private val _allTags = MutableStateFlow<Set<String>>(emptySet())
     val allTags: StateFlow<Set<String>> = _allTags.asStateFlow()
@@ -44,9 +46,10 @@ class SpaceListViewModel(
 
     // Filtered spaces computed from search criteria using repository method
     val filteredSpaces: StateFlow<List<Space>?> = combine(
+        spaceUpdates,
         _searchQuery,
         _searchOptions
-    ) { query, options ->
+    ) { _, query, options ->
         repository.filterSpaces(
             query = query,
             searchInName = SpaceSearchOption.Name in options,
@@ -60,8 +63,9 @@ class SpaceListViewModel(
 
     fun loadSpaces() {
         viewModelScope.launch {
-            _spaces.value = repository.getAllSpaces()
+            _hasSpaces.value = repository.hasSpaces()
             _allTags.value = repository.getAllTags()
+            spaceUpdates.emit(Any())
         }
     }
 

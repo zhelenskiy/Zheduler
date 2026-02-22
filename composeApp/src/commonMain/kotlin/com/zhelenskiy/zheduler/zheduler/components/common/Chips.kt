@@ -58,7 +58,13 @@ fun ConnectedTaskChip(
     taskId: String,
     onClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    paddingValues: PaddingValues = PaddingValues(
+        start = 12.dp,
+        end = if (onRemove != null) 4.dp else 12.dp,
+        top = if (onRemove != null) 4.dp else 8.dp,
+        bottom = if (onRemove != null) 4.dp else 8.dp
+    ),
 ) {
     val clipShape = MaterialTheme.shapes.small
     Surface(
@@ -69,12 +75,7 @@ fun ConnectedTaskChip(
         shape = clipShape
     ) {
         Row(
-            modifier = Modifier.padding(
-                start = 12.dp,
-                end = if (onRemove != null) 4.dp else 12.dp,
-                top = if (onRemove != null) 4.dp else 8.dp,
-                bottom = if (onRemove != null) 4.dp else 8.dp
-            ),
+            modifier = Modifier.padding(paddingValues),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -90,7 +91,6 @@ fun ConnectedTaskChip(
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = if (onRemove != null) Modifier.weight(1f) else Modifier
                 )
             }
             if (onRemove != null) {

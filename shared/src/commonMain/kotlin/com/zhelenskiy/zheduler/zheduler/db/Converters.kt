@@ -3,8 +3,8 @@
 package com.zhelenskiy.zheduler.zheduler.db
 
 import com.zhelenskiy.zheduler.zheduler.*
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.jvm.JvmName
 import kotlin.time.ExperimentalTime
 
 /**
@@ -76,14 +76,15 @@ fun List<TaskNotification>.toJson(): String = dbJson.encodeToString(this)
 fun String.toNotificationList(): List<TaskNotification> = dbJson.decodeFromString(this)
 
 /**
- * Convert RecurrenceRule to JSON string for storage
+ * Convert list of RecurrenceRule to JSON string for storage
  */
-fun RecurrenceRule.toJson(): String = dbJson.encodeToString(this)
+@JvmName("recurrenceRuleListToJson")
+fun List<RecurrenceRule>.toJson(): String = dbJson.encodeToString(this)
 
 /**
- * Convert JSON string to RecurrenceRule
+ * Convert JSON string to list of RecurrenceRule
  */
-fun String.toRecurrenceRule(): RecurrenceRule = dbJson.decodeFromString(this)
+fun String.toRecurrenceRuleList(): List<RecurrenceRule> = dbJson.decodeFromString(this)
 
 /**
  * Convert RecurrenceState to JSON string for storage

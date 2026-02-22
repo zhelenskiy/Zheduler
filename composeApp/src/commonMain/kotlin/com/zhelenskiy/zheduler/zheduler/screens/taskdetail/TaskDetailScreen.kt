@@ -3,8 +3,9 @@
 package com.zhelenskiy.zheduler.zheduler.screens.taskdetail
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -24,14 +25,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
-import com.zhelenskiy.zheduler.zheduler.components.common.AutomaticChangeIndicator
 import com.zhelenskiy.zheduler.zheduler.components.common.ConnectedTaskChip
 import com.zhelenskiy.zheduler.zheduler.components.common.DueDateBadge
 import com.zhelenskiy.zheduler.zheduler.components.common.PriorityBadge
-import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 import com.zhelenskiy.zheduler.zheduler.components.common.TagChip
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
+import com.zhelenskiy.zheduler.zheduler.components.form.RecurrenceRuleItem
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
 import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
 import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
@@ -39,6 +39,7 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
+import com.zhelenskiy.zheduler.zheduler.util.formatCompactDateTime
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailViewModel
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -105,7 +106,14 @@ fun TaskDetailScreen(
     }
 
     // Persist form state to ViewModel when it changes (for when navigating away)
-    LaunchedEffect(formState.title, formState.description, formState.priority, formState.estimatedTime, formState.tags, formState.dueDate) {
+    LaunchedEffect(
+        formState.title,
+        formState.description,
+        formState.priority,
+        formState.estimatedTime,
+        formState.tags,
+        formState.dueDate
+    ) {
         viewModel.persistFormState(
             title = formState.title,
             description = formState.description,
@@ -217,7 +225,7 @@ fun TaskDetailScreen(
             status = parsed.status,
             connections = parsed.connections,
             notifications = parsed.notifications,
-            recurrenceRule = parsed.recurrenceRule,
+            recurrenceRules = parsed.recurrenceRules,
             resetStatusOnRecurrence = parsed.resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = parsed.autoUpdateStatusFromSubtasks
         )
@@ -269,7 +277,13 @@ fun TaskDetailScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = if (isEditing) { { handleBackPress() } } else { onNavigateBack }) {
+                    IconButton(
+                        onClick = if (isEditing) {
+                            { handleBackPress() }
+                        } else {
+                            onNavigateBack
+                        }
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -333,246 +347,269 @@ fun TaskDetailScreen(
             } else {
                 // Read-only view
                 Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Title
-                val isDone = task.status is TaskStatus.Done
-                val isDeclined = task.status is TaskStatus.Declined
-                Text(
-                    text = task.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    textDecoration = if (isDone || isDeclined) TextDecoration.LineThrough else null
-                )
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Title
+                    val isDone = task.status is TaskStatus.Done
+                    val isDeclined = task.status is TaskStatus.Declined
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        textDecoration = if (isDone || isDeclined) TextDecoration.LineThrough else null
+                    )
 
-                // Status section
-                var isTimelineExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
+                    // Status section
+                    var isTimelineExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
 
-                Column {
-                    if (currentTaskWithTotals.isMissed(Clock.System.now())) {
-                        val color = MaterialTheme.colorScheme.error
+                    Column {
+                        if (currentTaskWithTotals.isMissed(Clock.System.now())) {
+                            val color = MaterialTheme.colorScheme.error
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = color
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Missed",
+                                    color = color
+                                )
+                            }
+                        }
                         Row(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                Icons.Default.ErrorOutline,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = color
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Missed",
-                                color = color
+                                text = "Status:",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Status:",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
 
-                        // History button
-                        IconButton(
-                            onClick = { isTimelineExpanded = !isTimelineExpanded },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = "History",
-                                modifier = Modifier.size(18.dp)
+                            // History button
+                            IconButton(
+                                onClick = { isTimelineExpanded = !isTimelineExpanded },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = "History",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            TaskStatus(
+                                status = task.status,
+                                blockerTasks = blockerTasks,
+                                onBlockerTaskClick = onTaskClick
                             )
                         }
 
-                        TaskStatus(status = task.status, blockerTasks = blockerTasks, onBlockerTaskClick = onTaskClick)
-                    }
+                        // Animated timeline
+                        AnimatedVisibility(
+                            visible = isTimelineExpanded,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column(modifier = Modifier.padding(top = 8.dp)) {
+                                // Header
+                                Text(
+                                    text = "History",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
 
-                    // Animated timeline
-                    AnimatedVisibility(
-                        visible = isTimelineExpanded,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut()
-                    ) {
-                        Column(modifier = Modifier.padding(top = 8.dp)) {
-                            // Header
-                            Text(
-                                text = "History",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-
-                            statusTimeline.asReversed().forEachIndexed { index, change ->
-                                val changeNumber = statusTimeline.size - 1 - index
-                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                statusTimeline.asReversed().forEachIndexed { index, change ->
+                                    val changeNumber = statusTimeline.size - 1 - index
+                                    Column(
+                                        modifier = Modifier
+                                            .padding(vertical = 4.dp)
+                                            .heightIn(max = 200.dp)
+                                            .verticalScroll(rememberScrollState()),
                                     ) {
-                                        Text(
-                                            text = "$changeNumber.",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                        Text(
-                                            text = com.zhelenskiy.zheduler.zheduler.util.formatCompactDateTime(change.timestamp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                        TaskStatusChange(
-                                            change = change,
-                                            blockerTasks = blockerTasks,
-                                            onBlockerTaskClick = onTaskClick
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "$changeNumber.",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Text(
+                                                text = formatCompactDateTime(change.timestamp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            TaskStatusChange(
+                                                change = change,
+                                                blockerTasks = blockerTasks,
+                                                onBlockerTaskClick = onTaskClick
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                // Priority section
-                if (task.priority != null || taskWithTotals?.totalPriority != null) {
-                    val ownPriority = task.priority
-                    val totalPriority = taskWithTotals?.totalPriority
-                    val isSingleLine = ownPriority == totalPriority && ownPriority != null
+                    // Priority section
+                    if (task.priority != null || taskWithTotals?.totalPriority != null) {
+                        val ownPriority = task.priority
+                        val totalPriority = taskWithTotals?.totalPriority
+                        val isSingleLine = ownPriority == totalPriority && ownPriority != null
 
-                    if (isSingleLine) {
+                        if (isSingleLine) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Priority:",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                PriorityBadge(priority = ownPriority, isTotal = false)
+                            }
+                        } else {
+                            Column {
+                                Text(
+                                    text = "Priority",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("Own", style = MaterialTheme.typography.labelMedium)
+                                        ownPriority?.let {
+                                            PriorityBadge(priority = it, isTotal = false)
+                                        } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text("Total", style = MaterialTheme.typography.labelMedium)
+                                        totalPriority?.let {
+                                            PriorityBadge(priority = it, isTotal = it != task.priority)
+                                        } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Estimated Time section
+                    task.estimatedTime?.let { estimatedTime ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "Priority:",
+                                text = "Estimated Time:",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            PriorityBadge(priority = ownPriority, isTotal = false)
-                        }
-                    } else {
-                        Column {
                             Text(
-                                text = "Priority",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = estimatedTime.toBriefString(),
+                                style = MaterialTheme.typography.bodyLarge
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+
+                    // Due date section
+                    if (task.dueDate != null || taskWithTotals?.totalDueDate != null) {
+                        val ownDate = task.dueDate
+                        val totalDate = taskWithTotals?.totalDueDate
+                        val isSingleLine = ownDate == totalDate && ownDate != null
+
+                        if (isSingleLine) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Column {
-                                    Text("Own", style = MaterialTheme.typography.labelMedium)
-                                    ownPriority?.let {
-                                        PriorityBadge(priority = it, isTotal = false)
-                                    } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("Total", style = MaterialTheme.typography.labelMedium)
-                                    totalPriority?.let {
-                                        PriorityBadge(priority = it, isTotal = it != task.priority)
-                                    } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = "Due Time:",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                DueDateBadge(dueDate = ownDate, isTotal = false)
+                            }
+                        } else {
+                            Column {
+                                Text(
+                                    text = "Due Time",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("Own", style = MaterialTheme.typography.labelMedium)
+                                        ownDate?.let {
+                                            DueDateBadge(dueDate = it, isTotal = false)
+                                        } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text("Total", style = MaterialTheme.typography.labelMedium)
+                                        totalDate?.let {
+                                            DueDateBadge(dueDate = it, isTotal = it != task.dueDate)
+                                        } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // Estimated Time section
-                task.estimatedTime?.let { estimatedTime ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Estimated Time:",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = estimatedTime.toBriefString(),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    }
-                }
-
-                // Due date section
-                if (task.dueDate != null || taskWithTotals?.totalDueDate != null) {
-                    val ownDate = task.dueDate
-                    val totalDate = taskWithTotals?.totalDueDate
-                    val isSingleLine = ownDate == totalDate && ownDate != null
-
-                    if (isSingleLine) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Due Time:",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            DueDateBadge(dueDate = ownDate, isTotal = false)
-                        }
-                    } else {
-                        Column {
-                            Text(
-                                text = "Due Time",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
+                    // Recurrence section
+                    if (task.isRecurring) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Column {
-                                    Text("Own", style = MaterialTheme.typography.labelMedium)
-                                    ownDate?.let {
-                                        DueDateBadge(dueDate = it, isTotal = false)
-                                    } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("Total", style = MaterialTheme.typography.labelMedium)
-                                    totalDate?.let {
-                                        DueDateBadge(dueDate = it, isTotal = it != task.dueDate)
-                                    } ?: Text("-", style = MaterialTheme.typography.bodyMedium)
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Recurrence",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 300.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                itemsIndexed(task.recurrenceRules) { index, rule ->
+                                    RecurrenceRuleItem(
+                                        rule = rule,
+                                        onEdit = null,
+                                        onDelete = null,
+                                        index = index,
+                                        onTaskClick = onTaskClick
+                                    )
                                 }
                             }
-                        }
-                    }
-                }
-
-                // Recurrence section
-                if (task.isRecurring) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Column {
-                            Text(
-                                text = task.recurrenceRule.toFullString(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                             if (task.recurrenceState.occurrenceCount > 0) {
                                 Text(
                                     text = "Occurrence #${task.recurrenceState.occurrenceCount + 1}",
@@ -582,108 +619,113 @@ fun TaskDetailScreen(
                             }
                         }
                     }
-                }
 
-                // Notifications section
-                if (task.notifications.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Notifications:",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        FlowRow(
-                            modifier = Modifier.weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    // Notifications section
+                    if (task.notifications.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            task.notifications.forEach { notification ->
-                                Surface(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = MaterialTheme.shapes.small
-                                ) {
+                            Text(
+                                text = "Notifications:",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FlowRow(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                task.notifications.forEach { notification ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = MaterialTheme.shapes.small
+                                    ) {
+                                        Text(
+                                            text = notification.timeBeforeDeadline.toBriefString(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Tags section
+                    if (task.tags.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Tags:",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FlowRow(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                task.tags.forEach { tag ->
+                                    TagChip(tag = tag)
+                                }
+                            }
+                        }
+                    }
+
+                    // Connections section
+                    if (connectionsByType.isNotEmpty()) {
+                        Column {
+                            Text(
+                                text = "Connections",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            ConnectionType.entries.forEach { connectionType ->
+                                val tasksForType = connectionsByType[connectionType] ?: emptyList()
+                                if (tasksForType.isNotEmpty()) {
                                     Text(
-                                        text = notification.timeBeforeDeadline.toBriefString(),
+                                        text = connectionType.displayName,
                                         style = MaterialTheme.typography.labelMedium,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        modifier = Modifier.padding(top = 4.dp)
                                     )
+                                    FlowRow(
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        itemVerticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        tasksForType.forEach { connectedTask ->
+                                            ConnectedTaskChip(
+                                                task = connectedTask,
+                                                taskId = connectedTask.id,
+                                                onClick = { onTaskClick(connectedTask.id) },
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
                                 }
                             }
                         }
                     }
-                }
 
-                // Tags section
-                if (task.tags.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Tags:",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    // Description section
+                    if (task.description.isNotEmpty()) {
+                        SimpleMarkdownText(
+                            markdown = task.description,
+                            allSpacePrefixes = allSpacePrefixes,
+                            getTaskById = { taskId -> connectedTasks[taskId] },
+                            onTaskClick = onTaskClick
                         )
-                        FlowRow(
-                            modifier = Modifier.weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            task.tags.forEach { tag ->
-                                TagChip(tag = tag)
-                            }
-                        }
                     }
-                }
-
-                // Connections section
-                if (connectionsByType.isNotEmpty()) {
-                    Column {
-                        Text(
-                            text = "Connections",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        ConnectionType.entries.forEach { connectionType ->
-                            val tasksForType = connectionsByType[connectionType] ?: emptyList()
-                            if (tasksForType.isNotEmpty()) {
-                                Text(
-                                    text = connectionType.displayName,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                                tasksForType.forEach { connectedTask ->
-                                    ConnectedTaskChip(
-                                        task = connectedTask,
-                                        taskId = connectedTask.id,
-                                        onClick = { onTaskClick(connectedTask.id) },
-                                        modifier = Modifier.padding(top = 2.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(10.dp))
-                            }
-                        }
-                    }
-                }
-
-                // Description section
-                if (task.description.isNotEmpty()) {
-                    SimpleMarkdownText(
-                        markdown = task.description,
-                        allSpacePrefixes = allSpacePrefixes,
-                        getTaskById = { taskId -> connectedTasks[taskId] },
-                        onTaskClick = onTaskClick
-                    )
                 }
             }
         }
-        }
     }
 }
+

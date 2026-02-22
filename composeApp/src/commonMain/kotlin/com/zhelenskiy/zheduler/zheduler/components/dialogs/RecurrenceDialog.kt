@@ -157,11 +157,11 @@ private fun TimeBasedTypeSelector(
 }
 
 /**
- * Dialog for configuring task recurrence
+ * Dialog for configuring a single recurrence rule
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecurrenceDialog(
+fun SingleRecurrenceRuleDialog(
     currentRule: RecurrenceRule?,
     filterTasks: suspend (String) -> List<Task>,
     getTaskById: suspend (String) -> Task?,
@@ -193,7 +193,7 @@ fun RecurrenceDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set Recurrence") },
+        title = { Text("Configure Recurrence Rule") },
         text = {
             Column(
                 modifier = Modifier

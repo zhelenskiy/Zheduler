@@ -239,8 +239,13 @@ private fun BlockerTasksList(
 ) {
     val items = blockerTaskIds.toList()
     AnimatedContent(items, transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) {
-        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-            items(items) { taskId ->
+        FlowRow(
+            modifier = Modifier.heightIn(max = 200.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            items.forEach { taskId ->
                 var task by remember(taskId) { mutableStateOf<Task?>(null) }
                 LaunchedEffect(taskId) {
                     task = getTaskById(taskId)
@@ -249,7 +254,6 @@ private fun BlockerTasksList(
                     task = task,
                     taskId = taskId,
                     onRemove = { onRemoveTask(taskId) },
-                    modifier = Modifier.padding(vertical = 2.dp).animateItem()
                 )
             }
         }

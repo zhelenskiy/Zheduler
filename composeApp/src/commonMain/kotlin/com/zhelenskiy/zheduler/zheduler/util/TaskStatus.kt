@@ -3,7 +3,10 @@ package com.zhelenskiy.zheduler.zheduler.util
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -22,7 +25,8 @@ import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 private fun BlockedStatusDetails(
     status: TaskStatus.Blocked,
     blockerTasks: Map<String, Task>?,
-    onTaskClick: ((String) -> Unit)?
+    onTaskClick: ((String) -> Unit)?,
+    blockerTaskModifier: Modifier
 ) {
     if (status.blockerTaskIds.isNotEmpty()) {
         Text(
@@ -34,9 +38,11 @@ private fun BlockedStatusDetails(
             ConnectedTaskChip(
                 task = blockerTask,
                 taskId = blockerId,
+                modifier = blockerTaskModifier.height(24.dp),
                 onClick = if (onTaskClick != null) {
-                    { blockerTask?.let { onTaskClick(it.id) } }
-                } else null
+                    { onTaskClick(blockerId) }
+                } else null,
+                paddingValues = PaddingValues(horizontal = 8.dp)
             )
         }
     }
@@ -58,10 +64,11 @@ fun TaskStatus(
     modifier: Modifier =
         if (isRow) Modifier.horizontalScroll(rememberScrollState())
         else Modifier.verticalScroll(rememberScrollState()),
+    blockerTaskModifier: Modifier = Modifier,
     onBlockerTaskClick: ((String) -> Unit)?
 ) = Group(isRow = isRow, modifier = modifier) {
     StatusBadge(status = status, modifier = badgeModifier)
-    TaskStatusDetails(status, blockerTasks, onBlockerTaskClick)
+    TaskStatusDetails(status, blockerTasks, onBlockerTaskClick, blockerTaskModifier)
 }
 
 @Composable
@@ -118,10 +125,11 @@ private fun Group(isRow: Boolean, modifier: Modifier = Modifier, body: @Composab
 private fun TaskStatusDetails(
     status: TaskStatus,
     blockerTasks: Map<String, Task>?,
-    onBlockerTaskClick: ((String) -> Unit)?
+    onBlockerTaskClick: ((String) -> Unit)?,
+    blockerTaskModifier: Modifier
 ) {
     when (status) {
-        is TaskStatus.Blocked -> BlockedStatusDetails(status, blockerTasks, onBlockerTaskClick)
+        is TaskStatus.Blocked -> BlockedStatusDetails(status, blockerTasks, onBlockerTaskClick, blockerTaskModifier)
         is TaskStatus.Declined -> DeclinedStatusDetails(status)
         else -> {}
     }
@@ -129,6 +137,7 @@ private fun TaskStatusDetails(
 
 @Composable
 private fun DeclinedStatusDetails(newStatus: TaskStatus.Declined) {
+    if (newStatus.reason.isEmpty()) return
     Text(
         text = newStatus.reason,
         style = MaterialTheme.typography.labelSmall,

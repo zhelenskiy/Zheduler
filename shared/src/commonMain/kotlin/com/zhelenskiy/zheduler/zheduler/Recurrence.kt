@@ -598,13 +598,13 @@ data class RecurrenceRule(
     val statusChangeTrigger: RecurrenceTrigger.StatusChange?,
     val resetToStatus: TaskStatus,
     val termination: RecurrenceTermination = RecurrenceTermination.Never,
-) : Presentable {
+) {
     init {
         require(timeRecurrenceTrigger != null || statusChangeTrigger != null) {
             "At least one trigger must be specified"
         }
     }
-    override fun toBriefString(): String {
+    fun toBriefString(): String {
         val timeRecurrenceTriggerString = timeRecurrenceTrigger?.let {
             when (it) {
                 is RecurrenceTrigger.AfterTimeout if it.period != null -> "Every ${it.period.toBriefString()}"
@@ -618,28 +618,7 @@ data class RecurrenceRule(
             ?: timeRecurrenceTriggerString
             ?: error("No recurrence trigger found")
     }
-
-    override fun toFullString(): String {
-        val timeRecurrenceTriggerString = timeRecurrenceTrigger?.let {
-            when (it) {
-                is RecurrenceTrigger.AfterTimeout if it.period != null -> "Every ${it.period.toFullString()} since ${formatDate(it.firstOccurrence)}"
-                is RecurrenceTrigger.AfterTimeout -> "At ${formatDate(it.firstOccurrence)}"
-                is RecurrenceTrigger.AtFixedPoints -> it.pattern.toFullString() + it.timezoneSuffix()
-            }
-        }
-        val statusChangePrefix =
-            if (timeRecurrenceTriggerString == null) "On status " else "$timeRecurrenceTriggerString on status "
-        val triggersString = statusChangeTrigger?.requiredStatuses
-            ?.joinToString(prefix = statusChangePrefix) { it.displayName }
-            ?: timeRecurrenceTriggerString
-            ?: error("No recurrence trigger found")
-        val resetString = "Reset to status ${resetToStatus.toFullString()}"
-        val termination = termination.toFullString()
-        return "$triggersString\n$resetString\n$termination"
-    }
 }
-
-fun RecurrenceRule?.toFullString(): String = this?.toFullString() ?: "Never"
 
 /**
  * State tracking for recurrence
@@ -983,33 +962,35 @@ data class RecurrenceResult(
 )
 
 /**
- * Service for managing recurring tasks
+ * Service for managing recurring tasks with support for multiple recurrence rules
  */
 object RecurrenceService {
-    
+
     /**
-     * Process a recurrence trigger and calculate the next state
-     * @param rule The recurrence rule
+     * Process recurrence triggers for multiple rules and calculate the next state
+     * @param rules The list of recurrence rules
      * @param currentState The current recurrence state
      * @param triggerEvent The event that triggered this
      * @param triggerTime The time when the trigger occurred
-     * @return RecurrenceResult with updated state and next due date
+     * @return RecurrenceResult with updated state and next due date (earliest among all rules)
      */
     fun processRecurrence(
-        rule: RecurrenceRule?,
+        rules: List<RecurrenceRule>,
         currentState: RecurrenceState,
         triggerEvent: RecurrenceTriggerEvent,
         triggerTime: Instant = kotlin.time.Clock.System.now()
     ): RecurrenceResult {
-        if (rule == null) {
+        if (rules.isEmpty()) {
             return RecurrenceResult(
                 updatedRecurrenceState = currentState,
                 nextOccurrenceDate = null
             )
         }
 
-        // Check if this event should trigger recurrence
-        if (!RecurrenceCalculator.shouldTrigger(rule, triggerEvent)) {
+        // Check if any rule should trigger
+        val shouldTrigger = rules.any { RecurrenceCalculator.shouldTrigger(it, triggerEvent) }
+
+        if (!shouldTrigger) {
             return RecurrenceResult(
                 updatedRecurrenceState = currentState,
                 nextOccurrenceDate = currentState.nextOccurrenceDate
@@ -1022,32 +1003,49 @@ object RecurrenceService {
             lastOccurrenceDate = triggerTime
         )
 
-        val nextOccurrence = RecurrenceCalculator.calculateNextOccurrence(
-            rule = rule,
-            currentState = newState,
-            triggerTime = triggerTime
-        )
+        // Calculate next occurrence from all rules and take the earliest
+        val nextOccurrence = calculateNextOccurrenceFromMultipleRules(rules, newState, triggerTime)
 
         return RecurrenceResult(
             updatedRecurrenceState = newState.copy(nextOccurrenceDate = nextOccurrence),
             nextOccurrenceDate = nextOccurrence
         )
     }
-    
-    /**
-     * Initialize recurrence state for a new recurring task
-     */
-    fun initializeRecurrence(rule: RecurrenceRule?): RecurrenceState {
 
-        val firstOccurrence = when (val trigger = rule?.timeRecurrenceTrigger) {
-            null -> return RecurrenceState()
-            is RecurrenceTrigger.AfterTimeout -> trigger.firstOccurrence
-            is RecurrenceTrigger.AtFixedPoints -> RecurrenceCalculator.calculateNextOccurrence(
-                rule = rule,
-                currentState = RecurrenceState(),
-                triggerTime = trigger.startFrom
-            )
-        }
+    /**
+     * Calculate the next occurrence date from multiple recurrence rules
+     * Returns the earliest next occurrence among all rules
+     */
+    fun calculateNextOccurrenceFromMultipleRules(
+        rules: List<RecurrenceRule>,
+        currentState: RecurrenceState,
+        triggerTime: Instant = kotlin.time.Clock.System.now()
+    ): Instant? = rules.mapNotNull { rule ->
+        RecurrenceCalculator.calculateNextOccurrence(
+            rule = rule,
+            currentState = currentState,
+            triggerTime = triggerTime
+        )
+    }.minOrNull()
+
+    /**
+     * Initialize recurrence state for a new recurring task with multiple rules
+     */
+    fun initializeRecurrence(rules: List<RecurrenceRule>): RecurrenceState {
+        if (rules.isEmpty()) return RecurrenceState()
+
+        // Calculate first occurrence from all rules and take the earliest
+        val firstOccurrence = rules.mapNotNull { rule ->
+            when (val trigger = rule.timeRecurrenceTrigger) {
+                null -> null
+                is RecurrenceTrigger.AfterTimeout -> trigger.firstOccurrence
+                is RecurrenceTrigger.AtFixedPoints -> RecurrenceCalculator.calculateNextOccurrence(
+                    rule = rule,
+                    currentState = RecurrenceState(),
+                    triggerTime = trigger.startFrom
+                )
+            }
+        }.minOrNull()
 
         return RecurrenceState(
             occurrenceCount = 0,
@@ -1055,14 +1053,13 @@ object RecurrenceService {
             nextOccurrenceDate = firstOccurrence
         )
     }
-    
+
     /**
      * Create a copy of a task for the next occurrence
      * Resets status to the initial state while preserving other fields
      */
     fun createNextOccurrence(
         task: Task,
-        recurrenceRule: RecurrenceRule,
         newDueDate: Instant?,
         resetToStatus: TaskStatus = TaskStatus.Open
     ): Task {
@@ -1071,11 +1068,6 @@ object RecurrenceService {
             dueDate = newDueDate
         )
     }
-}
-
-private fun RecurrenceTrigger.AtFixedPoints.timezoneSuffix(): String = when (val tz = timezone) {
-    is RecurrenceTimeZone.SystemDefault -> ""
-    is RecurrenceTimeZone.Specific -> " (${tz.zoneId})"
 }
 
 fun formatDate(instant: Instant): String {

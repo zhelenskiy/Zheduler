@@ -72,8 +72,10 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         val connectionTypes = when (type) {
             ConnectionType.DependsOn, ConnectionType.IsDependencyOf ->
                 setOf(ConnectionType.DependsOn, ConnectionType.IsDependencyOf)
+
             ConnectionType.SubtaskOf, ConnectionType.ParentOf ->
                 setOf(ConnectionType.SubtaskOf, ConnectionType.ParentOf)
+
             ConnectionType.RelatesTo -> return false
         }
         return canReach(parentId, childId, fromTaskId, currentConnections, connectionTypes)
@@ -281,7 +283,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         return blockerIds.all { blockerTaskId ->
             val blockerTask = getTaskById(blockerTaskId)
             blockerTask != null &&
-                (blockerTask.status is TaskStatus.Done || blockerTask.status is TaskStatus.Declined)
+                    (blockerTask.status is TaskStatus.Done || blockerTask.status is TaskStatus.Declined)
         }
     }
 
@@ -387,8 +389,10 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     ): Task? {
         val task = getTaskById(taskId) ?: return null
 
+        if (task.recurrenceRules.isEmpty()) return task
+
         val updatedRecurrenceData = RecurrenceService.processRecurrence(
-            rule = task.recurrenceRule ?: return task,
+            rules = task.recurrenceRules,
             currentState = task.recurrenceState,
             triggerEvent = triggerEvent,
             triggerTime = triggerTime
@@ -432,7 +436,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
 
         getRecurringTasksDueBefore(currentTime).forEach { task ->
             val triggerEvent = RecurrenceTriggerEvent.DateTimeReached(task.status)
-            if (task.recurrenceRule != null && RecurrenceCalculator.shouldTrigger(task.recurrenceRule, triggerEvent)) {
+            if (task.recurrenceRules.any { RecurrenceCalculator.shouldTrigger(it, triggerEvent) }) {
                 processRecurrenceTriggerInternal(task.id, triggerEvent, currentTime)?.let {
                     updatedTasks.add(it)
                 }
@@ -583,8 +587,8 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         // Prevent manual status changes when autoUpdateStatusFromSubtasks is enabled
         require(
             !inputTask.autoUpdateStatusFromSubtasks ||
-            inputTask.status == oldTask.status ||
-            !oldTask.autoUpdateStatusFromSubtasks
+                    inputTask.status == oldTask.status ||
+                    !oldTask.autoUpdateStatusFromSubtasks
         ) { "Cannot manually change status when autoUpdateStatusFromSubtasks is enabled" }
 
         // Check if autoUpdateStatusFromSubtasks was just enabled
@@ -614,7 +618,8 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         val newStatus = finalTask.status
         if (newStatus is TaskStatus.Blocked &&
             newStatus.blockerTaskIds.isNotEmpty() &&
-            areAllBlockersResolved(newStatus.blockerTaskIds)) {
+            areAllBlockersResolved(newStatus.blockerTaskIds)
+        ) {
             finalTask = finalTask.copy(status = TaskStatus.InProgress)
         }
 
@@ -776,8 +781,12 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         return when (status) {
             is TaskStatus.Blocked -> {
                 val remappedBlockers = status.blockerTaskIds.mapNotNull { oldToNewTaskId[it] }.toSet()
-                if (remappedBlockers.isEmpty()) TaskStatus.Open else TaskStatus.Blocked(remappedBlockers, status.comment)
+                if (remappedBlockers.isEmpty()) TaskStatus.Open else TaskStatus.Blocked(
+                    remappedBlockers,
+                    status.comment
+                )
             }
+
             else -> status
         }
     }
@@ -927,14 +936,15 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                         // Check blockedByTaskIds filter
                         val blockedByIds = parseTaskIds(criteria.blockedByTaskIds)
                         val matchesBlockerIds = blockedByIds.isEmpty() ||
-                            task.status.blockerTaskIds.any { it.uppercase() in blockedByIds }
+                                task.status.blockerTaskIds.any { it.uppercase() in blockedByIds }
 
                         // Check blockedByComment filter
                         val matchesComment = criteria.blockedByComment.isBlank() ||
-                            task.status.comment.contains(criteria.blockedByComment, ignoreCase = true)
+                                task.status.comment.contains(criteria.blockedByComment, ignoreCase = true)
 
                         matchesBlockerIds && matchesComment
                     }
+
                     is TaskStatus.InProgress -> task.status is TaskStatus.InProgress
                     is TaskStatus.Done -> task.status is TaskStatus.Done
                     is TaskStatus.Declined -> {
@@ -942,7 +952,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
 
                         // Check declinedReason filter
                         criteria.declinedReason.isBlank() ||
-                            task.status.reason.contains(criteria.declinedReason, ignoreCase = true)
+                                task.status.reason.contains(criteria.declinedReason, ignoreCase = true)
                     }
                 }
             }
@@ -954,16 +964,19 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 DueDateFilter.NoDueDate -> dueDate == null
                 DueDateFilter.Overdue -> dueDate != null && dueDate < now
                 DueDateFilter.Today -> dueDate != null &&
-                    dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date == todayStart
+                        dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date == todayStart
+
                 DueDateFilter.ThisWeek -> dueDate != null && run {
                     val dueLocalDate = dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date
                     val daysDiff = dueLocalDate.toEpochDays() - todayStart.toEpochDays()
                     daysDiff in 0..6
                 }
+
                 DueDateFilter.ThisMonth -> dueDate != null && run {
                     val dueLocalDate = dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date
                     dueLocalDate.year == todayStart.year && dueLocalDate.month == todayStart.month
                 }
+
                 DueDateFilter.Custom -> {
                     val after = criteria.customDueDateAfter
                     val before = criteria.customDueDateBefore
@@ -1025,24 +1038,34 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 }
             }
 
-            // Recurrence filter
-            val recurrenceRule = task.recurrenceRule
+            // Recurrence filter - matches if ANY rule matches the criteria
             val matchesRecurrence = when (criteria.recurrenceFilter) {
                 RecurrenceFilter.Any -> true
-                RecurrenceFilter.NoRecurrence -> recurrenceRule == null
-                RecurrenceFilter.HasRecurrence -> recurrenceRule != null
-                RecurrenceFilter.AfterTimeout -> recurrenceRule?.timeRecurrenceTrigger is AfterTimeout
-                RecurrenceFilter.FixedDaysOfWeek -> recurrenceRule?.timeRecurrenceTrigger.let {
-                    it is AtFixedPoints && it.pattern is FixedPointPattern.DaysOfWeek
+                RecurrenceFilter.NoRecurrence -> task.recurrenceRules.isEmpty()
+                RecurrenceFilter.HasRecurrence -> task.recurrenceRules.isNotEmpty()
+                RecurrenceFilter.AfterTimeout -> task.recurrenceRules.any {
+                    it.timeRecurrenceTrigger is AfterTimeout
                 }
-                RecurrenceFilter.FixedDayOfMonth -> recurrenceRule?.timeRecurrenceTrigger.let {
-                    it is AtFixedPoints && it.pattern is FixedPointPattern.DayOfMonth
+
+                RecurrenceFilter.FixedDaysOfWeek -> task.recurrenceRules.any { rule ->
+                    rule.timeRecurrenceTrigger.let {
+                        it is AtFixedPoints && it.pattern is FixedPointPattern.DaysOfWeek
+                    }
                 }
-                RecurrenceFilter.NthDayOfWeek -> recurrenceRule?.timeRecurrenceTrigger.let {
-                    it is AtFixedPoints && it.pattern is FixedPointPattern.NthDayOfWeekInMonth
+
+                RecurrenceFilter.FixedDayOfMonth -> task.recurrenceRules.any { rule ->
+                    val recurrenceTrigger = rule.timeRecurrenceTrigger
+                    recurrenceTrigger is AtFixedPoints && recurrenceTrigger.pattern is FixedPointPattern.DayOfMonth
                 }
-                RecurrenceFilter.Yearly -> recurrenceRule?.timeRecurrenceTrigger.let {
-                    it is AtFixedPoints && (it.pattern is YearlyOnDate || it.pattern is NthDayOfWeekInMonths)
+
+                RecurrenceFilter.NthDayOfWeek -> task.recurrenceRules.any { rule ->
+                    val recurrenceTrigger = rule.timeRecurrenceTrigger
+                    recurrenceTrigger is AtFixedPoints && recurrenceTrigger.pattern is FixedPointPattern.NthDayOfWeekInMonth
+                }
+
+                RecurrenceFilter.Yearly -> task.recurrenceRules.any { rule ->
+                    val recurrenceTrigger = rule.timeRecurrenceTrigger
+                    recurrenceTrigger is AtFixedPoints && (recurrenceTrigger.pattern is YearlyOnDate || recurrenceTrigger.pattern is NthDayOfWeekInMonths)
                 }
             }
 
@@ -1095,8 +1118,8 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             }
 
             matchesTextSearch && matchesStatus && matchesDueDate && matchesPriority &&
-                matchesEstimatedTime && matchesRecurrence && matchesNotifications &&
-                matchesAutoUpdateStatus && matchesConnection && matchesSpecificConnections && matchesTags
+                    matchesEstimatedTime && matchesRecurrence && matchesNotifications &&
+                    matchesAutoUpdateStatus && matchesConnection && matchesSpecificConnections && matchesTags
         }
     }
 }
