@@ -329,7 +329,6 @@ fun TaskDetailScreen(
                 Box(modifier = Modifier.padding(padding)) {
                     TaskFormContent(
                         formState = formState,
-                        taskId = task.id,
                         isNewTask = false,
                         onTaskClick = onTaskClick,
                         onCreateNewTaskWithConnection = { connectionType ->
@@ -339,7 +338,6 @@ fun TaskDetailScreen(
                         filterTags = viewModel::filterTags,
                         filterTasksForSelection = viewModel::filterTasksForSelection,
                         searchTasksForConnection = viewModel::searchTasksForConnection,
-                        getCalculatedStatusFromSubtasks = viewModel::getCalculatedStatusFromSubtasks,
                         currentSpaceIdPrefix = currentSpaceIdPrefix,
                         allSpacePrefixes = allSpacePrefixes
                     )

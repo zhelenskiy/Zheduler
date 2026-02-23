@@ -652,6 +652,13 @@ class SqlDelightTaskRepository(
         val effectiveDueDate = dueDate?.let {
             Instant.fromEpochMilliseconds(it.toEpochMilliseconds())
         }
+        val status = if (autoUpdateStatusFromSubtasks) {
+            val subtasksIds = connections
+                .mapNotNull { if (it.type == ConnectionType.ParentOf) it.targetTaskId else null }
+            getCalculatedStatusFromSubtasks(subtasksIds, ::getByIdUnsafe) ?: status
+        } else {
+            status
+        }
 
         val task = Task(
             id = taskId,
