@@ -90,7 +90,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         repo.addTask(spaceId, title = "Task 1")
         repo.addTask(spaceId, title = "Task 2")
-        assertEquals(2, repo.getAll(spaceId).size)
+        assertEquals(2, repo.getAllTasks(spaceId).size)
 
         val result = repo.deleteSpace(spaceId)
         assertTrue(result)
@@ -113,7 +113,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.addTask(space1.id, title = "Task 1")
         repo.addTask(space1.id, title = "Task 2")
         repo.addTask(space1.id, title = "Task 3")
-        assertEquals(3, repo.getAll(space1.id).size)
+        assertEquals(3, repo.getAllTasks(space1.id).size)
 
         // Delete the space
         repo.deleteSpace(space1.id)
@@ -122,7 +122,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val space2 = repo.createSpace("New Space", "NEW")!!
 
         // New space should have no tasks
-        assertTrue(repo.getAll(space2.id).isEmpty())
+        assertTrue(repo.getAllTasks(space2.id).isEmpty())
     }
 
     @Test
@@ -173,7 +173,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val space2 = repo.createSpace("New", "NEW")!!
 
         // No tasks or connections should exist
-        assertTrue(repo.getAll(space2.id).isEmpty())
+        assertTrue(repo.getAllTasks(space2.id).isEmpty())
         assertNull(repo.getTaskById(parent.id))
         assertNull(repo.getTaskById(child.id))
     }
@@ -216,7 +216,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val space2 = repo.createSpace("Space 2", "TWO")!!
 
         // Create a blocker task in space 1
-        val blocker = repo.addTask(space1.id, title = "Blocker Task", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(space1.id, title = "Blocker Task")!!
 
         // Create a blocked task in space 2 that is blocked by the task in space 1
         val blockedTask = repo.addTask(
@@ -276,7 +276,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.createSpace("Space 1", "ONE")
         repo.createSpace("Space 2", "TWO")
         repo.createSpace("Space 3", "THREE")
-        assertEquals(3, repo.getAllSpaces().size)
+        assertEquals(3, repo.getAllTasks().size)
     }
 
     // ==================== Task CRUD Tests ====================
@@ -351,9 +351,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.addTask(space2.id, title = "Task in Space 2")
         repo.addTask(space2.id, title = "Another in Space 2")
 
-        assertEquals(2, repo.getAll(space2.id).size)
-        assertTrue(repo.getAll(space2.id).all { it.id.startsWith("TWO-") })
-        assertEquals(1, repo.getAll(space1.id).size)
+        assertEquals(2, repo.getAllTasks(space2.id).size)
+        assertTrue(repo.getAllTasks(space2.id).all { it.id.startsWith("TWO-") })
+        assertEquals(1, repo.getAllTasks(space1.id).size)
     }
 
     @Test
@@ -394,7 +394,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `updateStatus changes task status`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.addTask(spaceId, title = "Test", status = TaskStatus.Open)!!
+        val task = repo.addTask(spaceId, title = "Test")!!
         repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.InProgress))
         assertEquals(TaskStatus.InProgress, repo.getTaskById(task.id)?.status)
     }
@@ -402,7 +402,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `updateStatus records status change in timeline`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.addTask(spaceId, title = "Test", status = TaskStatus.Open)!!
+        val task = repo.addTask(spaceId, title = "Test")!!
         repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.InProgress))
         repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Done))
 
@@ -572,13 +572,13 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `filterTags with query and exclusions works correctly`() = runTest {
         val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("important")
+        repo.addTag("sentiment")
         repo.addTag("urgent")
         repo.addTag("optional")
         repo.addTag("required")
 
         val filtered = repo.filterTags("ent", setOf("urgent"))
-        assertEquals(listOf("important"), filtered)
+        assertEquals(listOf("sentiment"), filtered)
     }
 
     @Test
@@ -960,7 +960,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        val blocker = repo.addTask(spaceId, title = "Blocker", dueDate = null)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
         val dep1 = repo.addTask(spaceId, title = "Dependent 1", dueDate = now + 10.days)!!
         val dep2 = repo.addTask(spaceId, title = "Dependent 2", dueDate = now + 10.days)!!
         val sharedBlocked = repo.addTask(
@@ -1050,7 +1050,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        val root = repo.addTask(spaceId, title = "Root", dueDate = null)!!
+        val root = repo.addTask(spaceId, title = "Root")!!
         val left = repo.addTask(spaceId, title = "Left", dueDate = now + 5.days)!!
         val right = repo.addTask(spaceId, title = "Right", dueDate = now + 5.days)!!
         val bottom = repo.addTask(spaceId, title = "Bottom", dueDate = now + 1.days)!!
@@ -1116,6 +1116,6 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val imported = newRepo.importSpaceFromJson(json)
         assertNotNull(imported)
 
-        assertEquals(2, newRepo.getAll(imported.id).size)
+        assertEquals(2, newRepo.getAllTasks(imported.id).size)
     }
 }

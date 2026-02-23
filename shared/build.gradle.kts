@@ -117,6 +117,7 @@ android {
                 it.exclude("**/DatabaseConcurrencyRepositoryTest.class")
                 it.exclude("**/DatabaseCalculateStatusFromSubtasksRepositoryTest.class")
                 it.exclude("**/DatabaseIsMissedRepositoryTest.class")
+                it.exclude("**/DatabaseSearchTasksForConnectionTest.class")
             }
         }
     }

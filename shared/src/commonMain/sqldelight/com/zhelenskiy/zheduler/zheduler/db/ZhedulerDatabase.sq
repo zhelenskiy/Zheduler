@@ -20,8 +20,6 @@ CREATE TABLE tasks (
     notificationsJson TEXT NOT NULL,
     spaceId TEXT NOT NULL,
     recurrenceRulesJson TEXT NOT NULL,
-    recurrenceStateJson TEXT NOT NULL,
-    resetStatusOnRecurrenceJson TEXT NOT NULL,
     autoUpdateStatusFromSubtasks INTEGER NOT NULL DEFAULT 0,
     isRecurring INTEGER NOT NULL DEFAULT 0,
     isBlocked INTEGER NOT NULL DEFAULT 0,
@@ -149,9 +147,9 @@ SELECT * FROM tasks WHERE id IN ?;
 
 insertTask:
 INSERT INTO tasks(id, title, description, status, dueDate, priority, estimatedTimeJson,
-                   tagsJson, notificationsJson, spaceId, recurrenceRulesJson, recurrenceStateJson,
-                   resetStatusOnRecurrenceJson, autoUpdateStatusFromSubtasks, isRecurring, isBlocked)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                   tagsJson, notificationsJson, spaceId, recurrenceRulesJson, autoUpdateStatusFromSubtasks,
+                   isRecurring, isBlocked)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateTask:
 UPDATE tasks SET
@@ -165,8 +163,6 @@ UPDATE tasks SET
     notificationsJson = ?,
     spaceId = ?,
     recurrenceRulesJson = ?,
-    recurrenceStateJson = ?,
-    resetStatusOnRecurrenceJson = ?,
     autoUpdateStatusFromSubtasks = ?,
     isRecurring = ?,
     isBlocked = ?

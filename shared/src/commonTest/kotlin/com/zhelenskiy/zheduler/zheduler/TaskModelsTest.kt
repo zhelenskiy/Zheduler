@@ -285,10 +285,14 @@ class TaskModelsTest {
             id = "TEST-1",
             title = "Test",
             spaceId = "space-1",
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofDays(1),
-                firstOccurrence = Clock.System.now()
-            )
+            recurrenceRules = RecurrenceRule(
+                timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                    period = RecurrencePeriod.ofDays(1),
+                    firstOccurrence = Clock.System.now()
+                ),
+                statusChangeTrigger = null,
+                resetToStatus = TaskStatus.Open,
+            ).to(RecurrenceState()).let(::listOf)
         )
         assertTrue(task.isRecurring)
     }

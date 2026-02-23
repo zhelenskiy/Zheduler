@@ -236,7 +236,7 @@ private fun NotificationIndicator(task: Task) {
 @Composable
 private fun RecurringIndicator(task: Task) {
     if (task.recurrenceRules.isNotEmpty()) {
-        task.recurrenceRules.forEach { rule ->
+        task.recurrenceRules.forEach { (rule, _) ->
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                 shape = MaterialTheme.shapes.small

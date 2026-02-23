@@ -121,20 +121,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -155,20 +152,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -189,20 +183,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -225,20 +216,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -260,20 +248,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -325,20 +310,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -365,13 +347,11 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -415,20 +395,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -448,20 +425,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -518,14 +492,12 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -544,20 +516,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -577,20 +546,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -610,14 +576,12 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.InProgress,
-            autoUpdateStatusFromSubtasks = false
+            status = TaskStatus.InProgress
         )!!
 
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -669,13 +633,11 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -700,20 +662,17 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -791,22 +750,19 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val grandparent = repo.addTask(
             spaceId,
             title = "Grandparent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
-            autoUpdateStatusFromSubtasks = true,
-            connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf))
+            connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf)),
+            autoUpdateStatusFromSubtasks = true
         )!!
 
         val child = repo.addTask(
             spaceId,
             title = "Child",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 

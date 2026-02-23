@@ -271,7 +271,11 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val space = repo.createSpace("Test", "TST")!!
 
         val task1 = repo.addTask(space.id, "Task One")!!
-        val task2 = repo.addTask(space.id, "Task Two", connections = setOf(TaskConnection(task1.id, ConnectionType.RelatesTo)))!!
+        val task2 = repo.addTask(
+            space.id,
+            "Task Two",
+            connections = setOf(TaskConnection(task1.id, ConnectionType.RelatesTo))
+        )!!
 
         val results = repo.searchTasksForConnection(space.id, task1.id, "", emptySet(), ConnectionType.RelatesTo, emptySet())
 

@@ -226,7 +226,6 @@ fun TaskDetailScreen(
             connections = parsed.connections,
             notifications = parsed.notifications,
             recurrenceRules = parsed.recurrenceRules,
-            resetStatusOnRecurrence = parsed.resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = parsed.autoUpdateStatusFromSubtasks
         )
         viewModel.saveTask(updatedTask)
@@ -598,7 +597,7 @@ fun TaskDetailScreen(
                                 modifier = Modifier.heightIn(max = 300.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                itemsIndexed(task.recurrenceRules) { index, rule ->
+                                itemsIndexed(task.recurrenceRules) { index, (rule, _) ->
                                     RecurrenceRuleItem(
                                         rule = rule,
                                         onEdit = null,
@@ -608,9 +607,10 @@ fun TaskDetailScreen(
                                     )
                                 }
                             }
-                            if (task.recurrenceState.occurrenceCount > 0) {
+                            val recurrenceCount = task.recurrenceRules.sumOf { (_, state) -> state.occurrenceCount }
+                            if (recurrenceCount > 0) {
                                 Text(
-                                    text = "Occurrence #${task.recurrenceState.occurrenceCount + 1}",
+                                    text = "Occurrence #${recurrenceCount + 1}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

@@ -42,7 +42,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
     fun `task with past due date and Open status is missed`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val pastDue = Clock.System.now() - 1.days
-        val task = repo.addTask(spaceId, title = "Overdue task", dueDate = pastDue, status = TaskStatus.Open)!!
+        val task = repo.addTask(spaceId, title = "Overdue task", dueDate = pastDue)!!
 
         val taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
         
@@ -53,7 +53,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
     fun `task with past due date and Done status is not missed`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val pastDue = Clock.System.now() - 1.days
-        val task = repo.addTask(spaceId, title = "Completed task", dueDate = pastDue, status = TaskStatus.Done)!!
+        val task = repo.addTask(spaceId, title = "Completed task", status = TaskStatus.Done, dueDate = pastDue)!!
 
         val taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
         
@@ -64,7 +64,12 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
     fun `task with past due date and Declined status is not missed`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val pastDue = Clock.System.now() - 1.days
-        val task = repo.addTask(spaceId, title = "Declined task", dueDate = pastDue, status = TaskStatus.Declined("reason"))!!
+        val task = repo.addTask(
+            spaceId,
+            title = "Declined task",
+            status = TaskStatus.Declined("reason"),
+            dueDate = pastDue
+        )!!
 
         val taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
         
@@ -78,7 +83,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val pastDue = now - 1.days
 
         // Create a dependent task with past due date
-        val dependent = repo.addTask(spaceId, title = "Dependent with deadline", dueDate = pastDue, status = TaskStatus.Open)!!
+        val dependent = repo.addTask(spaceId, title = "Dependent with deadline", dueDate = pastDue)!!
         
         // Create a blocker task with no due date, but dependent depends on it
         val blocker = repo.addTask(spaceId, title = "Blocker task")!!
@@ -101,7 +106,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val futureDue = now + 7.days
 
         // Create a dependent task with future due date
-        val dependent = repo.addTask(spaceId, title = "Dependent with deadline", dueDate = futureDue, status = TaskStatus.Open)!!
+        val dependent = repo.addTask(spaceId, title = "Dependent with deadline", dueDate = futureDue)!!
         
         // Create a blocker task with no due date
         val blocker = repo.addTask(spaceId, title = "Blocker task")!!
@@ -152,10 +157,10 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         
         // Create a blocked task with past due date
         val blockedTask = repo.addTask(
-            spaceId, 
-            title = "Blocked task", 
-            dueDate = pastDue, 
-            status = TaskStatus.Blocked(setOf(blockerTask.id))
+            spaceId,
+            title = "Blocked task",
+            status = TaskStatus.Blocked(setOf(blockerTask.id)),
+            dueDate = pastDue
         )!!
 
         val blockedWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == blockedTask.id }!!
@@ -254,7 +259,12 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
         val pastDue = now - 1.days
-        val task = repo.addTask(spaceId, title = "InProgress overdue task", dueDate = pastDue, status = TaskStatus.InProgress)!!
+        val task = repo.addTask(
+            spaceId,
+            title = "InProgress overdue task",
+            status = TaskStatus.InProgress,
+            dueDate = pastDue
+        )!!
 
         val taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
         
@@ -269,10 +279,10 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         
         val blocker = repo.addTask(spaceId, title = "Blocker task")!!
         val task = repo.addTask(
-            spaceId, 
-            title = "Blocked overdue task", 
-            dueDate = pastDue, 
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            spaceId,
+            title = "Blocked overdue task",
+            status = TaskStatus.Blocked(setOf(blocker.id)),
+            dueDate = pastDue
         )!!
 
         val taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
@@ -287,10 +297,10 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val pastDue = now - 1.days
         
         val task = repo.addTask(
-            spaceId, 
-            title = "Blocked overdue task", 
-            dueDate = pastDue, 
-            status = TaskStatus.Blocked(emptySet(), "Waiting for external input")
+            spaceId,
+            title = "Blocked overdue task",
+            status = TaskStatus.Blocked(emptySet(), "Waiting for external input"),
+            dueDate = pastDue
         )!!
 
         val taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
@@ -434,7 +444,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val now = Clock.System.now()
         val pastDue = now - 1.days
         
-        val task = repo.addTask(spaceId, title = "Overdue task", dueDate = pastDue, status = TaskStatus.Open)!!
+        val task = repo.addTask(spaceId, title = "Overdue task", dueDate = pastDue)!!
         
         // Initially missed
         var taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
@@ -454,7 +464,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val now = Clock.System.now()
         val pastDue = now - 1.days
         
-        val task = repo.addTask(spaceId, title = "Overdue task", dueDate = pastDue, status = TaskStatus.Open)!!
+        val task = repo.addTask(spaceId, title = "Overdue task", dueDate = pastDue)!!
         
         // Initially missed
         var taskWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == task.id }!!
@@ -510,8 +520,8 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             spaceId,
             title = "Blocked task",
-            dueDate = pastDue,
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(setOf(blocker.id)),
+            dueDate = pastDue
         )!!
         
         // Initially missed (Blocked but past due)
@@ -759,8 +769,8 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             spaceId,
             title = "Blocked task",
-            dueDate = pastDue,
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(setOf(blocker.id)),
+            dueDate = pastDue
         )!!
 
         // Blocker should have totalDueDate from blocked task
@@ -806,8 +816,8 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             spaceId,
             title = "Blocked task",
-            dueDate = pastDue,
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(setOf(blocker.id)),
+            dueDate = pastDue
         )!!
 
         // Initially blocker is missed

@@ -25,12 +25,11 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         // Create subtasks after parent
-        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1")!!
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update subtask status to trigger automation
@@ -45,7 +44,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -57,7 +55,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // Add second subtask with Open status
-        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2")!!
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should change to Open (one subtask is Open)
@@ -73,14 +71,13 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create subtasks first
-        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
-        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1")!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2")!!
 
         // Create parent after
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -103,7 +100,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
         val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Done)!!
@@ -125,10 +121,9 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask")!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Rapidly change status multiple times
@@ -151,12 +146,11 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
-        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
-        val subtask3 = repo.addTask(spaceId, title = "Subtask 3", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1")!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2")!!
+        val subtask3 = repo.addTask(spaceId, title = "Subtask 3")!!
 
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
@@ -185,7 +179,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
             status = TaskStatus.Done,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask")!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Toggle status back and forth
@@ -212,7 +206,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(spaceId, title = "Blocked")!!
 
         // Create blocker after
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
         // Set blocked status
         repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
@@ -227,8 +221,8 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `blocked task unblocks when blocker completed before blocked status set`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
-        val blocked = repo.addTask(spaceId, title = "Blocked", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
+        val blocked = repo.addTask(spaceId, title = "Blocked")!!
 
         // Complete blocker first
         repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
@@ -244,9 +238,9 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `blocked task handles blockers completing in different orders`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.addTask(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
-        val blocker2 = repo.addTask(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
-        val blocker3 = repo.addTask(spaceId, title = "Blocker 3", status = TaskStatus.Open)!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
+        val blocker3 = repo.addTask(spaceId, title = "Blocker 3")!!
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
@@ -268,9 +262,9 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `blocked task with 3 blockers stays blocked until all complete`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.addTask(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
-        val blocker2 = repo.addTask(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
-        val blocker3 = repo.addTask(spaceId, title = "Blocker 3", status = TaskStatus.Open)!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
+        val blocker3 = repo.addTask(spaceId, title = "Blocker 3")!!
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
@@ -316,7 +310,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `blocked task handles blocker being un-completed after unblocking`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
@@ -340,11 +334,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `parent auto-updates when subtask unblocks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
         val subtask = repo.addTask(
@@ -376,22 +369,19 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val grandgrandparent = repo.addTask(
             spaceId,
             title = "GrandGrandparent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
         val grandparent = repo.addTask(
             spaceId,
             title = "Grandparent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val child = repo.addTask(spaceId, title = "Child", status = TaskStatus.Open)!!
+        val child = repo.addTask(spaceId, title = "Child")!!
 
         repo.addConnection(grandparent.id, grandgrandparent.id, ConnectionType.SubtaskOf)
         repo.addConnection(parent.id, grandparent.id, ConnectionType.SubtaskOf)
@@ -419,11 +409,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
-        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1")!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2")!!
 
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
@@ -450,10 +439,9 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Open)!!
+        val subtask1 = repo.addTask(spaceId, title = "Subtask 1")!!
         val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Done)!!
 
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
@@ -477,8 +465,8 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `blocked task handles blocker deletion`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker1 = repo.addTask(spaceId, title = "Blocker 1", status = TaskStatus.Open)!!
-        val blocker2 = repo.addTask(spaceId, title = "Blocker 2", status = TaskStatus.Open)!!
+        val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
+        val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
@@ -508,7 +496,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
         val subtask = repo.addTask(spaceId, title = "Only Subtask", status = TaskStatus.InProgress)!!
@@ -531,7 +518,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `deleting only blocker unblocks task immediately`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val blocker = repo.addTask(spaceId, title = "Only Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Only Blocker")!!
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
@@ -557,10 +544,9 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
-        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask")!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update subtask - parent auto-updates
@@ -585,7 +571,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
             status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = false  // Disabled initially
         )!!
-        val subtask = repo.addTask(spaceId, title = "Subtask", status = TaskStatus.Open)!!
+        val subtask = repo.addTask(spaceId, title = "Subtask")!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Update subtask while auto-update is disabled
@@ -611,13 +597,12 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         // Create 50 subtasks
         val subtasks = (1..50).map { i ->
-            val subtask = repo.addTask(spaceId, title = "Subtask $i", status = TaskStatus.Open)!!
+            val subtask = repo.addTask(spaceId, title = "Subtask $i")!!
             repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
             subtask
         }
@@ -639,8 +624,8 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `automation handles circular parent-child relationships gracefully`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val task1 = repo.addTask(spaceId, title = "Task 1", status = TaskStatus.Open, autoUpdateStatusFromSubtasks = true)!!
-        val task2 = repo.addTask(spaceId, title = "Task 2", status = TaskStatus.Open, autoUpdateStatusFromSubtasks = true)!!
+        val task1 = repo.addTask(spaceId, title = "Task 1", autoUpdateStatusFromSubtasks = true)!!
+        val task2 = repo.addTask(spaceId, title = "Task 2", autoUpdateStatusFromSubtasks = true)!!
 
         // Create first connection: task2 is subtask of task1
         val firstConnection = repo.addConnection(task2.id, task1.id, ConnectionType.SubtaskOf)
@@ -659,10 +644,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
     fun `cycle prevention with more than 2 nodes`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
-        val task1 = repo.addTask(spaceId, title = "Task 1", status = TaskStatus.Open)!!
-        val task2 = repo.addTask(spaceId, title = "Task 2", status = TaskStatus.Open)!!
-        val task3 = repo.addTask(spaceId, title = "Task 3", status = TaskStatus.Open)!!
-        val task4 = repo.addTask(spaceId, title = "Task 4", status = TaskStatus.Open)!!
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
+        val task4 = repo.addTask(spaceId, title = "Task 4")!!
 
         // Create chain: task4 -> task3 -> task2 -> task1
         assertTrue(repo.addConnection(task4.id, task3.id, ConnectionType.SubtaskOf))
@@ -690,7 +675,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         })
 
         // Adding a non-cycle connection should work
-        val task5 = repo.addTask(spaceId, title = "Task 5", status = TaskStatus.Open)!!
+        val task5 = repo.addTask(spaceId, title = "Task 5")!!
         assertTrue(repo.addConnection(task5.id, task1.id, ConnectionType.SubtaskOf))
     }
 
@@ -710,7 +695,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         assertIs<TaskStatus.Blocked>(status)
 
         // Creating a real task and marking it done shouldn't affect this
-        val realTask = repo.addTask(spaceId, title = "Real Task", status = TaskStatus.Open)!!
+        val realTask = repo.addTask(spaceId, title = "Real Task")!!
         repo.updateTask(repo.getTaskById(realTask.id)!!.copy(status = TaskStatus.Done))
 
         // Blocked task should remain in its blocked state (non-existent blockers)
@@ -727,7 +712,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -752,7 +736,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -771,7 +754,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -781,7 +763,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         assertEquals(TaskStatus.Done, repo.getTaskById(parent.id)!!.status)
 
         // Second subtask is Open - parent should become Open
-        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2")!!
         repo.addConnection(subtask2.id, parent.id, ConnectionType.SubtaskOf)
         assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
 
@@ -798,13 +780,12 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
         // Add two subtasks - one Done, one Open
         val subtaskDone = repo.addTask(spaceId, title = "Subtask Done", status = TaskStatus.Done)!!
-        val subtaskOpen = repo.addTask(spaceId, title = "Subtask Open", status = TaskStatus.Open)!!
+        val subtaskOpen = repo.addTask(spaceId, title = "Subtask Open")!!
 
         repo.addConnection(subtaskDone.id, parent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtaskOpen.id, parent.id, ConnectionType.SubtaskOf)
@@ -827,7 +808,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -854,7 +834,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker that blocks taskA
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
         // Create taskA that is blocked by blocker
         val taskA = repo.addTask(
@@ -887,13 +867,12 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
         // Create parent with auto-status from subtasks enabled
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -939,13 +918,12 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
         // Create parent with auto-status from subtasks enabled
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -990,13 +968,12 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         // Create blocker
-        val blocker = repo.addTask(spaceId, title = "Blocker", status = TaskStatus.Open)!!
+        val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
         // Create parent with auto-status from subtasks enabled
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -1040,17 +1017,15 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val grandparent = repo.addTask(
             spaceId,
             title = "Grandparent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
         val subtask1 = repo.addTask(spaceId, title = "Subtask 1", status = TaskStatus.Done)!!
-        val subtask2 = repo.addTask(spaceId, title = "Subtask 2", status = TaskStatus.Open)!!
+        val subtask2 = repo.addTask(spaceId, title = "Subtask 2")!!
 
         repo.addConnection(parent.id, grandparent.id, ConnectionType.SubtaskOf)
         repo.addConnection(subtask1.id, parent.id, ConnectionType.SubtaskOf)
@@ -1080,7 +1055,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -1088,7 +1062,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            status = TaskStatus.Open,
             connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
@@ -1110,7 +1083,6 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            status = TaskStatus.Open,
             autoUpdateStatusFromSubtasks = true
         )!!
 
@@ -1127,9 +1099,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         // Create parent with auto-update DISABLED initially
         val parent = repo.addTask(
             spaceId,
-            title = "Parent",
-            status = TaskStatus.Open,
-            autoUpdateStatusFromSubtasks = false
+            title = "Parent"
         )!!
 
         // Create a Done subtask
@@ -1182,7 +1152,11 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 
         val blocker = repo.addTask(spaceId, title = "Blocker")!!
-        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker.id), "Original comment"))!!
+        val task = repo.addTask(
+            spaceId,
+            title = "Task",
+            status = TaskStatus.Blocked(setOf(blocker.id), "Original comment")
+        )!!
 
         // Change comment via update
         repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Updated comment")))

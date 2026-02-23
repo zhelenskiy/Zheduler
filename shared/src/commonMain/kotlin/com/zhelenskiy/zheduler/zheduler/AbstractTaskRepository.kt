@@ -374,15 +374,13 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * Advances the recurrence state and resets the task for the next occurrence.
      * @param taskId The task ID
      * @param triggerEvent The event that triggered the recurrence
-     * @param triggerTime The time when the trigger occurred
      * @return The updated task, or `null` if not found or not recurring
      *
      * Note: Subclasses may call [processRecurrenceTriggerInternal] from within a mutex lock.
      */
     abstract override suspend fun processRecurrenceTrigger(
         taskId: String,
-        triggerEvent: RecurrenceTriggerEvent,
-        triggerTime: Instant
+        triggerEvent: RecurrenceTriggerEvent
     ): Task?
 
     /**
@@ -392,32 +390,27 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     protected suspend fun processRecurrenceTriggerInternal(
         taskId: String,
         triggerEvent: RecurrenceTriggerEvent,
-        triggerTime: Instant
     ): Task? {
         val task = getTaskById(taskId) ?: return null
 
-        if (task.recurrenceRules.isEmpty()) return task
-
-        val updatedRecurrenceData = RecurrenceService.processRecurrence(
+        val (newRules, newStatus) = RecurrenceService.processRecurrence(
             rules = task.recurrenceRules,
-            currentState = task.recurrenceState,
             triggerEvent = triggerEvent,
-            triggerTime = triggerTime
-        )
+        ) ?: return null
 
         // Record status change in timeline if status is being reset (automatic recurrence)
-        if (task.status != task.resetStatusOnRecurrence) {
+        if (task.status != newStatus) {
             recordStatusChange(
                 taskId = taskId,
                 previousStatus = task.status,
-                newStatus = task.resetStatusOnRecurrence,
+                newStatus = newStatus,
                 automaticChangeReason = AutomaticChangeReason.Recurrence
             )
         }
 
         val updated = task.copy(
-            status = task.resetStatusOnRecurrence,
-            recurrenceState = updatedRecurrenceData.updatedRecurrenceState
+            status = newStatus,
+            recurrenceRules = newRules,
         )
         persistTaskUpdate(updated)
         return updated
@@ -442,11 +435,9 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         val updatedTasks = mutableListOf<Task>()
 
         getRecurringTasksDueBefore(currentTime).forEach { task ->
-            val triggerEvent = RecurrenceTriggerEvent.DateTimeReached(task.status)
-            if (task.recurrenceRules.any { RecurrenceCalculator.shouldTrigger(it, triggerEvent) }) {
-                processRecurrenceTriggerInternal(task.id, triggerEvent, currentTime)?.let {
-                    updatedTasks.add(it)
-                }
+            val triggerEvent = RecurrenceTriggerEvent(task.status, currentTime)
+            processRecurrenceTriggerInternal(task.id, triggerEvent)?.let {
+                updatedTasks.add(it)
             }
         }
 
@@ -807,7 +798,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      */
     protected suspend fun handleCrossSpaceRelationshipsOnSpaceDeletion(taskIdsInDeletedSpace: Set<String>) {
         // Get all tasks from other spaces and check their relationships
-        getAllSpaces().forEach { space ->
+        getAllTasks().forEach { space ->
             getTasksInSpace(space.id).forEach { task ->
                 var modified = false
                 var updatedTask = task
@@ -899,7 +890,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         { it.totalPriority == null },
         { -(it.totalPriority?.value ?: 0) },
         // ID: ascending
-        { it.task.id }
+        { it.task.id.takeLastWhile(Char::isDigit).toInt() }
     )
 
     /**
@@ -1050,27 +1041,27 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 RecurrenceFilter.Any -> true
                 RecurrenceFilter.NoRecurrence -> task.recurrenceRules.isEmpty()
                 RecurrenceFilter.HasRecurrence -> task.recurrenceRules.isNotEmpty()
-                RecurrenceFilter.AfterTimeout -> task.recurrenceRules.any {
-                    it.timeRecurrenceTrigger is AfterTimeout
+                RecurrenceFilter.AfterTimeout -> task.recurrenceRules.any { (rule, _) ->
+                    rule.timeRecurrenceTrigger is AfterTimeout
                 }
 
-                RecurrenceFilter.FixedDaysOfWeek -> task.recurrenceRules.any { rule ->
+                RecurrenceFilter.FixedDaysOfWeek -> task.recurrenceRules.any { (rule, _) ->
                     rule.timeRecurrenceTrigger.let {
                         it is AtFixedPoints && it.pattern is FixedPointPattern.DaysOfWeek
                     }
                 }
 
-                RecurrenceFilter.FixedDayOfMonth -> task.recurrenceRules.any { rule ->
+                RecurrenceFilter.FixedDayOfMonth -> task.recurrenceRules.any { (rule, _) ->
                     val recurrenceTrigger = rule.timeRecurrenceTrigger
                     recurrenceTrigger is AtFixedPoints && recurrenceTrigger.pattern is FixedPointPattern.DayOfMonth
                 }
 
-                RecurrenceFilter.NthDayOfWeek -> task.recurrenceRules.any { rule ->
+                RecurrenceFilter.NthDayOfWeek -> task.recurrenceRules.any { (rule, _) ->
                     val recurrenceTrigger = rule.timeRecurrenceTrigger
                     recurrenceTrigger is AtFixedPoints && recurrenceTrigger.pattern is FixedPointPattern.NthDayOfWeekInMonth
                 }
 
-                RecurrenceFilter.Yearly -> task.recurrenceRules.any { rule ->
+                RecurrenceFilter.Yearly -> task.recurrenceRules.any { (rule, _) ->
                     val recurrenceTrigger = rule.timeRecurrenceTrigger
                     recurrenceTrigger is AtFixedPoints && (recurrenceTrigger.pattern is YearlyOnDate || recurrenceTrigger.pattern is NthDayOfWeekInMonths)
                 }

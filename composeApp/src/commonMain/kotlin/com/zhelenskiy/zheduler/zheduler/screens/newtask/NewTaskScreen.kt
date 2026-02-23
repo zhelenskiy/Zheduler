@@ -99,7 +99,6 @@ fun NewTaskScreen(
                 connections = parsed.connections,
                 notifications = parsed.notifications,
                 recurrenceRules = parsed.recurrenceRules,
-                resetStatusOnRecurrence = parsed.resetStatusOnRecurrence,
                 autoUpdateStatusFromSubtasks = parsed.autoUpdateStatusFromSubtasks
             )
             if (task != null) {

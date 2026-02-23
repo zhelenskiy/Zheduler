@@ -7,11 +7,11 @@ import kotlin.test.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 
-class InMemoryTaskFiltersRepositoryTest: TaskFiltersRepositoryTest(), InMemoryRepositoryTest
-class DatabaseTaskFiltersRepositoryTest: TaskFiltersRepositoryTest(), DatabaseRepositoryTest
+class InMemoryTaskFiltersRepositoryTest : TaskFiltersRepositoryTest(), InMemoryRepositoryTest
+class DatabaseTaskFiltersRepositoryTest : TaskFiltersRepositoryTest(), DatabaseRepositoryTest
 
 
-abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
+abstract class TaskFiltersRepositoryTest : AbstractRepositoryTest {
 
 
     // ==================== TaskFilterCriteria Tests ====================
@@ -155,7 +155,11 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
 
         val criteria = TaskFilterCriteria(
             searchQuery = "match",
-            textSearchFields = setOf(TaskTextSearchField.Title, TaskTextSearchField.Description, TaskTextSearchField.Tags)
+            textSearchFields = setOf(
+                TaskTextSearchField.Title,
+                TaskTextSearchField.Description,
+                TaskTextSearchField.Tags
+            )
         )
         val results = repo.getAllWithTotalsFiltered(spaceId, criteria)
 
@@ -184,7 +188,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `filter by single status`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Open task")
         repo.addTask(spaceId, title = "Done task", status = TaskStatus.Done)
         repo.addTask(spaceId, title = "In progress", status = TaskStatus.InProgress)
 
@@ -198,7 +202,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `filter by multiple statuses`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Open task")
         repo.addTask(spaceId, title = "Done task", status = TaskStatus.Done)
         repo.addTask(spaceId, title = "In progress", status = TaskStatus.InProgress)
 
@@ -213,7 +217,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val blocker = repo.addTask(spaceId, title = "Blocker")!!
         repo.addTask(spaceId, title = "Blocked task", status = TaskStatus.Blocked(setOf(blocker.id)))
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Open task")
 
         val criteria = TaskFilterCriteria(statusFilters = setOf(TaskStatus.Blocked(emptySet())))
         val results = repo.getAllWithTotalsFiltered(spaceId, criteria)
@@ -226,7 +230,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
     fun `filter by Declined status`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         repo.addTask(spaceId, title = "Declined task", status = TaskStatus.Declined("Not needed"))
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Open task")
 
         val criteria = TaskFilterCriteria(statusFilters = setOf(TaskStatus.Declined("")))
         val results = repo.getAllWithTotalsFiltered(spaceId, criteria)
@@ -242,8 +246,12 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
         repo.addTask(spaceId, title = "Blocked by 1", status = TaskStatus.Blocked(setOf(blocker1.id), "waiting"))
         repo.addTask(spaceId, title = "Blocked by 2", status = TaskStatus.Blocked(setOf(blocker2.id), "pending"))
-        repo.addTask(spaceId, title = "Blocked by both", status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id), ""))
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(
+            spaceId,
+            title = "Blocked by both",
+            status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id), "")
+        )
+        repo.addTask(spaceId, title = "Open task")
 
         val criteria = TaskFilterCriteria(
             statusFilters = setOf(TaskStatus.Blocked(emptySet())),
@@ -281,8 +289,12 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         val blocker = repo.addTask(spaceId, title = "Blocker")!!
         repo.addTask(spaceId, title = "Blocked 1", status = TaskStatus.Blocked(setOf(blocker.id), "waiting for review"))
         repo.addTask(spaceId, title = "Blocked 2", status = TaskStatus.Blocked(setOf(blocker.id), "pending approval"))
-        repo.addTask(spaceId, title = "Blocked 3", status = TaskStatus.Blocked(setOf(blocker.id), "waiting for deployment"))
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(
+            spaceId,
+            title = "Blocked 3",
+            status = TaskStatus.Blocked(setOf(blocker.id), "waiting for deployment")
+        )
+        repo.addTask(spaceId, title = "Open task")
 
         val criteria = TaskFilterCriteria(
             statusFilters = setOf(TaskStatus.Blocked(emptySet())),
@@ -316,9 +328,17 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
         val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
-        repo.addTask(spaceId, title = "Match both", status = TaskStatus.Blocked(setOf(blocker1.id), "waiting for review"))
+        repo.addTask(
+            spaceId,
+            title = "Match both",
+            status = TaskStatus.Blocked(setOf(blocker1.id), "waiting for review")
+        )
         repo.addTask(spaceId, title = "ID only", status = TaskStatus.Blocked(setOf(blocker1.id), "pending"))
-        repo.addTask(spaceId, title = "Comment only", status = TaskStatus.Blocked(setOf(blocker2.id), "waiting for approval"))
+        repo.addTask(
+            spaceId,
+            title = "Comment only",
+            status = TaskStatus.Blocked(setOf(blocker2.id), "waiting for approval")
+        )
 
         val criteria = TaskFilterCriteria(
             statusFilters = setOf(TaskStatus.Blocked(emptySet())),
@@ -337,7 +357,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.addTask(spaceId, title = "Declined 1", status = TaskStatus.Declined("Not needed anymore"))
         repo.addTask(spaceId, title = "Declined 2", status = TaskStatus.Declined("Duplicate task"))
         repo.addTask(spaceId, title = "Declined 3", status = TaskStatus.Declined("Not feasible"))
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Open task")
 
         val criteria = TaskFilterCriteria(
             statusFilters = setOf(TaskStatus.Declined("")),
@@ -558,10 +578,14 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.addTask(
             spaceId,
             title = "Recurring",
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofDays(1),
-                firstOccurrence = Clock.System.now()
-            )
+            recurrenceRules = RecurrenceRule(
+                timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                    period = RecurrencePeriod.ofDays(1),
+                    firstOccurrence = Clock.System.now()
+                ),
+                statusChangeTrigger = null,
+                resetToStatus = TaskStatus.Open,
+            ).to(RecurrenceState()).let(::listOf)
         )
 
         val criteria = TaskFilterCriteria(recurrenceFilter = RecurrenceFilter.NoRecurrence)
@@ -578,10 +602,14 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.addTask(
             spaceId,
             title = "Recurring",
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofDays(1),
-                firstOccurrence = Clock.System.now()
-            )
+            recurrenceRules = RecurrenceRule(
+                timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                    period = RecurrencePeriod.ofDays(1),
+                    firstOccurrence = Clock.System.now()
+                ),
+                statusChangeTrigger = null,
+                resetToStatus = TaskStatus.Open,
+            ).to(RecurrenceState()).let(::listOf)
         )
 
         val criteria = TaskFilterCriteria(recurrenceFilter = RecurrenceFilter.HasRecurrence)
@@ -632,7 +660,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `filter by Auto finds tasks with autoUpdateStatusFromSubtasks enabled`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Manual", autoUpdateStatusFromSubtasks = false)
+        repo.addTask(spaceId, title = "Manual")
         repo.addTask(spaceId, title = "Auto", autoUpdateStatusFromSubtasks = true)
 
         val criteria = TaskFilterCriteria(autoUpdateStatusFilter = AutoUpdateStatusFilter.Auto)
@@ -645,7 +673,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `filter by Manual finds tasks with autoUpdateStatusFromSubtasks disabled`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Manual", autoUpdateStatusFromSubtasks = false)
+        repo.addTask(spaceId, title = "Manual")
         repo.addTask(spaceId, title = "Auto", autoUpdateStatusFromSubtasks = true)
 
         val criteria = TaskFilterCriteria(autoUpdateStatusFilter = AutoUpdateStatusFilter.Manual)
@@ -804,8 +832,8 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `multiple filters are combined with AND`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Match both", status = TaskStatus.Open, priority = Priority.HIGH)
-        repo.addTask(spaceId, title = "Open only", status = TaskStatus.Open, priority = Priority.LOW)
+        repo.addTask(spaceId, title = "Match both", priority = Priority.HIGH)
+        repo.addTask(spaceId, title = "Open only", priority = Priority.LOW)
         repo.addTask(spaceId, title = "High only", status = TaskStatus.Done, priority = Priority.HIGH)
 
         val criteria = TaskFilterCriteria(
@@ -821,9 +849,9 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `text search and status filter combined`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Important open", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Important open")
         repo.addTask(spaceId, title = "Important done", status = TaskStatus.Done)
-        repo.addTask(spaceId, title = "Regular open", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Regular open")
 
         val criteria = TaskFilterCriteria(
             searchQuery = "important",
@@ -925,7 +953,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.createSpace("Personal", "PERS")
         repo.createSpace("Shopping List", "SHOP")
 
-        val spaces = repo.getAllSpaces()
+        val spaces = repo.getAllTasks()
         val results = repo.filterSpaces("ork", searchInName = true, searchInPrefix = false)
 
         assertEquals(1, results.size)
@@ -939,7 +967,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.createSpace("Personal", "PERS")
         repo.createSpace("Shopping List", "SHOP")
 
-        val spaces = repo.getAllSpaces()
+        val spaces = repo.getAllTasks()
         val results = repo.filterSpaces("PER", searchInName = false, searchInPrefix = true)
 
         assertEquals(1, results.size)
@@ -951,7 +979,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         val repo = createEmptyRepository()
         repo.createSpace("Work Tasks", "WORK")
 
-        val spaces = repo.getAllSpaces()
+        val spaces = repo.getAllTasks()
         val results = repo.filterSpaces("work", searchInName = true, searchInPrefix = true)
 
         assertEquals(1, results.size)
@@ -963,7 +991,7 @@ abstract class TaskFiltersRepositoryTest: AbstractRepositoryTest {
         repo.createSpace("Space 1", "ONE")
         repo.createSpace("Space 2", "TWO")
 
-        val spaces = repo.getAllSpaces()
+        val spaces = repo.getAllTasks()
         val results = repo.filterSpaces("   ", searchInName = true, searchInPrefix = true)
 
         assertEquals(2, results.size)

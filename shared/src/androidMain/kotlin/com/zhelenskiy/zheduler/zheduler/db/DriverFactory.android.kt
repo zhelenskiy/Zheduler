@@ -7,19 +7,9 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 
 actual class DriverFactory(private val context: Context) {
     actual suspend fun createDriver(): SqlDriver {
-        // Enable foreign key constraints BEFORE creating schema
-        val driver = AndroidSqliteDriver(
-            ZhedulerDatabase.Schema.synchronous(),
-            context,
-            "zheduler.db",
-            callback = object : AndroidSqliteDriver.Callback(ZhedulerDatabase.Schema.synchronous()) {
-                override fun onOpen(db: app.cash.sqldelight.db.SupportSQLiteDatabase) {
-                    super.onOpen(db)
-                    // Enable foreign key constraints (disabled by default in SQLite)
-                    db.execSQL("PRAGMA foreign_keys = ON;")
-                }
-            }
-        )
+        val driver = AndroidSqliteDriver(ZhedulerDatabase.Schema.synchronous(), context, "zheduler.db")
+        // Enable foreign key constraints (disabled by default in SQLite)
+        driver.execute(null, "PRAGMA foreign_keys = ON;", 0)
         return driver
     }
 }

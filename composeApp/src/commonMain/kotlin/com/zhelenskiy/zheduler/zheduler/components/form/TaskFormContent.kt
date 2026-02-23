@@ -255,9 +255,9 @@ private fun RecurrenceSection(
                             .heightIn(max = 400.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(formState.recurrenceRules.size) { index ->
+                        itemsIndexed(formState.recurrenceRules) { index, (rule, _) ->
                             RecurrenceRuleItem(
-                                rule = formState.recurrenceRules[index],
+                                rule = rule,
                                 onEdit = { editingRuleIndex = index },
                                 onDelete = {
                                     val mutableRules = formState.recurrenceRules.toMutableList()
@@ -278,17 +278,19 @@ private fun RecurrenceSection(
     if (editingRuleIndex != null) {
         val index = editingRuleIndex!!
         SingleRecurrenceRuleDialog(
-            currentRule = formState.recurrenceRules.getOrNull(index),
+            currentRule = formState.recurrenceRules.getOrNull(index)?.first,
             filterTasks = filterTasksForSelection,
             getTaskById = getTaskById,
             onDismiss = { editingRuleIndex = null },
             onRecurrenceSelected = { rule ->
                 if (rule != null) {
                     val mutableRules = formState.recurrenceRules.toMutableList()
+                    val currentState = mutableRules.getOrNull(index)?.second ?: RecurrenceState()
+                    val nextOccurrence = RecurrenceCalculator.calculateNextOccurrence(rule, currentState)
                     if (index < mutableRules.size) {
-                        mutableRules[index] = rule
+                        mutableRules[index] = rule to currentState.copy(nextOccurrenceDate = nextOccurrence)
                     } else {
-                        mutableRules.add(rule)
+                        mutableRules.add(rule to currentState.copy(nextOccurrenceDate = nextOccurrence))
                     }
                     formState.recurrenceRules = mutableRules
                 }

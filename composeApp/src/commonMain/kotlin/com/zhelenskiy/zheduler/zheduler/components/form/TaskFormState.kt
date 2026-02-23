@@ -19,8 +19,7 @@ class TaskFormState(
     initialStatus: TaskStatus,
     initialConnections: Set<TaskConnection>,
     initialNotifications: List<String>, // Compact time strings (e.g., "1d", "2h 30m")
-    initialRecurrenceRules: List<RecurrenceRule>,
-    initialResetStatusOnRecurrence: TaskStatus,
+    initialRecurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
     initialAutoUpdateStatusFromSubtasks: Boolean
 ) {
     var title by mutableStateOf(initialTitle)
@@ -33,7 +32,6 @@ class TaskFormState(
     var connections by mutableStateOf(initialConnections)
     var notifications by mutableStateOf(initialNotifications)
     var recurrenceRules by mutableStateOf(initialRecurrenceRules)
-    var resetStatusOnRecurrence by mutableStateOf(initialResetStatusOnRecurrence)
     var autoUpdateStatusFromSubtasks by mutableStateOf(initialAutoUpdateStatusFromSubtasks)
 
     val isFormValid: Boolean
@@ -67,7 +65,6 @@ class TaskFormState(
                 ?.map { TaskNotification(it) }
                 ?: emptyList(),
             recurrenceRules = recurrenceRules,
-            resetStatusOnRecurrence = resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
         )
     }
@@ -83,13 +80,12 @@ class TaskFormState(
         connections = task.connections
         notifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() }
         recurrenceRules = task.recurrenceRules
-        resetStatusOnRecurrence = task.resetStatusOnRecurrence
         autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
     }
 
     fun hasUnsavedChanges(task: Task): Boolean {
         val expectedPriority = task.priority?.value?.toString() ?: ""
-        val expectedEstimatedTime = task.estimatedTime?.let { it.toBriefString() } ?: ""
+        val expectedEstimatedTime = task.estimatedTime?.toBriefString() ?: ""
         val expectedNotifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() }
 
         return title != task.title ||
@@ -102,7 +98,6 @@ class TaskFormState(
                 connections != task.connections ||
                 notifications != expectedNotifications ||
                 recurrenceRules != task.recurrenceRules ||
-                resetStatusOnRecurrence != task.resetStatusOnRecurrence ||
                 autoUpdateStatusFromSubtasks != task.autoUpdateStatusFromSubtasks
     }
 
@@ -117,7 +112,6 @@ class TaskFormState(
                 connections != initialConnections ||
                 notifications.isNotEmpty() ||
                 recurrenceRules.isNotEmpty() ||
-                resetStatusOnRecurrence != TaskStatus.Open ||
                 autoUpdateStatusFromSubtasks
     }
 }
@@ -132,8 +126,7 @@ data class ParsedTaskValues(
     val status: TaskStatus,
     val connections: Set<TaskConnection>,
     val notifications: List<TaskNotification> = emptyList(),
-    val recurrenceRules: List<RecurrenceRule> = emptyList(),
-    val resetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
+    val recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>> = emptyList(),
     val autoUpdateStatusFromSubtasks: Boolean = false
 )
 
@@ -148,8 +141,7 @@ fun rememberTaskFormState(
     initialStatus: TaskStatus = TaskStatus.Open,
     initialConnections: Set<TaskConnection> = emptySet(),
     initialNotifications: List<String> = emptyList(),
-    initialRecurrenceRules: List<RecurrenceRule> = emptyList(),
-    initialResetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
+    initialRecurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>> = emptyList(),
     initialAutoUpdateStatusFromSubtasks: Boolean = false
 ): TaskFormState {
     return remember {
@@ -164,7 +156,6 @@ fun rememberTaskFormState(
             initialConnections = initialConnections,
             initialNotifications = initialNotifications,
             initialRecurrenceRules = initialRecurrenceRules,
-            initialResetStatusOnRecurrence = initialResetStatusOnRecurrence,
             initialAutoUpdateStatusFromSubtasks = initialAutoUpdateStatusFromSubtasks
         )
     }
@@ -184,7 +175,6 @@ fun rememberTaskFormState(task: Task): TaskFormState {
             initialConnections = task.connections,
             initialNotifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() },
             initialRecurrenceRules = task.recurrenceRules,
-            initialResetStatusOnRecurrence = task.resetStatusOnRecurrence,
             initialAutoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
         )
     }
