@@ -636,9 +636,9 @@ private fun ConnectionsSection(
                 // Auto-update status from subtasks toggle
                 val hasSubtasks = connections.any { it.type == ConnectionType.ParentOf }
                 if (hasSubtasks) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp).padding(end = 12.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {

@@ -691,7 +691,7 @@ fun TaskDetailScreen(
                                     Text(
                                         text = connectionType.displayName,
                                         style = MaterialTheme.typography.labelMedium,
-                                        modifier = Modifier.padding(top = 4.dp)
+                                        modifier = Modifier.padding(vertical = 4.dp)
                                     )
                                     FlowRow(
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
