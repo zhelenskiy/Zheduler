@@ -46,7 +46,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun hasSpaces(): Boolean = mutex.withLock { spaces.isNotEmpty() }
 
-    override suspend fun getAllSpaces(): List<Space> = mutex.withLock { spaces.values.toList() }
+    override suspend fun getAllTasks(): List<Space> = mutex.withLock { spaces.values.toList() }
 
     override suspend fun getSpaceById(id: String): Space? = mutex.withLock { spaces[id] }
 
@@ -124,7 +124,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         // No additional action needed
     }
 
-    override suspend fun getAll(spaceId: String): List<Task> = mutex.withLock {
+    override suspend fun getAllTasks(spaceId: String): List<Task> = mutex.withLock {
         tasks.values.filter { it.spaceId == spaceId }.toList()
     }
 
@@ -274,14 +274,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
         customId: String?,
-        recurrenceRules: List<RecurrenceRule>,
-        resetStatusOnRecurrence: TaskStatus,
+        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
         if (!spaces.containsKey(spaceId)) return@withLock null
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
-
-        val recurrenceState = RecurrenceService.initializeRecurrence(recurrenceRules)
 
         val status = if (autoUpdateStatusFromSubtasks) {
             val subtasksIds = connections
@@ -304,8 +301,6 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             notifications = notifications,
             spaceId = spaceId,
             recurrenceRules = recurrenceRules,
-            recurrenceState = recurrenceState,
-            resetStatusOnRecurrence = resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
         )
         tasks[task.id] = task
@@ -662,10 +657,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun processRecurrenceTrigger(
         taskId: String,
-        triggerEvent: RecurrenceTriggerEvent,
-        triggerTime: Instant
+        triggerEvent: RecurrenceTriggerEvent
     ): Task? = mutex.withLock {
-        processRecurrenceTriggerInternal(taskId, triggerEvent, triggerTime)
+        processRecurrenceTriggerInternal(taskId, triggerEvent)
     }
 
     override suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task> = mutex.withLock {

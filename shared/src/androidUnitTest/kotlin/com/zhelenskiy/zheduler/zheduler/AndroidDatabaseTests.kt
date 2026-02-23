@@ -51,3 +51,7 @@ class AndroidDatabaseCalculateStatusFromSubtasksRepositoryTest : CalculateStatus
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
 class AndroidDatabaseIsMissedRepositoryTest : IsMissedRepositoryTest(), DatabaseRepositoryTest
+
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [28])
+class AndroidDatabaseSearchTasksForConnectionTest : SearchTasksForConnectionTest(), DatabaseRepositoryTest

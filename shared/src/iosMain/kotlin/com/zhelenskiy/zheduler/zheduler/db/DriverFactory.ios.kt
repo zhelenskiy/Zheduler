@@ -6,14 +6,9 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 
 actual class DriverFactory {
     actual suspend fun createDriver(): SqlDriver {
-        val driver = NativeSqliteDriver(
-            ZhedulerDatabase.Schema.synchronous(),
-            "zheduler.db",
-            onOpen = { connection ->
-                // Enable foreign key constraints (disabled by default in SQLite)
-                connection.prepare("PRAGMA foreign_keys = ON;").execute()
-            }
-        )
+        val driver = NativeSqliteDriver(ZhedulerDatabase.Schema.synchronous(), "zheduler.db")
+        // Enable foreign key constraints (disabled by default in SQLite)
+        driver.execute(null, "PRAGMA foreign_keys = ON;", 0)
         return driver
     }
 }

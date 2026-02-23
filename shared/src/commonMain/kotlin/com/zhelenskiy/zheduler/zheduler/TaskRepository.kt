@@ -26,7 +26,7 @@ interface TaskRepository {
      * Get all spaces in the repository.
      * @return List of all spaces
      */
-    suspend fun getAllSpaces(): List<Space>
+    suspend fun getAllTasks(): List<Space>
 
     /**
      * Get a space by its ID.
@@ -73,7 +73,7 @@ interface TaskRepository {
      * @param spaceId The space ID
      * @return List of all tasks in the space
      */
-    suspend fun getAll(spaceId: String): List<Task>
+    suspend fun getAllTasks(spaceId: String): List<Task>
 
     /**
      * Filter tasks for selection dialog (e.g., blocker selection).
@@ -206,8 +206,7 @@ interface TaskRepository {
         connections: Set<TaskConnection> = emptySet(),
         notifications: List<TaskNotification> = emptyList(),
         customId: String? = null,
-        recurrenceRules: List<RecurrenceRule> = emptyList(),
-        resetStatusOnRecurrence: TaskStatus = TaskStatus.Open,
+        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>> = emptyList(),
         autoUpdateStatusFromSubtasks: Boolean = false
     ): Task?
 
@@ -440,13 +439,11 @@ interface TaskRepository {
      * Advances the recurrence state and resets the task for the next occurrence.
      * @param taskId The task ID
      * @param triggerEvent The event that triggered the recurrence
-     * @param triggerTime The time when the trigger occurred
      * @return The updated task, or `null` if not found or not recurring
      */
     suspend fun processRecurrenceTrigger(
         taskId: String,
         triggerEvent: RecurrenceTriggerEvent,
-        triggerTime: Instant
     ): Task?
 
     /**

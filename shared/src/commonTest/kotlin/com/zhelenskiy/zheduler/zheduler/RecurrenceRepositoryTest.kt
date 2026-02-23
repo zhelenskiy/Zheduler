@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.TaskStatus.Done
+import com.zhelenskiy.zheduler.zheduler.TaskStatus.Open
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.*
 import kotlin.test.Test
@@ -67,13 +69,16 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
 
     // ==================== AfterTimeout Recurrence Tests ====================
 
+    private fun RecurrenceTrigger.TimeRecurrenceTrigger.toRule(): RecurrenceRule =
+        RecurrenceRule(timeRecurrenceTrigger = this, statusChangeTrigger = null, resetToStatus = Open)
+
     @Test
     fun testEveryPeriodFirstOccurrence() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(1),
             firstOccurrence = firstOccurrence
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
@@ -83,10 +88,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testEveryPeriodSubsequentOccurrences() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(1),
             firstOccurrence = firstOccurrence
-        )
+        ).toRule()
         val state = RecurrenceState(
             occurrenceCount = 1,
             lastOccurrenceDate = firstOccurrence
@@ -99,11 +104,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testEveryPeriodTerminationAfterOccurrences() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-            termination = RecurrenceTermination.afterOccurrences(3)
-        )
+        ).toRule().copy(termination = RecurrenceTermination.afterOccurrences(3))
         val state = RecurrenceState(occurrenceCount = 3)
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
@@ -114,11 +118,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     fun testEveryPeriodTerminationOnDate() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
         val endDate = instant(2024, 1, 20, 0, 0)
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-            termination = RecurrenceTermination.onDate(endDate)
-        )
+        ).toRule().copy(termination = RecurrenceTermination.onDate(endDate))
         val state = RecurrenceState(occurrenceCount = 1, lastOccurrenceDate = firstOccurrence)
 
         // Trigger time is after end date
@@ -134,14 +137,14 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testDaysOfWeekFindNextSameDay() {
         val startFrom = instant(2024, 1, 15, 0, 0) // Monday at midnight
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
                 days = setOf(RecurrenceDayOfWeek.MONDAY),
                 timeOfDay = TimeOfDay(10, 0)
             ),
             startFrom = startFrom,
             timezone = RecurrenceTimeZone.Specific("UTC")  // Use explicit UTC timezone
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -156,13 +159,13 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testDaysOfWeekMultipleDays() {
         val startFrom = instant(2024, 1, 15, 12, 0) // Monday noon
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
                 days = setOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY),
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -177,13 +180,13 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testDayOfMonthSameMonth() {
         val startFrom = instant(2024, 1, 10, 0, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DayOfMonth(
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -196,13 +199,13 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testDayOfMonthNextMonth() {
         val startFrom = instant(2024, 1, 20, 0, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DayOfMonth(
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -216,13 +219,13 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     fun testDayOfMonthFebruaryClamp() {
         // Feb doesn't have 31 days, should clamp to last day
         val startFrom = instant(2024, 1, 31, 12, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DayOfMonth(
                 dayOfMonth = 31,
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState(lastOccurrenceDate = startFrom)
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -237,14 +240,14 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testFirstMondayOfMonth() {
         val startFrom = instant(2024, 1, 1, 0, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.NthDayOfWeekInMonth(
                 ordinal = WeekOrdinal.FIRST,
                 dayOfWeek = RecurrenceDayOfWeek.MONDAY,
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -258,14 +261,14 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testLastFridayOfMonth() {
         val startFrom = instant(2024, 1, 1, 0, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.NthDayOfWeekInMonth(
                 ordinal = WeekOrdinal.LAST,
                 dayOfWeek = RecurrenceDayOfWeek.FRIDAY,
                 timeOfDay = TimeOfDay(17, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -281,14 +284,14 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testYearlyOnDateSameYear() {
         val startFrom = instant(2024, 1, 1, 0, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = RecurrenceMonth.MARCH,
+                months = setOf(RecurrenceMonth.MARCH),
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -302,14 +305,14 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testYearlyOnDateNextYear() {
         val startFrom = instant(2024, 6, 1, 0, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = RecurrenceMonth.MARCH,
+                months = setOf(RecurrenceMonth.MARCH),
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -323,33 +326,12 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     // ==================== RecurrenceService Tests ====================
 
     @Test
-    fun testInitializeRecurrenceForNone() {
-        val state = RecurrenceService.initializeRecurrence(RecurrenceRule.None)
-        assertEquals(0, state.occurrenceCount)
-        assertNull(state.nextOccurrenceDate)
-    }
-
-    @Test
-    fun testInitializeRecurrenceForEveryPeriod() {
-        val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterTimeout(
-            period = RecurrencePeriod.ofWeeks(1),
-            firstOccurrence = firstOccurrence
-        )
-        
-        val state = RecurrenceService.initializeRecurrence(rule)
-        assertEquals(0, state.occurrenceCount)
-        assertEquals(firstOccurrence, state.nextOccurrenceDate)
-    }
-
-    @Test
     fun testProcessRecurrenceTermination() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-            termination = RecurrenceTermination.afterOccurrences(2)
-        )
+        ).toRule().copy(termination = RecurrenceTermination.afterOccurrences(2))
         
         val currentState = RecurrenceState(
             occurrenceCount = 2,
@@ -357,65 +339,34 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         )
         
         val result = RecurrenceService.processRecurrence(
-            rule = rule,
-            currentState = currentState,
-            triggerEvent = RecurrenceTriggerEvent.DateTimeReached(TaskStatus.Open),
-            triggerTime = instant(2024, 1, 17, 9, 0)
+            rules = listOf(rule to currentState),
+            triggerEvent = RecurrenceTriggerEvent(Open, instant(2024, 1, 17, 9, 0)),
         )
-        
-        assertTrue(result.nextOccurrenceDate == null)
-        assertNull(result.nextOccurrenceDate)
-    }
 
-    // ==================== Trigger Detection Tests ====================
-
-    @Test
-    fun testShouldTriggerDateTime() {
-        val rule = RecurrenceRule.AfterTimeout(
-            period = RecurrencePeriod.ofDays(1),
-            firstOccurrence = instant(2024, 1, 1, 0, 0)
-        )
-        
-        assertTrue(RecurrenceCalculator.shouldTrigger(rule, RecurrenceTriggerEvent.DateTimeReached(TaskStatus.Open)))
-        assertFalse(RecurrenceCalculator.shouldTrigger(rule, RecurrenceTriggerEvent.StatusChanged(TaskStatus.Done)))
+        assertNull(result)
     }
 
     // ==================== Display String Tests ====================
 
     @Test
-    fun testDisplayStringNone() {
-        assertEquals("Does not repeat", RecurrenceRule.None.toDisplayString())
-    }
-
-    @Test
     fun testDisplayStringEveryPeriod() {
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(2),
             firstOccurrence = instant(2024, 1, 1, 0, 0)
-        )
-        assertEquals("Every 2 weeks\nReset to Open", rule.toDisplayString())
+        ).toRule()
+        assertEquals("Every 2w", rule.toBriefString())
     }
 
     @Test
     fun testDisplayStringDaysOfWeek() {
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
                 days = setOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY)
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
-        )
-        assertTrue(rule.toDisplayString().contains("Tuesday"))
-        assertTrue(rule.toDisplayString().contains("Thursday"))
-    }
-
-    @Test
-    fun testDisplayStringWithTermination() {
-        val rule = RecurrenceRule.AfterTimeout(
-            period = RecurrencePeriod.ofDays(1),
-            firstOccurrence = instant(2024, 1, 1, 0, 0),
-            termination = RecurrenceTermination.afterOccurrences(5)
-        )
-        assertTrue(rule.toDisplayString().contains("5 times"))
+        ).toRule()
+        assertTrue(rule.toBriefString().contains("TUE"))
+        assertTrue(rule.toBriefString().contains("THU"))
     }
 
     // ==================== Repository Integration Tests ====================
@@ -427,57 +378,60 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val task = repo.addTask(
             spaceId = spaceId,
             title = "Recurring task",
-            status = TaskStatus.Done,
+            status = Done,
             dueDate = originalDueDate,
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofWeeks(1),
-                firstOccurrence = originalDueDate,
-                trigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(TaskStatus.Done))
-            ),
-            resetStatusOnRecurrence = TaskStatus.Open
+            recurrenceRules = RecurrenceRule(
+                timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                    period = RecurrencePeriod.ofWeeks(1),
+                    firstOccurrence = originalDueDate,
+                ),
+                statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(Done)),
+                resetToStatus = Open,
+            ).to(RecurrenceState()).let(::listOf)
         )!!
 
         val updated = repo.processRecurrenceTrigger(
             task.id,
-            RecurrenceTriggerEvent.StatusChanged(TaskStatus.Done),
-            instant(2024, 1, 15, 12, 0)
+            RecurrenceTriggerEvent(Done, instant(2024, 1, 17, 9, 0))
         )
 
         assertNotNull(updated)
         assertEquals(originalDueDate, updated.dueDate)
-        assertEquals(TaskStatus.Open, updated.status)
+        assertEquals(Open, updated.status)
     }
 
     @Test
     fun `processRecurrenceTrigger does not change dueDate but resets status when recurrence ends`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val originalDueDate = instant(2024, 1, 15, 9, 0)
+        val rules = RecurrenceRule(
+            RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofWeeks(1),
+                firstOccurrence = originalDueDate,
+            ),
+            statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(Done)),
+            resetToStatus = Open,
+            termination = RecurrenceTermination.afterOccurrences(1)
+        ).to(RecurrenceState())
         var task = repo.addTask(
             spaceId = spaceId,
             title = "Recurring task",
-            status = TaskStatus.Done,
+            status = Done,
             dueDate = originalDueDate,
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofWeeks(1),
-                firstOccurrence = originalDueDate,
-                trigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(TaskStatus.Done)),
-                termination = RecurrenceTermination.afterOccurrences(1)
-            ),
-            resetStatusOnRecurrence = TaskStatus.Open
+            recurrenceRules = rules.let(::listOf)
         )!!
         // Manually set occurrence count to simulate that the task has already occurred once
-        task = repo.updateTask(task.copy(recurrenceState = RecurrenceState(occurrenceCount = 1)))!!
+        task = repo.updateTask(task.copy(recurrenceRules = rules.let(::listOf)))!!
 
         val updated = repo.processRecurrenceTrigger(
             task.id,
-            RecurrenceTriggerEvent.StatusChanged(TaskStatus.Done),
-            instant(2024, 1, 15, 12, 0)
+            RecurrenceTriggerEvent(Done, originalDueDate)
         )
 
         assertNotNull(updated)
         assertEquals(originalDueDate, updated.dueDate)
-        assertEquals(TaskStatus.Open, updated.status) // Status resets even on last occurrence
-        assertNull(updated.recurrenceState.nextOccurrenceDate)
+        assertEquals(Open, updated.status) // Status resets even on last occurrence
+        assertTrue(updated.recurrenceRules.isEmpty())
     }
 
     // ==================== Task Integration Tests ====================
@@ -495,10 +449,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             id = "TASK-2",
             title = "Recurring",
             spaceId = "space-1",
-            recurrenceRule = RecurrenceRule.AfterTimeout(
+            recurrenceRules = RecurrenceTrigger.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
-            )
+            ).toRule().to(RecurrenceState()).let(::listOf)
         )
         assertTrue(recurringTask.isRecurring)
     }

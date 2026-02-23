@@ -36,7 +36,7 @@ class SqlDelightTaskRepository(
     override suspend fun hasSpaces(): Boolean =
         queries.hasSpaces().awaitAsOne()
 
-    override suspend fun getAllSpaces(): List<Space> =
+    override suspend fun getAllTasks(): List<Space> =
         queries.getAllSpaces().awaitAsList().map { it.toModel() }
 
     override suspend fun getSpaceById(id: String): Space? =
@@ -98,7 +98,7 @@ class SqlDelightTaskRepository(
         }
     }
 
-    override suspend fun getAll(spaceId: String): List<Task> =
+    override suspend fun getAllTasks(spaceId: String): List<Task> =
         queries.getTasksBySpace(spaceId).awaitAsList().map { loadTaskWithConnections(it) }
 
     override suspend fun filterTasksForSelection(
@@ -151,7 +151,7 @@ class SqlDelightTaskRepository(
         queries.getAllPrefixes().awaitAsList()
 
     override suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals> {
-        val tasks = getAll(spaceId)
+        val tasks = getAllTasks(spaceId)
         val blockedTasks = getBlockedTasks()
         val tasksById = tasks.associateBy { it.id }
         return tasks.map { task ->
@@ -246,8 +246,6 @@ class SqlDelightTaskRepository(
             notifications = entity.notificationsJson.toNotificationList(),
             spaceId = entity.spaceId,
             recurrenceRules = entity.recurrenceRulesJson.toRecurrenceRuleList(),
-            recurrenceState = entity.recurrenceStateJson.toRecurrenceState(),
-            resetStatusOnRecurrence = entity.resetStatusOnRecurrenceJson.toTaskStatus(),
             autoUpdateStatusFromSubtasks = entity.autoUpdateStatusFromSubtasks != 0L
         )
     }
@@ -301,15 +299,13 @@ class SqlDelightTaskRepository(
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
         customId: String?,
-        recurrenceRules: List<RecurrenceRule>,
-        resetStatusOnRecurrence: TaskStatus,
+        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
         if (queries.getSpaceById(spaceId).awaitAsOneOrNull() == null) return@withLock null
         addTaskUnsafe(
             spaceId, title, description, status, dueDate, priority, estimatedTime,
-            tags, connections, notifications, customId, recurrenceRules,
-            resetStatusOnRecurrence, autoUpdateStatusFromSubtasks
+            tags, connections, notifications, customId, recurrenceRules, autoUpdateStatusFromSubtasks
         )
     }
 
@@ -325,8 +321,6 @@ class SqlDelightTaskRepository(
             notificationsJson = task.notifications.toJson(),
             spaceId = task.spaceId,
             recurrenceRulesJson = task.recurrenceRules.toJson(),
-            recurrenceStateJson = task.recurrenceState.toJson(),
-            resetStatusOnRecurrenceJson = task.resetStatusOnRecurrence.toJson(),
             autoUpdateStatusFromSubtasks = if (task.autoUpdateStatusFromSubtasks) 1 else 0,
             isRecurring = if (task.recurrenceRules.isNotEmpty()) 1 else 0,
             isBlocked = if (task.status is TaskStatus.Blocked) 1 else 0,
@@ -478,7 +472,7 @@ class SqlDelightTaskRepository(
         ).awaitAsList()
 
         // Fetch all tasks for this space in a single query to avoid N+1 queries
-        val tasksById = getAll(spaceId).associateBy { it.id }
+        val tasksById = getAllTasks(spaceId).associateBy { it.id }
 
         statusChanges.forEach { changeEntity ->
             val task = tasksById[changeEntity.taskId] ?: return@forEach
@@ -599,7 +593,6 @@ class SqlDelightTaskRepository(
                     notifications = task.notifications,
                     customId = newTaskId,
                     recurrenceRules = task.recurrenceRules,
-                    resetStatusOnRecurrence = task.resetStatusOnRecurrence,
                     autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
                 )
 
@@ -642,13 +635,11 @@ class SqlDelightTaskRepository(
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
         customId: String?,
-        recurrenceRules: List<RecurrenceRule>,
-        resetStatusOnRecurrence: TaskStatus,
+        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
-        val recurrenceState = RecurrenceService.initializeRecurrence(recurrenceRules)
         val effectiveDueDate = dueDate?.let {
             Instant.fromEpochMilliseconds(it.toEpochMilliseconds())
         }
@@ -673,8 +664,6 @@ class SqlDelightTaskRepository(
             notifications = notifications,
             spaceId = spaceId,
             recurrenceRules = recurrenceRules,
-            recurrenceState = recurrenceState,
-            resetStatusOnRecurrence = resetStatusOnRecurrence,
             autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
         )
 
@@ -690,8 +679,6 @@ class SqlDelightTaskRepository(
             notificationsJson = notifications.toJson(),
             spaceId = spaceId,
             recurrenceRulesJson = recurrenceRules.toJson(),
-            recurrenceStateJson = recurrenceState.toJson(),
-            resetStatusOnRecurrenceJson = resetStatusOnRecurrence.toJson(),
             autoUpdateStatusFromSubtasks = if (autoUpdateStatusFromSubtasks) 1 else 0,
             isRecurring = if (recurrenceRules.isNotEmpty()) 1 else 0,
             isBlocked = if (status is TaskStatus.Blocked) 1 else 0
@@ -747,10 +734,9 @@ class SqlDelightTaskRepository(
 
     override suspend fun processRecurrenceTrigger(
         taskId: String,
-        triggerEvent: RecurrenceTriggerEvent,
-        triggerTime: Instant
+        triggerEvent: RecurrenceTriggerEvent
     ): Task? = mutex.withLock {
-        processRecurrenceTriggerInternal(taskId, triggerEvent, triggerTime)
+        processRecurrenceTriggerInternal(taskId, triggerEvent)
     }
 
     override suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task> = mutex.withLock {

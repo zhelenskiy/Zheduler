@@ -79,7 +79,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
 
         assertNotNull(imported)
         assertEquals("OTHER", imported.idPrefix)
-        assertEquals(1, newRepo.getAllSpaces().size)
+        assertEquals(1, newRepo.getAllTasks().size)
     }
 
     @Test
@@ -96,7 +96,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val imported = newRepo.importSpaceFromJson(json)
         assertNotNull(imported)
 
-        val importedTasks = newRepo.getAll(imported.id)
+        val importedTasks = newRepo.getAllTasks(imported.id)
         assertEquals(2, importedTasks.size)
 
         val importedChild = importedTasks.find { it.title == "Child" }!!
@@ -115,7 +115,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val newRepo = createEmptyRepository()
         val imported = newRepo.importSpaceFromJson(json)!!
 
-        val importedTask = newRepo.getAll(imported.id).first()
+        val importedTask = newRepo.getAllTasks(imported.id).first()
         val timeline = newRepo.getStatusTimeline(importedTask.id)
 
         assertTrue(timeline.size >= 2) // Should have status history
@@ -132,7 +132,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val newRepo = createEmptyRepository()
         val imported = newRepo.importSpaceFromJson(json)!!
 
-        val blockedTask = newRepo.getAll(imported.id).find { it.title == "Blocked" }!!
+        val blockedTask = newRepo.getAllTasks(imported.id).find { it.title == "Blocked" }!!
         val status = blockedTask.status
         assertIs<TaskStatus.Blocked>(status)
 
@@ -147,7 +147,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     fun `groupTasksByResolutionStatus separates correctly`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val blocker = repo.addTask(spaceId, title = "Blocker")!!
-        repo.addTask(spaceId, title = "Open task", status = TaskStatus.Open)
+        repo.addTask(spaceId, title = "Open task")
         repo.addTask(spaceId, title = "InProgress task", status = TaskStatus.InProgress)
         repo.addTask(spaceId, title = "Done task", status = TaskStatus.Done)
         repo.addTask(spaceId, title = "Declined task", status = TaskStatus.Declined("reason"))
@@ -171,9 +171,9 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val now = Clock.System.now()
 
-        repo.addTask(spaceId, title = "Low priority far", priority = Priority.LOW, dueDate = now + 10.days)
-        repo.addTask(spaceId, title = "High priority close", priority = Priority.HIGH, dueDate = now + 1.days)
-        repo.addTask(spaceId, title = "Medium priority mid", priority = Priority.MEDIUM, dueDate = now + 5.days)
+        repo.addTask(spaceId, title = "Low priority far", dueDate = now + 10.days, priority = Priority.LOW)
+        repo.addTask(spaceId, title = "High priority close", dueDate = now + 1.days, priority = Priority.HIGH)
+        repo.addTask(spaceId, title = "Medium priority mid", dueDate = now + 5.days, priority = Priority.MEDIUM)
 
         val allTasks = repo.getAllTasksWithTotals(spaceId)
         val grouped = repo.groupTasksByResolutionStatus(allTasks)
@@ -265,14 +265,19 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val task = repo.addTask(
             spaceId,
             title = "Recurring",
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofDays(1),
-                firstOccurrence = now
-            )
+            recurrenceRules = RecurrenceRule(
+                timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                    period = RecurrencePeriod.ofDays(1),
+                    firstOccurrence = now
+                ),
+                statusChangeTrigger = null,
+                resetToStatus = TaskStatus.Done,
+            ).to(RecurrenceState()).let(::listOf)
         )!!
 
-        assertNotNull(task.recurrenceState.nextOccurrenceDate)
-        assertEquals(0, task.recurrenceState.occurrenceCount)
+        val recurrenceState = task.recurrenceRules.single().second
+        assertNull(recurrenceState.nextOccurrenceDate)
+        assertEquals(0, recurrenceState.occurrenceCount)
     }
 
     @Test
@@ -284,21 +289,23 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
             spaceId,
             title = "Recurring",
             status = TaskStatus.Done,
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofDays(1),
-                firstOccurrence = now,
-                trigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(TaskStatus.Done))
-            )
+            recurrenceRules = RecurrenceRule(
+                timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                    period = RecurrencePeriod.ofDays(1),
+                    firstOccurrence = now,
+                ),
+                statusChangeTrigger = null,
+                resetToStatus = TaskStatus.Open,
+            ).to(RecurrenceState()).let(::listOf)
         )!!
 
         val updated = repo.processRecurrenceTrigger(
             task.id,
-            RecurrenceTriggerEvent.StatusChanged(TaskStatus.Done),
-            Clock.System.now()
+            RecurrenceTriggerEvent(TaskStatus.Done, now)
         )
 
         assertNotNull(updated)
-        assertEquals(1, updated.recurrenceState.occurrenceCount)
+        assertEquals(1, updated.recurrenceRules.single().second.occurrenceCount)
     }
 
     @Test
@@ -310,15 +317,19 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
             spaceId,
             title = "Past due recurring",
             dueDate = pastDue,
-            recurrenceRule = RecurrenceRule.AfterTimeout(
-                period = RecurrencePeriod.ofDays(1),
-                firstOccurrence = pastDue
-            )
+            recurrenceRules = RecurrenceRule(
+                timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                    period = RecurrencePeriod.ofDays(1),
+                    firstOccurrence = pastDue
+                ),
+                statusChangeTrigger = null,
+                resetToStatus = TaskStatus.Done,
+            ).to(RecurrenceState()).let(::listOf)
         )
 
         val updated = repo.processDateBasedRecurrences(Clock.System.now())
         // Should have processed the past due recurring task
-        assertTrue(updated.isNotEmpty() || repo.getAll(spaceId).any { it.recurrenceState.occurrenceCount > 0 })
+        assertTrue(updated.isNotEmpty() || repo.getAllTasks(spaceId).any { it.recurrenceRules.single().second.occurrenceCount > 0 })
     }
 
     // ==================== Status Timeline Tests ====================
@@ -364,7 +375,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getCalculatedStatusFromSubtasks returns calculated status for task with subtasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val parent = repo.addTask(spaceId, title = "Parent", autoUpdateStatusFromSubtasks = false)!!
+        val parent = repo.addTask(spaceId, title = "Parent")!!
         val child1 = repo.addTask(
             spaceId,
             title = "Child 1",
@@ -473,8 +484,8 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            autoUpdateStatusFromSubtasks = true,
-            connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf))
+            connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf)),
+            autoUpdateStatusFromSubtasks = true
         )!!
         val child = repo.addTask(
             spaceId,

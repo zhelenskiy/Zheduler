@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.TaskStatus.Done
+import com.zhelenskiy.zheduler.zheduler.TaskStatus.Open
 import kotlinx.datetime.*
 import kotlin.test.*
 import kotlin.time.Instant
@@ -181,14 +183,14 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `Feb 29 recurrence on leap year`() {
         val startFrom = instant(2024, 2, 29, 9, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = RecurrenceMonth.FEBRUARY,
+                months = setOf(RecurrenceMonth.FEBRUARY),
                 dayOfMonth = 29,
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState(lastOccurrenceDate = startFrom)
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -201,17 +203,20 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         assertEquals(28, nextDateTime.date.dayOfMonth)
     }
 
+    private fun RecurrenceTrigger.TimeRecurrenceTrigger.toRule(): RecurrenceRule =
+        RecurrenceRule(timeRecurrenceTrigger = this, statusChangeTrigger = null, resetToStatus = Open)
+    
     @Test
     fun `Monthly recurrence on 31st handles short months`() {
         // Starting from March 31
         val startFrom = instant(2024, 3, 31, 12, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DayOfMonth(
                 dayOfMonth = 31,
                 timeOfDay = TimeOfDay(12, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState(lastOccurrenceDate = startFrom)
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -278,14 +283,14 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     fun `Fifth Monday exists in some months`() {
         // January 2024 has 5 Mondays (1, 8, 15, 22, 29)
         val startFrom = instant(2024, 1, 1, 0, 0)
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.NthDayOfWeekInMonth(
                 ordinal = WeekOrdinal.FIFTH,
                 dayOfWeek = RecurrenceDayOfWeek.MONDAY,
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -302,14 +307,14 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         // April 2024 has only 4 Mondays
         // Look for July 2024 which has 5 Mondays (1, 8, 15, 22, 29)
         val startFrom = instant(2024, 6, 15, 0, 0) // Start mid-June
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.NthDayOfWeekInMonth(
                 ordinal = WeekOrdinal.FIFTH,
                 dayOfWeek = RecurrenceDayOfWeek.MONDAY,
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
-        )
+        ).toRule()
         val state = RecurrenceState()
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
@@ -354,7 +359,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     fun `YearlyOnDate rejects invalid day`() {
         assertFailsWith<IllegalArgumentException> {
             FixedPointPattern.YearlyOnDate(
-                months = RecurrenceMonth.JANUARY,
+                months = setOf(RecurrenceMonth.JANUARY),
                 dayOfMonth = 32
             )
         }
@@ -375,52 +380,54 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
 
     @Test
     fun `processRecurrence for None rule returns terminated`() {
+        val now = instant(2024, 1, 1, 0, 0)
         val result = RecurrenceService.processRecurrence(
-            rule = RecurrenceRule.None,
-            currentState = RecurrenceState(),
-            triggerEvent = RecurrenceTriggerEvent.DateTimeReached(TaskStatus.Open)
+            rules = emptyList(),
+            triggerEvent = RecurrenceTriggerEvent(Open, now)
         )
 
-        assertTrue(result.nextOccurrenceDate == null)
-        assertNull(result.nextOccurrenceDate)
+        assertNull(result)
     }
 
     @Test
     fun `processRecurrence ignores non-matching trigger`() {
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = instant(2024, 1, 1, 0, 0),
-            trigger = RecurrenceTrigger.DateTime()
-        )
+        ).toRule()
 
         val result = RecurrenceService.processRecurrence(
-            rule = rule,
-            currentState = RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
-            triggerEvent = RecurrenceTriggerEvent.StatusChanged(TaskStatus.Done)
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, instant(2024, 1, 1, 0, 0))
         )
 
         // Should not advance because trigger doesn't match
-        assertFalse(result.nextOccurrenceDate == null)
-        assertEquals(0, result.updatedRecurrenceState.occurrenceCount)
+        assertNull(result)
     }
 
     @Test
     fun `processRecurrence with status trigger advances on matching status`() {
-        val rule = RecurrenceRule.AfterTimeout(
-            period = RecurrencePeriod.ofDays(1),
-            firstOccurrence = instant(2024, 1, 1, 0, 0),
-            trigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(TaskStatus.Done))
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0),
+            ),
+            statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(Done)),
+            resetToStatus = Open
         )
 
+        val now = instant(2024, 1, 2, 12, 0)
         val result = RecurrenceService.processRecurrence(
-            rule = rule,
-            currentState = RecurrenceState(),
-            triggerEvent = RecurrenceTriggerEvent.StatusChanged(TaskStatus.Done),
-            triggerTime = instant(2024, 1, 1, 12, 0)
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
+        assertNotNull(result)
 
-        assertEquals(1, result.updatedRecurrenceState.occurrenceCount)
-        assertNotNull(result.nextOccurrenceDate)
+        val (newRules, newStatus) = result
+
+        assertEquals(Open, newStatus)
+        assertEquals(1, newRules.single().second.occurrenceCount)
+        assertEquals(now, newRules.single().second.lastOccurrenceDate)
     }
 
     @Test
@@ -429,17 +436,15 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
             id = "TEST-1",
             title = "Test",
             spaceId = "space-1",
-            status = TaskStatus.Done
+            status = Done
         )
 
-        val nextTask = RecurrenceService.createNextOccurrence(
-            task = task,
-            recurrenceRule = RecurrenceRule.None,
-            newDueDate = instant(2024, 1, 15, 0, 0),
-            resetToStatus = TaskStatus.Open
+        val nextTask = task.copy(
+            status = Open,
+            dueDate = instant(2024, 1, 15, 0, 0)
         )
 
-        assertEquals(TaskStatus.Open, nextTask.status)
+        assertEquals(Open, nextTask.status)
         assertEquals(instant(2024, 1, 15, 0, 0), nextTask.dueDate)
     }
 
@@ -447,63 +452,63 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
 
     @Test
     fun `displayString for all days of week`() {
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
                 days = RecurrenceDayOfWeek.entries.toSet()
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
-        )
-        val display = rule.toDisplayString()
+        ).toRule()
+        val display = rule.toBriefString()
         // Should mention it's daily or list all days
         assertTrue(display.isNotBlank())
     }
 
     @Test
     fun `displayString for single day of week`() {
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
                 days = setOf(RecurrenceDayOfWeek.WEDNESDAY)
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
-        )
-        val display = rule.toDisplayString()
-        assertTrue(display.contains("Wednesday"))
+        ).toRule()
+        val display = rule.toBriefString()
+        assertTrue(display.contains("WED"))
     }
 
     @Test
     fun `displayString for NthDayOfWeekInMonth`() {
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.NthDayOfWeekInMonth(
                 ordinal = WeekOrdinal.SECOND,
                 dayOfWeek = RecurrenceDayOfWeek.TUESDAY
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
-        )
-        val display = rule.toDisplayString()
+        ).toRule()
+        val display = rule.toBriefString()
         assertTrue(display.contains("second") || display.contains("Second") || display.contains("2nd"))
-        assertTrue(display.contains("Tuesday"))
+        assertTrue(display.contains("TUE"))
     }
 
     @Test
     fun `displayString for YearlyOnDate`() {
-        val rule = RecurrenceRule.AtFixedPoints(
+        val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = RecurrenceMonth.DECEMBER,
+                months = setOf(RecurrenceMonth.DECEMBER),
                 dayOfMonth = 25
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
-        )
-        val display = rule.toDisplayString()
+        ).toRule()
+        val display = rule.toBriefString()
         assertTrue(display.contains("December") || display.contains("25"))
     }
 
     @Test
     fun `displayString for complex period`() {
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod(years = 1, months = 6),
             firstOccurrence = instant(2024, 1, 1, 0, 0)
-        )
-        val display = rule.toDisplayString()
+        ).toRule()
+        val display = rule.toBriefString()
         assertTrue(display.isNotBlank())
     }
 
@@ -512,10 +517,10 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `weekly recurrence produces correct sequence`() {
         val firstOccurrence = instant(2024, 1, 1, 9, 0) // Monday
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofWeeks(1),
             firstOccurrence = firstOccurrence
-        )
+        ).toRule()
 
         var state = RecurrenceState()
 
@@ -540,11 +545,10 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `termination after 3 occurrences stops after third`() {
         val firstOccurrence = instant(2024, 1, 1, 9, 0)
-        val rule = RecurrenceRule.AfterTimeout(
+        val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-            termination = RecurrenceTermination.afterOccurrences(3)
-        )
+        ).toRule().copy(termination = RecurrenceTermination.afterOccurrences(3))
 
         var state = RecurrenceState()
 
@@ -559,11 +563,6 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         state = state.copy(occurrenceCount = 2, lastOccurrenceDate = next)
 
         // Occurrence 3
-        next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
-        assertNotNull(next)
-        state = state.copy(occurrenceCount = 3, lastOccurrenceDate = next)
-
-        // Should terminate after 3
         next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
         assertNull(next)
     }

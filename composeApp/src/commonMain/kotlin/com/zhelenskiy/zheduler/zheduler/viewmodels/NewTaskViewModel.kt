@@ -31,8 +31,7 @@ class NewTaskViewModel(
         tags: Set<String>,
         connections: Set<TaskConnection>,
         notifications: List<TaskNotification>,
-        recurrenceRules: List<RecurrenceRule>,
-        resetStatusOnRecurrence: TaskStatus,
+        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = repository.addTask(
         spaceId = spaceId,
@@ -46,7 +45,6 @@ class NewTaskViewModel(
         connections = connections,
         notifications = notifications,
         recurrenceRules = recurrenceRules,
-        resetStatusOnRecurrence = resetStatusOnRecurrence,
         autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
     )
 

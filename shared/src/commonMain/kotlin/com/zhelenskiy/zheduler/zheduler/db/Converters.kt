@@ -79,12 +79,12 @@ fun String.toNotificationList(): List<TaskNotification> = dbJson.decodeFromStrin
  * Convert list of RecurrenceRule to JSON string for storage
  */
 @JvmName("recurrenceRuleListToJson")
-fun List<RecurrenceRule>.toJson(): String = dbJson.encodeToString(this)
+fun List<Pair<RecurrenceRule, RecurrenceState>>.toJson(): String = dbJson.encodeToString(this)
 
 /**
  * Convert JSON string to list of RecurrenceRule
  */
-fun String.toRecurrenceRuleList(): List<RecurrenceRule> = dbJson.decodeFromString(this)
+fun String.toRecurrenceRuleList(): List<Pair<RecurrenceRule, RecurrenceState>> = dbJson.decodeFromString(this)
 
 /**
  * Convert RecurrenceState to JSON string for storage
