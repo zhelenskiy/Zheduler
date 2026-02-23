@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -31,7 +30,6 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.*
 import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.ExperimentalTime
 
@@ -571,13 +569,10 @@ private fun TagsSection(
 @Composable
 private fun ConnectionsSection(
     formState: TaskFormState,
-    taskId: String,
     connectedTasks: Map<String, Task>,
     searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
-    getCalculatedStatusFromSubtasks: suspend (String) -> TaskStatus?,
     onCreateNewTaskWithConnection: ((ConnectionType) -> Unit)?
 ) {
-    val coroutineScope = rememberCoroutineScope()
     var showConnectionDialog by remember { mutableStateOf(false) }
 
     AnimatedContent(
@@ -660,15 +655,6 @@ private fun ConnectionsSection(
                             checked = formState.autoUpdateStatusFromSubtasks,
                             onCheckedChange = { enabled ->
                                 formState.autoUpdateStatusFromSubtasks = enabled
-                                // When enabled, recalculate status from subtasks
-                                if (enabled) {
-                                    coroutineScope.launch {
-                                        val calculatedStatus = getCalculatedStatusFromSubtasks(taskId)
-                                        if (calculatedStatus != null) {
-                                            formState.status = calculatedStatus
-                                        }
-                                    }
-                                }
                             }
                         )
                     }
@@ -745,7 +731,6 @@ private fun ColumnScope.DescriptionSection(
 @Composable
 fun TaskFormContent(
     formState: TaskFormState,
-    taskId: String,
     isNewTask: Boolean,
     prefilledTask: Task? = null,
     prefilledConnection: TaskConnection? = null,
@@ -755,7 +740,6 @@ fun TaskFormContent(
     filterTags: suspend (String, Set<String>) -> List<String>,
     filterTasksForSelection: suspend (String) -> List<Task>,
     searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
-    getCalculatedStatusFromSubtasks: suspend (String) -> TaskStatus?,
     currentSpaceIdPrefix: String?,
     allSpacePrefixes: List<String>
 ) {
@@ -794,10 +778,8 @@ fun TaskFormContent(
         TagsSection(formState, filterTags)
         ConnectionsSection(
             formState,
-            taskId,
             connectedTasks,
             searchTasksForConnection,
-            getCalculatedStatusFromSubtasks,
             onCreateNewTaskWithConnection
         )
         DescriptionSection(formState, currentSpaceIdPrefix, allSpacePrefixes, connectedTasks, onTaskClick, scrollState)

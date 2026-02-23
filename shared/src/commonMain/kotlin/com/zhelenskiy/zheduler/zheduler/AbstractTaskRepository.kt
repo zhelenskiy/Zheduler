@@ -199,6 +199,13 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         )
     }
 
+    protected suspend fun getCalculatedStatusFromSubtasks(subtasksIds: List<String>, getByIdUnsafe: suspend (String) -> Task?): TaskStatus? {
+        val subtasks = subtasksIds.mapNotNull { getByIdUnsafe(it) }
+        if (subtasks.isEmpty()) return null
+
+        return calculateStatusFromSubtasks(subtasks.map { it.status })
+    }
+
     override suspend fun getCalculatedStatusFromSubtasks(taskId: String): TaskStatus? {
         val subtasks = getSubtasks(taskId)
         if (subtasks.isEmpty()) return null

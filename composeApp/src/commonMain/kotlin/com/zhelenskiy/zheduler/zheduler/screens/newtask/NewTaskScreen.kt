@@ -155,7 +155,6 @@ fun NewTaskScreen(
             if (nextId != null) {
                 TaskFormContent(
                     formState = formState,
-                    taskId = nextId!!,
                     isNewTask = true,
                     prefilledTask = prefilledTask,
                     prefilledConnection = initialConnections.firstOrNull(),
@@ -165,7 +164,6 @@ fun NewTaskScreen(
                     filterTags = viewModel::filterTags,
                     filterTasksForSelection = viewModel::filterTasksForSelection,
                     searchTasksForConnection = viewModel::searchTasksForConnection,
-                    getCalculatedStatusFromSubtasks = viewModel::getCalculatedStatusFromSubtasks,
                     currentSpaceIdPrefix = currentSpaceIdPrefix,
                     allSpacePrefixes = allSpacePrefixes
                 )

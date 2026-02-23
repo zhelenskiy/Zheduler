@@ -283,6 +283,14 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         val recurrenceState = RecurrenceService.initializeRecurrence(recurrenceRules)
 
+        val status = if (autoUpdateStatusFromSubtasks) {
+            val subtasksIds = connections
+                .mapNotNull { if (it.type == ConnectionType.ParentOf) it.targetTaskId else null }
+            getCalculatedStatusFromSubtasks(subtasksIds, ::getTaskById) ?: status
+        } else {
+            status
+        }
+
         val task = Task(
             id = taskId,
             title = title,
