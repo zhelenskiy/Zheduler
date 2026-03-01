@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.StatusChange
 import com.zhelenskiy.zheduler.zheduler.Task
@@ -26,12 +26,13 @@ private fun BlockedStatusDetails(
     status: TaskStatus.Blocked,
     blockerTasks: Map<String, Task>?,
     onTaskClick: ((String) -> Unit)?,
-    blockerTaskModifier: Modifier
+    blockerTaskModifier: Modifier,
+    textStyle: TextStyle,
 ) {
     if (status.blockerTaskIds.isNotEmpty()) {
         Text(
             text = "by",
-            style = MaterialTheme.typography.labelSmall
+            style = textStyle
         )
         status.blockerTaskIds.forEach { blockerId ->
             val blockerTask = blockerTasks?.get(blockerId)
@@ -49,7 +50,7 @@ private fun BlockedStatusDetails(
     if (status.comment.isNotEmpty()) {
         Text(
             text = status.comment,
-            style = MaterialTheme.typography.labelSmall,
+            style = textStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -65,10 +66,11 @@ fun TaskStatus(
         if (isRow) Modifier.horizontalScroll(rememberScrollState())
         else Modifier.verticalScroll(rememberScrollState()),
     blockerTaskModifier: Modifier = Modifier,
+    textStyle: TextStyle = TextStyle.Default,
     onBlockerTaskClick: ((String) -> Unit)?
 ) = Group(isRow = isRow, modifier = modifier) {
     StatusBadge(status = status, modifier = badgeModifier)
-    TaskStatusDetails(status, blockerTasks, onBlockerTaskClick, blockerTaskModifier)
+    TaskStatusDetails(status, blockerTasks, onBlockerTaskClick, blockerTaskModifier, textStyle)
 }
 
 @Composable
@@ -126,21 +128,22 @@ private fun TaskStatusDetails(
     status: TaskStatus,
     blockerTasks: Map<String, Task>?,
     onBlockerTaskClick: ((String) -> Unit)?,
-    blockerTaskModifier: Modifier
+    blockerTaskModifier: Modifier,
+    textStyle: TextStyle
 ) {
     when (status) {
-        is TaskStatus.Blocked -> BlockedStatusDetails(status, blockerTasks, onBlockerTaskClick, blockerTaskModifier)
-        is TaskStatus.Declined -> DeclinedStatusDetails(status)
+        is TaskStatus.Blocked -> BlockedStatusDetails(status, blockerTasks, onBlockerTaskClick, blockerTaskModifier, textStyle)
+        is TaskStatus.Declined -> DeclinedStatusDetails(status, textStyle)
         else -> {}
     }
 }
 
 @Composable
-private fun DeclinedStatusDetails(newStatus: TaskStatus.Declined) {
+private fun DeclinedStatusDetails(newStatus: TaskStatus.Declined, textStyle: TextStyle) {
     if (newStatus.reason.isEmpty()) return
     Text(
         text = newStatus.reason,
-        style = MaterialTheme.typography.labelSmall,
+        style = textStyle,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
 }

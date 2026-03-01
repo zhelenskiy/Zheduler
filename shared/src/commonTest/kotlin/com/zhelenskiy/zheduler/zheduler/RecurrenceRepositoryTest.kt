@@ -431,7 +431,9 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         assertNotNull(updated)
         assertEquals(originalDueDate, updated.dueDate)
         assertEquals(Open, updated.status) // Status resets even on last occurrence
-        assertTrue(updated.recurrenceRules.isEmpty())
+        // Exhausted rules are kept with count 0, not removed
+        assertEquals(1, updated.recurrenceRules.size)
+        assertEquals(0, updated.recurrenceRules[0].first.termination.afterOccurrences?.count)
     }
 
     // ==================== Task Integration Tests ====================

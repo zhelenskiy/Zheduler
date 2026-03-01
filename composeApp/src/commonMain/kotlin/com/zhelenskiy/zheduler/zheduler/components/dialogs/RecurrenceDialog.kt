@@ -188,7 +188,7 @@ fun SingleRecurrenceRuleDialog(
         )
     }
 
-    val isTerminationCountValid = termination.afterOccurrences?.let { it.count > 0 } ?: true
+    val isTerminationCountValid = termination.afterOccurrences?.let { it.count >= 0 } ?: true
     val isFormValid = selectedTimeTrigger !is FormResult.Failure && isTerminationCountValid
 
     AlertDialog(

@@ -4,8 +4,10 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Done
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Open
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
 import kotlinx.datetime.*
 import kotlin.test.*
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
 class InMemoryRecurrenceEdgeCasesRepositoryTest: RecurrenceEdgeCasesRepositoryTest(), InMemoryRepositoryTest
@@ -142,10 +144,9 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     // ==================== RecurrenceTermination Edge Cases ====================
 
     @Test
-    fun `AfterOccurrences requires positive count`() {
-        assertFailsWith<IllegalArgumentException> {
-            RecurrenceTerminationCondition.AfterOccurrences(0)
-        }
+    fun `AfterOccurrences allows zero and rejects negative count`() {
+        val zero = RecurrenceTerminationCondition.AfterOccurrences(0)
+        assertEquals(0, zero.count)
         assertFailsWith<IllegalArgumentException> {
             RecurrenceTerminationCondition.AfterOccurrences(-1)
         }
@@ -564,6 +565,379 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
 
         // Occurrence 3
         next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
+        assertNotNull(next)
+        state = state.copy(occurrenceCount = 3, lastOccurrenceDate = next)
+
+        // No more occurrences after 3
+        next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
         assertNull(next)
+    }
+
+    // ==================== Multiple Rules Tests ====================
+
+    @Test
+    fun `processRecurrence with multiple rules uses first matching rule`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule1 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+        val rule2 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofWeeks(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(
+                rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
+                rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 8, 0, 0))
+            ),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+
+        assertNotNull(result)
+        val (newRules, newStatus) = result
+        assertEquals(Open, newStatus)
+        assertEquals(2, newRules.size)
+        // Rule 1 should have advanced
+        assertEquals(1, newRules[0].second.occurrenceCount)
+        assertEquals(now, newRules[0].second.lastOccurrenceDate)
+    }
+
+    @Test
+    fun `processRecurrence with multiple rules keeps exhausted rule with count 0`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule1 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open,
+            termination = RecurrenceTermination.afterOccurrences(1)
+        )
+        val rule2 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofWeeks(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(
+                rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
+                rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 8, 0, 0))
+            ),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+
+        assertNotNull(result)
+        val (newRules, _) = result
+        // Rule 1 exhausted but kept with count 0
+        assertEquals(2, newRules.size)
+        assertEquals(0, newRules[0].first.termination.afterOccurrences?.count)
+        assertEquals(rule2.timeRecurrenceTrigger, newRules[1].first.timeRecurrenceTrigger)
+    }
+
+    @Test
+    fun `processRecurrence priority - earliest nextOccurrenceDate wins`() {
+        val now = instant(2024, 1, 6, 12, 0)
+        val rule1 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+        val rule2 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(2),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+
+        // Rule1 has earlier next occurrence (Jan 2) vs Rule2 (Jan 3)
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(
+                rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 7, 0, 0)),
+                rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 6, 0, 0)) // Earlier
+            ),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+
+        assertNotNull(result)
+        val (newRules, _) = result
+        // Rule 2 should have triggered (earlier date)
+        assertEquals(0, newRules[0].second.occurrenceCount) // Rule 1 unchanged
+        assertEquals(1, newRules[1].second.occurrenceCount) // Rule 2 advanced
+    }
+
+    // ==================== Rules with Two Conditions Tests ====================
+
+    @Test
+    fun `rule with both time and status trigger requires both conditions`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+
+        // Time passed but status not matching
+        val result1 = RecurrenceService.processRecurrence(
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Open, now)
+        )
+        assertNull(result1)
+
+        // Status matches but time not passed
+        val result2 = RecurrenceService.processRecurrence(
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 3, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+        assertNull(result2)
+
+        // Both conditions met
+        val result3 = RecurrenceService.processRecurrence(
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+        assertNotNull(result3)
+    }
+
+    @Test
+    fun `rule with both time and status conditions combined with termination keeps exhausted rule`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open,
+            termination = RecurrenceTermination.afterOccurrences(1)
+        )
+
+        // First (and only) occurrence - rule should be removed after this
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+        assertNotNull(result)
+        // Rule exhausted and kept with count 0 after single occurrence
+        assertEquals(1, result.first.size)
+        assertEquals(0, result.first[0].first.termination.afterOccurrences?.count)
+        assertEquals(Open, result.second) // Status reset to Open
+    }
+
+    @Test
+    fun `rule termination by date prevents occurrence after end date`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val endDate = instant(2024, 1, 3, 0, 0)
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open,
+            termination = RecurrenceTermination.onDate(endDate)
+        )
+
+        // This occurrence happens before end date
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+        assertNotNull(result)
+        assertEquals(1, result.first[0].second.occurrenceCount)
+
+        // Next occurrence would be Jan 3, which is allowed since endDate is Jan 3 00:00
+        assertNotNull(result.first[0].second.nextOccurrenceDate)
+    }
+
+    @Test
+    fun `rule with two termination conditions respects both`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val endDate = instant(2024, 1, 10, 0, 0)
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open,
+            termination = RecurrenceTermination(
+                afterOccurrences = RecurrenceTerminationCondition.AfterOccurrences(1),
+                onDate = RecurrenceTerminationCondition.OnDate(endDate)
+            )
+        )
+
+        // First occurrence - rule should be removed (hits occurrence limit of 1)
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+        assertNotNull(result)
+        // Rule exhausted by occurrence limit before date limit, but kept with count 0
+        assertEquals(1, result.first.size)
+        assertEquals(0, result.first[0].first.termination.afterOccurrences?.count)
+        assertEquals(Open, result.second) // Status reset to Open
+    }
+
+    @Test
+    fun `multiple rules with different status triggers`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule1 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+        val rule2 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofWeeks(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(TaskStatus.InProgress)),
+            resetToStatus = Open
+        )
+
+        // Trigger with Done status - only rule1 should trigger
+        val result1 = RecurrenceService.processRecurrence(
+            rules = listOf(
+                rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
+                rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))
+            ),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+        assertNotNull(result1)
+        assertEquals(1, result1.first[0].second.occurrenceCount) // Rule 1 advanced
+        assertEquals(0, result1.first[1].second.occurrenceCount) // Rule 2 unchanged
+
+        // Trigger with InProgress status - only rule2 should trigger
+        val result2 = RecurrenceService.processRecurrence(
+            rules = listOf(
+                rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
+                rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))
+            ),
+            triggerEvent = RecurrenceTriggerEvent(TaskStatus.InProgress, now)
+        )
+        assertNotNull(result2)
+        assertEquals(0, result2.first[0].second.occurrenceCount) // Rule 1 unchanged
+        assertEquals(1, result2.first[1].second.occurrenceCount) // Rule 2 advanced
+    }
+
+    @Test
+    fun `cascading rules - one rule triggers another`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule1 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = TaskStatus.InProgress // Resets to InProgress
+        )
+        val rule2 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(TaskStatus.InProgress)), // Triggers on InProgress
+            resetToStatus = Open
+        )
+
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(
+                rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
+                rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))
+            ),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+
+        assertNotNull(result)
+        val (newRules, newStatus) = result
+        // Both rules should have triggered in cascade
+        assertEquals(Open, newStatus) // Final status from rule2
+        assertEquals(1, newRules[0].second.occurrenceCount) // Rule 1 triggered
+        assertEquals(1, newRules[1].second.occurrenceCount) // Rule 2 triggered by rule 1's reset
+    }
+
+    @Test
+    fun `rule priority - earliest nextOccurrenceDate triggers first among matching rules`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule1 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+        val rule2 = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(2),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open
+        )
+
+        // Rule1 has earlier next occurrence (Jan 2) vs Rule2 (Jan 3)
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(
+                rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
+                rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 3, 0, 0))
+            ),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+
+        assertNotNull(result)
+        // Rule 1 should have triggered (has earlier nextOccurrenceDate)
+        assertEquals(1, result.first[0].second.occurrenceCount)
+        assertEquals(0, result.first[1].second.occurrenceCount) // Not yet triggered
+    }
+
+    @Test
+    fun `late trigger event does advance rule`() {
+        val now = instant(2024, 1, 2, 12, 0)
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0)
+            ),
+            statusChangeTrigger = StatusChange(setOf(Done)),
+            resetToStatus = Open,
+            termination = RecurrenceTermination.onDate(now - 1.hours)
+        )
+        val result = RecurrenceService.processRecurrence(
+            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, now)
+        )
+        assertNotNull(result)
+        val (newRules, newState) = result
+        assertEquals(Open, newState)
+        // Rule is kept but marked as terminated (nextOccurrenceDate is null since termination date passed)
+        assertEquals(1, newRules.size)
+        assertNull(newRules[0].second.nextOccurrenceDate)
     }
 }

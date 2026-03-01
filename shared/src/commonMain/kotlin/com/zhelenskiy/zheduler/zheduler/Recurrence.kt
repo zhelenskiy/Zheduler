@@ -273,7 +273,7 @@ sealed class RecurrenceTerminationCondition {
     @Serializable
     data class AfterOccurrences(val count: Int) : RecurrenceTerminationCondition() {
         init {
-            require(count > 0) { "Occurrence count must be positive" }
+            require(count >= 0) { "Occurrence count must be non-negative" }
         }
     }
 
@@ -621,6 +621,13 @@ data class RecurrenceRule(
             ?: timeRecurrenceTriggerString
             ?: error("No recurrence trigger found")
     }
+
+    /**
+     * Check if this rule is terminated (will not produce any more occurrences)
+     */
+    fun isTerminated(now: Instant = Clock.System.now()): Boolean =
+        termination.afterOccurrences?.count == 0 ||
+                (termination.endDate?.let { now > it } == true)
 }
 
 /**
@@ -657,7 +664,7 @@ object RecurrenceCalculator {
         val termination = rule.termination
         val maxOccurrences = termination.maxOccurrences
         val endDate = termination.endDate
-        if (maxOccurrences != null && currentState.occurrenceCount + 1 >= maxOccurrences) {
+        if (maxOccurrences != null && currentState.occurrenceCount + 1 > maxOccurrences) {
             return null
         }
         if (endDate != null && triggerTime > endDate) {
@@ -942,7 +949,7 @@ object RecurrenceCalculator {
             false
         rule.timeRecurrenceTrigger != null && recurrenceState.nextOccurrenceDate != null && event.currentTime < recurrenceState.nextOccurrenceDate ->
             false
-        rule.termination.maxOccurrences != null && recurrenceState.occurrenceCount >= rule.termination.maxOccurrences!! ->
+        rule.termination.maxOccurrences != null && recurrenceState.occurrenceCount > rule.termination.maxOccurrences!! ->
             false
         rule.termination.endDate != null && recurrenceState.nextOccurrenceDate != null && recurrenceState.nextOccurrenceDate > rule.termination.endDate!! ->
             false
@@ -992,21 +999,13 @@ object RecurrenceService {
         // Calculate next occurrence from all rules and take the earliest
 
         val newRules = rules.toMutableList().apply {
-            val newAfterOccurrences = rule.termination.afterOccurrences?.count?.dec()
-            val newRule = if (newAfterOccurrences == 0) {
-                null
-            } else {
-                rule.copy(
-                    termination = rule.termination.copy(
-                        afterOccurrences = newAfterOccurrences?.let(::AfterOccurrences)
-                    )
+            val newAfterOccurrences = rule.termination.afterOccurrences?.count?.dec()?.coerceAtLeast(0)
+            val newRule = rule.copy(
+                termination = rule.termination.copy(
+                    afterOccurrences = newAfterOccurrences?.let(::AfterOccurrences)
                 )
-            }
-            if (newRule != null) {
-                set(index, Pair(newRule, newState))
-            } else {
-                removeAt(index)
-            }
+            )
+            set(index, Pair(newRule, newState))
         }
         val newStatus = rule.resetToStatus
         val newUsedRules = if (newRules.size == rules.size) {
