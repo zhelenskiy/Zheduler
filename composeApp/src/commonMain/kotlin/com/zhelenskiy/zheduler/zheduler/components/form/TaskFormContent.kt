@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.common.ConnectedTaskChip
@@ -309,6 +310,11 @@ fun RecurrenceRuleItem(
     onTaskClick: ((String) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
+    val isTerminated = rule.isTerminated()
+    val titleStyle = MaterialTheme.typography.titleMedium.copy(
+        textDecoration = if (isTerminated) TextDecoration.LineThrough else TextDecoration.None
+    )
+    val detailsTextDecoration = if (isTerminated) TextDecoration.LineThrough else TextDecoration.None
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -325,10 +331,14 @@ fun RecurrenceRuleItem(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = "Rule #${index + 1}",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = titleStyle,
                     color = MaterialTheme.colorScheme.primary
                 )
-                RecurrenceRuleDetails(rule = rule, onTaskClick = onTaskClick)
+                RecurrenceRuleDetails(
+                    rule = rule,
+                    onTaskClick = onTaskClick,
+                    textDecoration = detailsTextDecoration
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (onEdit != null) {
@@ -347,8 +357,12 @@ fun RecurrenceRuleItem(
 }
 
 @Composable
-fun RecurrenceRuleDetails(rule: RecurrenceRule, onTaskClick: ((String) -> Unit)?) {
-    val style = MaterialTheme.typography.bodySmall
+fun RecurrenceRuleDetails(
+    rule: RecurrenceRule,
+    onTaskClick: ((String) -> Unit)?,
+    textDecoration: TextDecoration = TextDecoration.None,
+) {
+    val style = MaterialTheme.typography.bodySmall.copy(textDecoration = textDecoration)
     Column {
         val timeRecurrenceTriggerString = rule.timeRecurrenceTrigger?.let { timeTrigger ->
             when (timeTrigger) {
@@ -391,6 +405,7 @@ fun RecurrenceRuleDetails(rule: RecurrenceRule, onTaskClick: ((String) -> Unit)?
                             modifier = Modifier,
                             badgeModifier = badgeModifier,
                             blockerTaskModifier = badgeModifier,
+                            textStyle = style,
                         )
                     }
                 }
@@ -408,6 +423,7 @@ fun RecurrenceRuleDetails(rule: RecurrenceRule, onTaskClick: ((String) -> Unit)?
                 modifier = Modifier,
                 badgeModifier = badgeModifier,
                 blockerTaskModifier = badgeModifier,
+                textStyle = style,
             )
         }
         Text(rule.termination.toFullString(), style = style)
