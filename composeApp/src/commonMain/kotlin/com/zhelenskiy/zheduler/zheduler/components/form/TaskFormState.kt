@@ -53,7 +53,7 @@ class TaskFormState(
         return ParsedTaskValues(
             title = title,
             description = description,
-            priority = priority.toIntOrNull()?.let { if (it in 1..100) Priority(it) else null },
+            priority = if (priority.isNotEmpty()) Priority(priority.toInt()) else null,
             estimatedTime = parseCompactTimeToPeriod(estimatedTime),
             tags = tags,
             dueDate = dueDate,

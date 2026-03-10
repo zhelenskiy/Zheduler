@@ -32,9 +32,6 @@ class TaskListViewModel(
     private val _currentSpace = MutableStateFlow<Space?>(null)
     val currentSpace: StateFlow<Space?> = _currentSpace.asStateFlow()
 
-    private val _spaceLoadAttempted = MutableStateFlow(false)
-    val spaceLoadAttempted: StateFlow<Boolean> = _spaceLoadAttempted.asStateFlow()
-
     private val _allTags = MutableStateFlow<Set<String>>(emptySet())
     val allTags: StateFlow<Set<String>> = _allTags.asStateFlow()
 
@@ -47,7 +44,6 @@ class TaskListViewModel(
             _tasksWithTotals.value = repository.getAllTasksWithTotals(spaceId)
             _currentSpace.value = repository.getSpaceById(spaceId)
             _allTags.value = repository.getAllTags()
-            _spaceLoadAttempted.value = true
         }
     }
 
@@ -58,16 +54,6 @@ class TaskListViewModel(
     fun deleteTask(taskId: String) {
         viewModelScope.launch {
             repository.deleteTask(taskId)
-            loadTasks()
-        }
-    }
-
-    fun updateTaskStatus(taskId: String, status: TaskStatus) {
-        viewModelScope.launch {
-            val task = repository.getTaskById(taskId)
-            if (task != null) {
-                repository.updateTask(task.copy(status = status))
-            }
             loadTasks()
         }
     }

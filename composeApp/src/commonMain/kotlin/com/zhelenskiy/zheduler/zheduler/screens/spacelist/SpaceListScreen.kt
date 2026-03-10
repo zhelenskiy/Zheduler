@@ -39,6 +39,233 @@ import io.github.vinceglb.filekit.readString
 import kotlinx.coroutines.CoroutineScope
 import com.zhelenskiy.zheduler.zheduler.screens.calendar.AnimatedVisibility
 
+@Composable
+private fun SpaceSearchBar(
+    searchQuery: String,
+    searchOptions: Set<SpaceSearchOption>,
+    showSearchOptions: Boolean,
+    onSearchQueryChange: (String) -> Unit,
+    onClearSearch: () -> Unit,
+    onToggleSearchOptions: () -> Unit,
+    onToggleSearchOption: (SpaceSearchOption) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 24.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = {
+                    Text("Search spaces by ${searchOptions.joinToString(", ") { it.displayName }}")
+                },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotBlank()) {
+                        IconButton(onClick = onClearSearch) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                        }
+                    }
+                }
+            )
+            IconButton(onClick = onToggleSearchOptions) {
+                Icon(
+                    Icons.Default.Tune,
+                    contentDescription = "Search options",
+                    tint = if (showSearchOptions) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                )
+            }
+        }
+
+        AnimatedVisibility(visible = showSearchOptions) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Search in:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SpaceSearchOption.entries.forEach { option ->
+                        FilterChip(
+                            selected = option in searchOptions,
+                            onClick = { onToggleSearchOption(option) },
+                            label = { Text(option.displayName) }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SpaceCard(
+    space: Space,
+    onSpaceClick: (String) -> Unit,
+    onExport: (Space) -> Unit,
+    onEdit: (Space) -> Unit,
+    onDelete: (Space) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { onSpaceClick(space.id) }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = space.name,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.extraSmall
+                ) {
+                    Text(
+                        text = space.idPrefix,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+            IconButton(onClick = { onExport(space) }) {
+                Icon(Icons.Default.Download, contentDescription = "Export")
+            }
+            IconButton(onClick = { onEdit(space) }) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit")
+            }
+            IconButton(onClick = { onDelete(space) }) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpaceListContent(
+    hasSpaces: Boolean?,
+    filteredSpaces: List<Space>?,
+    onSpaceClick: (String) -> Unit,
+    onSpaceExport: (Space) -> Unit,
+    onSpaceEdit: (Space) -> Unit,
+    onSpaceDelete: (Space) -> Unit,
+    onClearSearch: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = hasSpaces == false,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            EmptyState(message = "No spaces yet. Create one to get started!")
+        }
+
+        AnimatedVisibility(
+            visible = hasSpaces == true && filteredSpaces?.isEmpty() == true,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            EmptySearchResults(
+                message = "No spaces match your search",
+                clearButtonText = "Clear filter",
+                onClearFilters = onClearSearch
+            )
+        }
+
+        AnimatedVisibility(
+            visible = filteredSpaces?.isNotEmpty() == true,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 16.dp)
+            ) {
+                items(filteredSpaces ?: emptyList(), key = { it.id }) { space ->
+                    SpaceCard(
+                        space = space,
+                        onSpaceClick = onSpaceClick,
+                        onExport = onSpaceExport,
+                        onEdit = onSpaceEdit,
+                        onDelete = onSpaceDelete,
+                        modifier = Modifier.animateItem()
+                    )
+                }
+            }
+        }
+        AnimatedVisibility(hasSpaces == null || filteredSpaces == null, enter = fadeIn(), exit = fadeOut()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(48.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SpaceListTopAppBar(
+    onEraseAllData: () -> Unit,
+    onImport: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    useDynamicColors: Boolean,
+    onDynamicColorsChange: (Boolean) -> Unit
+) {
+    TopAppBar(
+        title = { Text("Zheduler - Spaces") },
+        actions = {
+            IconButton(onClick = onEraseAllData) {
+                Icon(Icons.Default.DeleteForever, contentDescription = "Erase All Data")
+            }
+            IconButton(onClick = onImport) {
+                Icon(Icons.Default.Upload, contentDescription = "Import Space")
+            }
+            ThemeMenuButton(
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                useDynamicColors = useDynamicColors,
+                onDynamicColorsChange = onDynamicColorsChange
+            )
+        },
+        colors = appTopAppBarColors(),
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SpaceListScreen(
@@ -61,13 +288,8 @@ fun SpaceListScreen(
     LaunchedEffect(refreshTrigger) {
         viewModel.loadSpaces()
     }
-    var showNewSpaceDialog by remember { mutableStateOf(false) }
-    var spaceToDelete by remember { mutableStateOf<Space?>(null) }
-    var spaceToEdit by remember { mutableStateOf<Space?>(null) }
-    var spaceToExport by remember { mutableStateOf<Space?>(null) }
-    var showImportDialog by remember { mutableStateOf(false) }
-    var showEraseAllDataDialog by remember { mutableStateOf(false) }
 
+    val dialogState = rememberDialogState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     var importedSpaceName by remember { mutableStateOf<String?>(null) }
@@ -92,27 +314,17 @@ fun SpaceListScreen(
             }
         },
         topBar = {
-            TopAppBar(
-                title = { Text("Zheduler - Spaces") },
-                actions = {
-                    IconButton(onClick = { showEraseAllDataDialog = true }) {
-                        Icon(Icons.Default.DeleteForever, contentDescription = "Erase All Data")
-                    }
-                    IconButton(onClick = { showImportDialog = true }) {
-                        Icon(Icons.Default.Upload, contentDescription = "Import Space")
-                    }
-                    ThemeMenuButton(
-                        themeMode = themeMode,
-                        onThemeModeChange = onThemeModeChange,
-                        useDynamicColors = useDynamicColors,
-                        onDynamicColorsChange = onDynamicColorsChange
-                    )
-                },
-                colors = appTopAppBarColors()
+            SpaceListTopAppBar(
+                onEraseAllData = { dialogState.showEraseAllData = true },
+                onImport = { dialogState.showImport = true },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                useDynamicColors = useDynamicColors,
+                onDynamicColorsChange = onDynamicColorsChange
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showNewSpaceDialog = true }) {
+            FloatingActionButton(onClick = { dialogState.showNewSpace = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Add Space")
             }
         }
@@ -122,191 +334,72 @@ fun SpaceListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Search bar visible when spaces exist
             if (hasSpaces == true) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(top = 24.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { viewModel.updateSearchQuery(it) },
-                            placeholder = {
-                                Text("Search spaces by ${searchOptions.joinToString(", ") { it.displayName }}")
-                            },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                            trailingIcon = {
-                                if (searchQuery.isNotBlank()) {
-                                    IconButton(onClick = { viewModel.clearSearchQuery() }) {
-                                        Icon(Icons.Default.Clear, contentDescription = "Clear search")
-                                    }
-                                }
-                            }
-                        )
-                        IconButton(onClick = { viewModel.toggleShowSearchOptions() }) {
-                            Icon(
-                                Icons.Default.Tune,
-                                contentDescription = "Search options",
-                                tint = if (showSearchOptions) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                            )
-                        }
-                    }
-
-                    AnimatedVisibility(visible = showSearchOptions) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Search in:",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                SpaceSearchOption.entries.forEach { option ->
-                                    FilterChip(
-                                        selected = option in searchOptions,
-                                        onClick = { viewModel.toggleSearchOption(option) },
-                                        label = { Text(option.displayName) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
+                SpaceSearchBar(
+                    searchQuery = searchQuery,
+                    searchOptions = searchOptions,
+                    showSearchOptions = showSearchOptions,
+                    onSearchQueryChange = viewModel::updateSearchQuery,
+                    onClearSearch = viewModel::clearSearchQuery,
+                    onToggleSearchOptions = viewModel::toggleShowSearchOptions,
+                    onToggleSearchOption = viewModel::toggleSearchOption
+                )
             }
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                AnimatedVisibility(
-                    visible = hasSpaces == false,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    EmptyState(message = "No spaces yet. Create one to get started!")
-                }
-
-                AnimatedVisibility(
-                    visible = hasSpaces == true && filteredSpaces?.isEmpty() == true,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    EmptySearchResults(
-                        message = "No spaces match your search",
-                        clearButtonText = "Clear filter",
-                        onClearFilters = { viewModel.clearSearchQuery() }
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = filteredSpaces?.isNotEmpty() == true,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 16.dp)
-                    ) {
-                        items(filteredSpaces ?: emptyList(), key = { it.id }) { space ->
-                            Card(
-                                modifier = Modifier
-                                    .animateItem()
-                                    .fillMaxWidth()
-                                    .clip(MaterialTheme.shapes.medium)
-                                    .clickable { onSpaceClick(space.id) }
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Text(
-                                            text = space.name,
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.surfaceVariant,
-                                            shape = MaterialTheme.shapes.extraSmall
-                                        ) {
-                                            Text(
-                                                text = space.idPrefix,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                fontFamily = FontFamily.Monospace
-                                            )
-                                        }
-                                    }
-                                    IconButton(onClick = { spaceToExport = space }) {
-                                        Icon(Icons.Default.Download, contentDescription = "Export")
-                                    }
-                                    IconButton(onClick = { spaceToEdit = space }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Edit")
-                                    }
-                                    IconButton(onClick = { spaceToDelete = space }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Delete")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                AnimatedVisibility(hasSpaces == null || filteredSpaces == null, enter = fadeIn(), exit = fadeOut()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(48.dp))
-                    }
-                }
-            }
+            SpaceListContent(
+                hasSpaces = hasSpaces,
+                filteredSpaces = filteredSpaces,
+                onSpaceClick = onSpaceClick,
+                onSpaceExport = { dialogState.spaceToExport = it },
+                onSpaceEdit = { dialogState.spaceToEdit = it },
+                onSpaceDelete = { dialogState.spaceToDelete = it },
+                onClearSearch = viewModel::clearSearchQuery
+            )
         }
     }
 
-    // New space dialog
-    if (showNewSpaceDialog) {
+    SpaceListDialogs(
+        dialogState = dialogState,
+        viewModel = viewModel,
+        allTags = allTags.toSet(),
+        coroutineScope = coroutineScope,
+        snackbarHostState = snackbarHostState,
+        onRefresh = onRefresh,
+        onImportedSpaceNameChange = { importedSpaceName = it }
+    )
+}
+
+@Composable
+private fun SpaceListDialogs(
+    dialogState: DialogState,
+    viewModel: SpaceListViewModel,
+    allTags: Set<String>,
+    coroutineScope: CoroutineScope,
+    snackbarHostState: SnackbarHostState,
+    onRefresh: () -> Unit,
+    onImportedSpaceNameChange: (String?) -> Unit
+) {
+    if (dialogState.showNewSpace) {
         NewSpaceDialog(
-            onDismiss = { showNewSpaceDialog = false },
+            onDismiss = { dialogState.showNewSpace = false },
             onSpaceCreated = { name, prefix ->
                 coroutineScope.launch {
                     viewModel.addSpace(name, prefix)
-                    showNewSpaceDialog = false
+                    dialogState.showNewSpace = false
                     onRefresh()
                 }
             }
         )
     }
 
-    // Edit space dialog
-    spaceToEdit?.let { space ->
+    dialogState.spaceToEdit?.let { space ->
         EditSpaceDialog(
             space = space,
-            onDismiss = { spaceToEdit = null },
+            onDismiss = { dialogState.spaceToEdit = null },
             onSpaceUpdated = { newName ->
                 coroutineScope.launch {
                     viewModel.updateSpace(space.id, newName)
-                    spaceToEdit = null
+                    dialogState.spaceToEdit = null
                     onRefresh()
                 }
             },
@@ -324,43 +417,40 @@ fun SpaceListScreen(
         )
     }
 
-    // Delete space confirmation dialog
-    spaceToDelete?.let { space ->
+    dialogState.spaceToDelete?.let { space ->
         DeleteConfirmationDialog(
             title = "Delete Space",
             message = "Are you sure you want to delete space \"${space.name}\"? All tasks in this space will be permanently deleted.",
             onConfirm = {
                 coroutineScope.launch {
                     viewModel.deleteSpace(space.id)
-                    spaceToDelete = null
+                    dialogState.spaceToDelete = null
                     onRefresh()
                 }
             },
-            onDismiss = { spaceToDelete = null }
+            onDismiss = { dialogState.spaceToDelete = null }
         )
     }
 
-    // Export space dialog
-    spaceToExport?.let { space ->
+    dialogState.spaceToExport?.let { space ->
         ExportSpaceDialog(
             coroutineScope = coroutineScope,
             space = space,
-            onDismiss = { spaceToExport = null },
-            viewModel = viewModel,
+            onDismiss = { dialogState.spaceToExport = null },
+            exportSpaceToJson = viewModel::exportSpaceToJson,
             snackbarHostState = snackbarHostState
         )
     }
 
-    // Import space dialog
-    if (showImportDialog) {
+    if (dialogState.showImport) {
         ImportSpaceDialog(
-            onDismiss = { showImportDialog = false },
+            onDismiss = { dialogState.showImport = false },
             onImport = { jsonData ->
                 val importedSpace = viewModel.importSpaceFromJson(jsonData)
-                showImportDialog = false
+                dialogState.showImport = false
                 if (importedSpace != null) {
                     onRefresh()
-                    importedSpaceName = importedSpace.name
+                    onImportedSpaceNameChange(importedSpace.name)
                 }
                 importedSpace
             },
@@ -368,19 +458,47 @@ fun SpaceListScreen(
         )
     }
 
-    // Erase all data confirmation dialog
-    if (showEraseAllDataDialog) {
+    if (dialogState.showEraseAllData) {
         DeleteConfirmationDialog(
             title = "Erase All Data",
             message = "Are you sure you want to permanently erase ALL data? This will delete all spaces, tasks, and settings. This action cannot be undone!",
             onConfirm = {
                 viewModel.clearAllData()
-                showEraseAllDataDialog = false
+                dialogState.showEraseAllData = false
                 onRefresh()
             },
-            onDismiss = { showEraseAllDataDialog = false }
+            onDismiss = { dialogState.showEraseAllData = false }
         )
     }
+}
+
+@Composable
+private fun rememberDialogState() = remember {
+    DialogState(
+        showNewSpace = false,
+        spaceToDelete = null,
+        spaceToEdit = null,
+        spaceToExport = null,
+        showImport = false,
+        showEraseAllData = false
+    )
+}
+
+@Stable
+private class DialogState(
+    showNewSpace: Boolean,
+    spaceToDelete: Space?,
+    spaceToEdit: Space?,
+    spaceToExport: Space?,
+    showImport: Boolean,
+    showEraseAllData: Boolean
+) {
+    var showNewSpace by mutableStateOf(showNewSpace)
+    var spaceToDelete by mutableStateOf(spaceToDelete)
+    var spaceToEdit by mutableStateOf(spaceToEdit)
+    var spaceToExport by mutableStateOf(spaceToExport)
+    var showImport by mutableStateOf(showImport)
+    var showEraseAllData by mutableStateOf(showEraseAllData)
 }
 
 @Composable
@@ -388,13 +506,13 @@ private fun ExportSpaceDialog(
     coroutineScope: CoroutineScope,
     space: Space,
     onDismiss: () -> Unit,
-    viewModel: SpaceListViewModel,
+    exportSpaceToJson: suspend (spaceId: String, prettyPrint: Boolean) -> String?,
     snackbarHostState: SnackbarHostState
 ) {
     var prettyPrint by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
 
-    val fileSaverLauncher = getFileSaverLauncher(coroutineScope, viewModel, space, prettyPrint, snackbarHostState, onDismiss)
+    val fileSaverLauncher = getFileSaverLauncher(coroutineScope, space, prettyPrint, snackbarHostState, onDismiss, exportSpaceToJson)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -428,7 +546,7 @@ private fun ExportSpaceDialog(
                     OutlinedButton(
                         onClick = {
                             coroutineScope.launch {
-                                val jsonData = viewModel.exportSpaceToJson(space.id, prettyPrint)
+                                val jsonData = exportSpaceToJson(space.id, prettyPrint)
                                 if (jsonData != null) {
                                     clipboardManager.setText(AnnotatedString(jsonData))
                                 }
@@ -469,8 +587,7 @@ private fun ExportSpaceDialog(
                         OutlinedButton(
                             onClick = {
                                 coroutineScope.launch {
-                                    val content =
-                                        viewModel.exportSpaceToJson(space.id, prettyPrint) ?: return@launch
+                                    val content = exportSpaceToJson(space.id, prettyPrint) ?: return@launch
                                     write(content, fileName)
                                 }
                             },
@@ -496,11 +613,11 @@ private fun ExportSpaceDialog(
 @Composable
 internal expect fun getFileSaverLauncher(
     coroutineScope: CoroutineScope,
-    viewModel: SpaceListViewModel,
     space: Space,
     prettyPrint: Boolean,
     snackbarHostState: SnackbarHostState,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    exportSpaceToJson: suspend (spaceId: String, prettyPrint: Boolean) -> String?
 ): SaverResultLauncher?
 
 @Composable

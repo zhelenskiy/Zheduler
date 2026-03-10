@@ -13,6 +13,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -46,10 +47,19 @@ fun interface NewTaskViewModelFactory {
 fun interface TaskDetailViewModelFactory {
     fun create(
         spaceId: String,
-        taskId: String,
-        savedStateHandle: SavedStateHandle,
-        startInEditMode: Boolean
+        taskId: String
     ): TaskDetailViewModel
+}
+
+/**
+ * Factory interface for creating TaskEditViewModel instances with runtime parameters.
+ */
+fun interface TaskEditViewModelFactory {
+    fun create(
+        spaceId: String,
+        taskId: String,
+        savedStateHandle: SavedStateHandle
+    ): TaskEditViewModel
 }
 
 /**
@@ -100,6 +110,11 @@ interface AppGraph {
      */
     val taskDetailViewModelFactory: TaskDetailViewModelFactory
 
+    /**
+     * Factory for creating TaskEditViewModel instances with runtime parameters.
+     */
+    val taskEditViewModelFactory: TaskEditViewModelFactory
+
     companion object {
         @Provides
         @SingleIn(AppScope::class)
@@ -145,8 +160,14 @@ interface AppGraph {
 
         @Provides
         fun provideTaskDetailViewModelFactory(repository: SqlDelightTaskRepository): TaskDetailViewModelFactory =
-            TaskDetailViewModelFactory { spaceId, taskId, savedStateHandle, startInEditMode ->
-                TaskDetailViewModel(repository, spaceId, taskId, savedStateHandle, startInEditMode)
+            TaskDetailViewModelFactory { spaceId, taskId ->
+                TaskDetailViewModel(repository, spaceId, taskId)
+            }
+
+        @Provides
+        fun provideTaskEditViewModelFactory(repository: SqlDelightTaskRepository): TaskEditViewModelFactory =
+            TaskEditViewModelFactory { spaceId, taskId, savedStateHandle ->
+                TaskEditViewModel(repository, spaceId, taskId, savedStateHandle)
             }
     }
 }

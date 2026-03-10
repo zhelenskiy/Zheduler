@@ -24,11 +24,13 @@ import com.zhelenskiy.zheduler.zheduler.navigation.CalendarRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.NewTaskRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.SpaceListRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.TaskDetailRoute
+import com.zhelenskiy.zheduler.zheduler.navigation.TaskEditRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.TaskListRoute
 import com.zhelenskiy.zheduler.zheduler.screens.calendar.CalendarScreen
 import com.zhelenskiy.zheduler.zheduler.screens.newtask.NewTaskScreen
 import com.zhelenskiy.zheduler.zheduler.screens.spacelist.SpaceListScreen
 import com.zhelenskiy.zheduler.zheduler.screens.taskdetail.TaskDetailScreen
+import com.zhelenskiy.zheduler.zheduler.screens.taskedit.TaskEditScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.TaskListScreen
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
@@ -177,18 +179,47 @@ private fun AppContent() {
                 }
             ) { backStackEntry ->
                 val route = backStackEntry.toRoute<TaskDetailRoute>()
-                val savedStateHandle = backStackEntry.savedStateHandle
                 val viewModel = remember(route.spaceId, route.taskId) {
                     appGraph.taskDetailViewModelFactory.create(
                         spaceId = route.spaceId,
-                        taskId = route.taskId,
-                        savedStateHandle = savedStateHandle,
-                        startInEditMode = route.startInEditMode
+                        taskId = route.taskId
                     )
                 }
                 TaskDetailScreen(
                     viewModel = viewModel,
                     externalRefreshTrigger = refreshTrigger,
+                    onNavigateBack = {
+                        refreshTrigger++
+                        navController.popBackStack()
+                    },
+                    onNavigateToEdit = {
+                        navController.navigate(TaskEditRoute(route.spaceId, route.taskId))
+                    },
+                    onTaskClick = { taskId ->
+                        navController.navigate(TaskDetailRoute(route.spaceId, taskId))
+                    },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = { themeMode = it },
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = { useDynamicColors = it }
+                )
+            }
+
+            composable<TaskEditRoute> { backStackEntry ->
+                val route = backStackEntry.toRoute<TaskEditRoute>()
+                val savedStateHandle = backStackEntry.savedStateHandle
+                val viewModel = remember(route.spaceId, route.taskId) {
+                    appGraph.taskEditViewModelFactory.create(
+                        spaceId = route.spaceId,
+                        taskId = route.taskId,
+                        savedStateHandle = savedStateHandle
+                    )
+                }
+                TaskEditScreen(
+                    viewModel = viewModel,
                     onNavigateBack = {
                         refreshTrigger++
                         navController.popBackStack()
@@ -203,9 +234,6 @@ private fun AppContent() {
                     },
                     onTaskClick = { taskId ->
                         navController.navigate(TaskDetailRoute(route.spaceId, taskId))
-                    },
-                    onNavigateToSpaceList = {
-                        navController.popBackStack(SpaceListRoute, inclusive = false)
                     },
                     themeMode = themeMode,
                     onThemeModeChange = { themeMode = it },

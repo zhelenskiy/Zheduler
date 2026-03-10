@@ -12,8 +12,13 @@ data class TaskListRoute(val spaceId: String)
 data class TaskDetailRoute(
     val spaceId: String,
     val taskId: String,
-    val fromCreation: Boolean = false,
-    val startInEditMode: Boolean = false
+    val fromCreation: Boolean = false
+)
+
+@Serializable
+data class TaskEditRoute(
+    val spaceId: String,
+    val taskId: String
 )
 
 @Serializable

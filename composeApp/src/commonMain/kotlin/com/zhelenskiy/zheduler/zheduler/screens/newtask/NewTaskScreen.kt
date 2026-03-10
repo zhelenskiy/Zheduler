@@ -3,37 +3,22 @@
 package com.zhelenskiy.zheduler.zheduler.screens.newtask
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import com.zhelenskiy.zheduler.zheduler.Task
+import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import kotlinx.coroutines.launch
-import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
+import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
 import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskViewModel
 import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewTaskScreen(
-    viewModel: NewTaskViewModel,
-    onNavigateBack: () -> Unit,
-    onTaskCreated: (String) -> Unit,
-    onTaskClick: (String) -> Unit,
-    themeMode: ThemeMode,
-    onThemeModeChange: (ThemeMode) -> Unit,
-    useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
-) {
-    // Load data asynchronously
+private fun rememberNewTaskData(viewModel: NewTaskViewModel): NewTaskData {
     var taskToCopy by remember { mutableStateOf<Task?>(null) }
     var nextId by remember { mutableStateOf<String?>(null) }
     var prefilledTask by remember { mutableStateOf<Task?>(null) }
@@ -48,15 +33,31 @@ fun NewTaskScreen(
         allSpacePrefixes = viewModel.getAllSpacePrefixes()
     }
 
+    return NewTaskData(
+        taskToCopy = taskToCopy,
+        nextId = nextId,
+        prefilledTask = prefilledTask,
+        currentSpaceIdPrefix = currentSpaceIdPrefix,
+        allSpacePrefixes = allSpacePrefixes
+    )
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NewTaskScreen(
+    viewModel: NewTaskViewModel,
+    onNavigateBack: () -> Unit,
+    onTaskCreated: (String) -> Unit,
+    onTaskClick: (String) -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    useDynamicColors: Boolean,
+    onDynamicColorsChange: (Boolean) -> Unit
+) {
+    val taskData = rememberNewTaskData(viewModel)
     val initialConnections = viewModel.getInitialConnections()
-    val formState = if (taskToCopy != null) {
-        rememberTaskFormState(taskToCopy!!).apply {
-            // Clear connections when copying to avoid duplicating relationships
-            connections = initialConnections
-        }
-    } else {
-        rememberTaskFormState(initialConnections = initialConnections)
-    }
+    val formState = rememberFormStateFromData(taskData.taskToCopy, initialConnections)
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
 
     fun handleBackPress() {
@@ -67,7 +68,6 @@ fun NewTaskScreen(
         }
     }
 
-    // Discard changes confirmation dialog
     if (showDiscardChangesDialog) {
         DiscardChangesDialog(
             title = "Discard new task?",
@@ -110,63 +110,54 @@ fun NewTaskScreen(
     Scaffold(
         modifier = Modifier.imePadding(),
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("New Task")
-                        if (nextId != null) {
-                            Text(
-                                text = "ID: $nextId",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { handleBackPress() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = { saveTask() },
-                        enabled = formState.isFormValid,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = if (formState.isFormValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                            disabledContentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = "Save")
-                    }
-                    ThemeMenuButton(
-                        themeMode = themeMode,
-                        onThemeModeChange = onThemeModeChange,
-                        useDynamicColors = useDynamicColors,
-                        onDynamicColorsChange = onDynamicColorsChange
-                    )
-                },
-                colors = appTopAppBarColors()
+            TaskFormTopAppBar(
+                title = "New Task",
+                taskId = taskData.nextId?.let { "ID: $it" },
+                isFormValid = formState.isFormValid,
+                onBackPress = { handleBackPress() },
+                onSave = { saveTask() },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                useDynamicColors = useDynamicColors,
+                onDynamicColorsChange = onDynamicColorsChange
             )
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
-            if (nextId != null) {
+            if (taskData.nextId != null) {
                 TaskFormContent(
                     formState = formState,
                     isNewTask = true,
-                    prefilledTask = prefilledTask,
+                    prefilledTask = taskData.prefilledTask,
                     prefilledConnection = initialConnections.firstOrNull(),
                     onTaskClick = onTaskClick,
-                    onCreateNewTaskWithConnection = null, // Can't create nested new tasks
+                    onCreateNewTaskWithConnection = null,
                     getTaskById = viewModel::getTaskById,
                     filterTags = viewModel::filterTags,
                     filterTasksForSelection = viewModel::filterTasksForSelection,
                     searchTasksForConnection = viewModel::searchTasksForConnection,
-                    currentSpaceIdPrefix = currentSpaceIdPrefix,
-                    allSpacePrefixes = allSpacePrefixes
+                    currentSpaceIdPrefix = taskData.currentSpaceIdPrefix,
+                    allSpacePrefixes = taskData.allSpacePrefixes
                 )
             }
         }
     }
 }
+
+@Composable
+private fun rememberFormStateFromData(taskToCopy: Task?, initialConnections: Set<TaskConnection>) =
+    if (taskToCopy != null) {
+        rememberTaskFormState(taskToCopy).apply {
+            connections = initialConnections
+        }
+    } else {
+        rememberTaskFormState(initialConnections = initialConnections)
+    }
+
+private data class NewTaskData(
+    val taskToCopy: Task?,
+    val nextId: String?,
+    val prefilledTask: Task?,
+    val currentSpaceIdPrefix: String?,
+    val allSpacePrefixes: List<String>,
+)
