@@ -328,7 +328,10 @@ fun RecurrenceRuleItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 Text(
                     text = "Rule #${index + 1}",
                     style = titleStyle,
@@ -363,7 +366,9 @@ fun RecurrenceRuleDetails(
     textDecoration: TextDecoration = TextDecoration.None,
 ) {
     val style = MaterialTheme.typography.bodySmall.copy(textDecoration = textDecoration)
-    Column {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
         val timeRecurrenceTriggerString = rule.timeRecurrenceTrigger?.let { timeTrigger ->
             when (timeTrigger) {
                 is RecurrenceTrigger.AfterTimeout -> timeTrigger.period

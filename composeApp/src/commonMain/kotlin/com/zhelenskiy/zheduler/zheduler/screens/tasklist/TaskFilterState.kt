@@ -7,7 +7,7 @@ import com.zhelenskiy.zheduler.zheduler.*
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-// Filter state holder - simple UI state that converts to TaskFilterCriteria
+@Stable
 class TaskFilterState {
     var searchQuery by mutableStateOf("")
     var textSearchFields by mutableStateOf(setOf(TaskTextSearchField.Id, TaskTextSearchField.Title))
@@ -22,7 +22,6 @@ class TaskFilterState {
     var selectedTags by mutableStateOf(emptySet<String>())
     var tagMatchMode by mutableStateOf(TagMatchMode.All)
 
-    // Custom filter values
     var customPriorityMin by mutableStateOf("")
     var customPriorityMax by mutableStateOf("")
     var customDueDateBefore by mutableStateOf<Instant?>(null)  // Date picker
@@ -42,7 +41,7 @@ class TaskFilterState {
         get() = toCriteria().hasActiveFilters
 
     /**
-     * Convert UI state to TaskFilterCriteria for use with repository filtering
+     * Convert UI state to [TaskFilterCriteria] for use with repository filtering
      */
     fun toCriteria(): TaskFilterCriteria = TaskFilterCriteria(
         searchQuery = searchQuery,
@@ -74,9 +73,9 @@ class TaskFilterState {
     )
 
     /**
-     * Load from TaskFilterCriteria
+     * Load from [TaskFilterCriteria]
      */
-    fun fromCriteria(criteria: TaskFilterCriteria) {
+    fun loadFromCriteria(criteria: TaskFilterCriteria) {
         searchQuery = criteria.searchQuery
         textSearchFields = criteria.textSearchFields
         statusFilters = criteria.statusFilters

@@ -27,6 +27,9 @@ kotlin {
             baseName = "ComposeApp"
             isStatic = true
         }
+        iosTarget.binaries.all {
+            linkerOpts("-lsqlite3")
+        }
     }
 
     jvm()
@@ -60,6 +63,7 @@ kotlin {
             implementation(libs.navigation.compose)
             implementation(libs.richeditor.compose)
             implementation(libs.kotlinx.datetime)
+            implementation(libs.kotlinx.serializationJson)
             implementation(libs.filekit.core)
             implementation(libs.filekit.dialogs.compose)
             implementation(projects.shared)
