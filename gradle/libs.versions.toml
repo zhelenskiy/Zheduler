@@ -2,6 +2,7 @@
 agp = "8.11.2"
 coreKtx = "1.7.0"
 kotlinxBrowser = "0.5.0"
+materialKolor = "4.0.5"
 metro = "0.10.2"
 android-compileSdk = "36"
 android-minSdk = "24"
@@ -15,6 +16,7 @@ androidx-testExt = "1.3.0"
 composeHotReload = "1.0.0"
 composeMultiplatform = "1.10.0"
 junit = "4.13.2"
+nucleus = "1.4.7"
 robolectric = "4.14.1"
 # 2.3.0 has https://youtrack.jetbrains.com/projects/KT/issues/KT-83372/compileDebugKotlinAndroid-hangs-in-2.3.0-with-SQLDelight
 kotlin = "2.2.21"
@@ -36,6 +38,11 @@ core-ktx = { module = "androidx.test:core-ktx", version.ref = "coreKtx" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }
+material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
+nucleus-core-runtime = { module = "io.github.kdroidfilter:nucleus.core-runtime", version.ref = "nucleus" }
+nucleus-decorated-window-jni = { module = "io.github.kdroidfilter:nucleus.decorated-window-jni", version.ref = "nucleus" }
+nucleus-decorated-window-material = { module = "io.github.kdroidfilter:nucleus.decorated-window-material", version.ref = "nucleus" }
+nucleus-system-color = { module = "io.github.kdroidfilter:nucleus.system-color", version.ref = "nucleus" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-testExt-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-testExt" }

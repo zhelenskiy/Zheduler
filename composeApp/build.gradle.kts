@@ -68,6 +68,7 @@ kotlin {
             implementation(libs.filekit.core)
             implementation(libs.filekit.dialogs.compose)
             implementation(projects.shared)
+            implementation(libs.material.kolor)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -75,6 +76,10 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            implementation(libs.nucleus.system.color)
+            implementation(libs.nucleus.core.runtime)
+            implementation(libs.nucleus.decorated.window.jni)
+            implementation(libs.nucleus.decorated.window.material)
         }
         wasmJsMain.dependencies {
             implementation(npm("sql.js", "1.12.0"))
