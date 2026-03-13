@@ -214,7 +214,7 @@ private fun SpaceListContent(
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+                contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)
             ) {
                 items(filteredSpaces ?: emptyList(), key = { it.id }) { space ->
                     SpaceCard(

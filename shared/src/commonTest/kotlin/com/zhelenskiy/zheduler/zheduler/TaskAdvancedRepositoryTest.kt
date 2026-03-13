@@ -141,59 +141,6 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         assertTrue(status.blockerTaskIds.first().startsWith(imported.idPrefix))
     }
 
-    // ==================== Grouping Tests ====================
-
-    @Test
-    fun `groupTasksByResolutionStatus separates correctly`() = runTest {
-        val (repo, spaceId) = createRepositoryWithSpace()
-        val blocker = repo.addTask(spaceId, title = "Blocker")!!
-        repo.addTask(spaceId, title = "Open task")
-        repo.addTask(spaceId, title = "InProgress task", status = TaskStatus.InProgress)
-        repo.addTask(spaceId, title = "Done task", status = TaskStatus.Done)
-        repo.addTask(spaceId, title = "Declined task", status = TaskStatus.Declined("reason"))
-        repo.addTask(spaceId, title = "Blocked task", status = TaskStatus.Blocked(setOf(blocker.id)))
-
-        val allTasks = repo.getAllTasksWithTotals(spaceId)
-        val grouped = repo.groupTasksByResolutionStatus(allTasks)
-
-        // Unresolved: Open, InProgress
-        assertEquals(3, grouped.unresolved.size) // Including blocker which is Open
-
-        // Blocked
-        assertEquals(1, grouped.blocked.size)
-
-        // Resolved: Done, Declined
-        assertEquals(2, grouped.resolved.size)
-    }
-
-    @Test
-    fun `groupTasksByResolutionStatus sorts by due date and priority`() = runTest {
-        val (repo, spaceId) = createRepositoryWithSpace()
-        val now = Clock.System.now()
-
-        repo.addTask(spaceId, title = "Low priority far", dueDate = now + 10.days, priority = Priority.LOW)
-        repo.addTask(spaceId, title = "High priority close", dueDate = now + 1.days, priority = Priority.HIGH)
-        repo.addTask(spaceId, title = "Medium priority mid", dueDate = now + 5.days, priority = Priority.MEDIUM)
-
-        val allTasks = repo.getAllTasksWithTotals(spaceId)
-        val grouped = repo.groupTasksByResolutionStatus(allTasks)
-
-        // Should be sorted: closest due date first, then highest priority
-        val unresolved = grouped.unresolved
-        assertEquals(3, unresolved.size)
-        assertEquals("High priority close", unresolved[0].task.title)
-    }
-
-    @Test
-    fun `groupTasksByResolutionStatus handles empty list`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        val grouped = repo.groupTasksByResolutionStatus(emptyList())
-
-        assertTrue(grouped.unresolved.isEmpty())
-        assertTrue(grouped.blocked.isEmpty())
-        assertTrue(grouped.resolved.isEmpty())
-    }
-
     // ==================== State Management Tests ====================
 
     @Test

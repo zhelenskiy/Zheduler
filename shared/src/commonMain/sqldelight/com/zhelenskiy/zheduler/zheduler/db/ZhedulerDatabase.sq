@@ -271,3 +271,42 @@ INSERT OR REPLACE INTO filter_panel_states(spaceId, isOpen) VALUES (?, ?);
 
 -- Note: deleteFilterPanelStateForSpace removed (CASCADE handles deletion)
 -- Note: app_state table and queries removed (current space is managed by UI layer)
+
+-- Custom view modes table (for user-defined view modes)
+CREATE TABLE custom_view_modes (
+    id TEXT NOT NULL,
+    spaceId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    configJson TEXT NOT NULL,
+    PRIMARY KEY (spaceId, id),
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_custom_view_modes_spaceId ON custom_view_modes(spaceId);
+
+-- Active view mode per space
+CREATE TABLE active_view_modes (
+    spaceId TEXT NOT NULL PRIMARY KEY,
+    viewModeId TEXT NOT NULL,
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+-- Custom view mode queries
+getAllCustomViewModes:
+SELECT * FROM custom_view_modes WHERE spaceId = ?;
+
+getCustomViewModeById:
+SELECT * FROM custom_view_modes WHERE spaceId = ? AND id = ?;
+
+insertOrUpdateCustomViewMode:
+INSERT OR REPLACE INTO custom_view_modes(id, spaceId, name, configJson) VALUES (?, ?, ?, ?);
+
+deleteCustomViewMode:
+DELETE FROM custom_view_modes WHERE spaceId = ? AND id = ?;
+
+-- Active view mode queries
+getActiveViewModeId:
+SELECT viewModeId FROM active_view_modes WHERE spaceId = ?;
+
+setActiveViewModeId:
+INSERT OR REPLACE INTO active_view_modes(spaceId, viewModeId) VALUES (?, ?);

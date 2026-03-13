@@ -43,6 +43,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     private val filterStateBySpaceId = mutableMapOf<String, TaskFilterCriteria>()
     private val viewModeBySpaceId = mutableMapOf<String, String>()
     private val filterPanelOpenBySpaceId = mutableMapOf<String, Boolean>()
+    private val customViewModes = mutableMapOf<String, MutableMap<String, ViewMode>>() // spaceId -> (viewModeId -> ViewMode)
+    private val activeViewModeBySpaceId = mutableMapOf<String, String>()
 
     override suspend fun hasSpaces(): Boolean = mutex.withLock { spaces.isNotEmpty() }
 
@@ -529,6 +531,51 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         filterPanelOpenBySpaceId[spaceId] = isOpen
     }
 
+    // ============ View mode management ============
+
+    override suspend fun getAllViewModes(spaceId: String): List<ViewMode> = mutex.withLock {
+        val builtIn = ViewMode.getBuiltInModes(spaceId)
+        val custom = customViewModes[spaceId]?.values?.toList() ?: emptyList()
+        builtIn + custom
+    }
+
+    override suspend fun getViewModeById(spaceId: String, viewModeId: String): ViewMode? = mutex.withLock {
+        // Check built-in modes first
+        ViewMode.getBuiltInModes(spaceId).find { it.id == viewModeId } ?: customViewModes[spaceId]?.get(viewModeId)
+    }
+
+    override suspend fun saveViewMode(viewMode: ViewMode): ViewMode = mutex.withLock {
+        require(!viewMode.isBuiltIn) { "Cannot modify built-in view modes" }
+        val spaceViewModes = customViewModes.getOrPut(viewMode.spaceId) { mutableMapOf() }
+        spaceViewModes[viewMode.id] = viewMode
+        viewMode
+    }
+
+    override suspend fun deleteViewMode(spaceId: String, viewModeId: String): Boolean = mutex.withLock {
+        // Cannot delete built-in modes
+        if (ViewMode.getBuiltInModes(spaceId).any { it.id == viewModeId }) {
+            return@withLock false
+        }
+        val removed = customViewModes[spaceId]?.remove(viewModeId) != null
+        // If this was the active mode, reset to default
+        if (removed && activeViewModeBySpaceId[spaceId] == viewModeId) {
+            activeViewModeBySpaceId[spaceId] = "priority"
+        }
+        removed
+    }
+
+    override suspend fun getActiveViewMode(spaceId: String): ViewMode = mutex.withLock {
+        val activeId = activeViewModeBySpaceId[spaceId] ?: "priority"
+        // Check built-in modes first
+        ViewMode.getBuiltInModes(spaceId).find { it.id == activeId }
+            ?: customViewModes[spaceId]?.get(activeId)
+            ?: ViewMode.priority(spaceId)
+    }
+
+    override suspend fun setActiveViewMode(spaceId: String, viewModeId: String) = mutex.withLock {
+        activeViewModeBySpaceId[spaceId] = viewModeId
+    }
+
     override suspend fun exportSpaceToJson(spaceId: String, prettyPrint: Boolean): String? = mutex.withLock {
         val space = spaces[spaceId] ?: return@withLock null
         val spaceTasks = tasks.values.filter { it.spaceId == spaceId }
@@ -675,5 +722,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         filterStateBySpaceId.clear()
         viewModeBySpaceId.clear()
         filterPanelOpenBySpaceId.clear()
+        customViewModes.clear()
+        activeViewModeBySpaceId.clear()
     }
 }

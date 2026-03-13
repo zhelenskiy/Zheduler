@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,6 +45,8 @@ import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
 import com.zhelenskiy.zheduler.zheduler.components.common.AutomaticChangeIndicator
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
+import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarViewModel
 import kotlinx.datetime.*
@@ -127,7 +130,12 @@ private fun isDateInMonth(date: LocalDate?, yearMonth: YearMonth): Boolean =
 fun CalendarScreen(
     viewModel: CalendarViewModel,
     onNavigateBack: () -> Unit,
-    onTaskClick: (String) -> Unit
+    onNavigateToSpaceList: () -> Unit,
+    onTaskClick: (String) -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    useDynamicColors: Boolean,
+    onDynamicColorsChange: (Boolean) -> Unit
 ) {
     val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()) }
 
@@ -162,6 +170,15 @@ fun CalendarScreen(
                     }) {
                         Icon(Icons.Default.Today, contentDescription = "Go to Today")
                     }
+                    IconButton(onClick = onNavigateToSpaceList) {
+                        Icon(Icons.Default.Home, contentDescription = "Spaces")
+                    }
+                    ThemeMenuButton(
+                        themeMode = themeMode,
+                        onThemeModeChange = onThemeModeChange,
+                        useDynamicColors = useDynamicColors,
+                        onDynamicColorsChange = onDynamicColorsChange
+                    )
                 },
                 colors = appTopAppBarColors()
             )

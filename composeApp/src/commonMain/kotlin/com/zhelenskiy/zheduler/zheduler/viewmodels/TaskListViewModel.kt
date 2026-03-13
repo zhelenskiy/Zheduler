@@ -11,16 +11,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.time.ExperimentalTime
 
-enum class TaskListViewMode {
-    Chronological, Priority;
-
-    val displayName: String
-        get() = when (this) {
-            Chronological -> "Chronological"
-            Priority -> "Priority"
-        }
-}
-
 class TaskListViewModel(
     private val repository: TaskRepository,
     private val spaceId: String
@@ -47,10 +37,6 @@ class TaskListViewModel(
         }
     }
 
-    suspend fun getFilterCriteria(): TaskFilterCriteria {
-        return repository.getFilterState(spaceId)
-    }
-
     fun deleteTask(taskId: String) {
         viewModelScope.launch {
             repository.deleteTask(taskId)
@@ -63,12 +49,4 @@ class TaskListViewModel(
      */
     suspend fun getFilteredTasks(criteria: TaskFilterCriteria): List<TaskWithTotals> =
         repository.getAllWithTotalsFiltered(spaceId, criteria)
-
-    /**
-     * Get tasks grouped by resolution status using current filter state
-     */
-    suspend fun getTasksGroupedByResolutionStatus(): GroupedTasks {
-        val filteredTasks = repository.getAllWithTotalsFiltered(spaceId, getFilterCriteria())
-        return repository.groupTasksByResolutionStatus(filteredTasks)
-    }
 }

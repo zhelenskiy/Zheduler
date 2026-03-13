@@ -32,3 +32,13 @@ data class NewTaskRoute(
 
 @Serializable
 data class CalendarRoute(val spaceId: String)
+
+@Serializable
+data class ViewModeManagementRoute(val spaceId: String)
+
+@Serializable
+data class ViewModeEditorRoute(
+    val spaceId: String,
+    val viewModeId: String? = null,
+    val copyFromViewModeId: String? = null
+)
