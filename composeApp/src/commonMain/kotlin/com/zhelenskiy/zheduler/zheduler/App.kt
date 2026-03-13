@@ -26,12 +26,17 @@ import com.zhelenskiy.zheduler.zheduler.navigation.SpaceListRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.TaskDetailRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.TaskEditRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.TaskListRoute
+import com.zhelenskiy.zheduler.zheduler.navigation.ViewModeEditorRoute
+import com.zhelenskiy.zheduler.zheduler.navigation.ViewModeManagementRoute
 import com.zhelenskiy.zheduler.zheduler.screens.calendar.CalendarScreen
 import com.zhelenskiy.zheduler.zheduler.screens.newtask.NewTaskScreen
 import com.zhelenskiy.zheduler.zheduler.screens.spacelist.SpaceListScreen
 import com.zhelenskiy.zheduler.zheduler.screens.taskdetail.TaskDetailScreen
 import com.zhelenskiy.zheduler.zheduler.screens.taskedit.TaskEditScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.TaskListScreen
+import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeEditorScreen
+import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeManagementScreen
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
 
@@ -136,6 +141,9 @@ private fun AppContent() {
                     onNavigateToCalendar = {
                         navController.navigate(CalendarRoute(route.spaceId))
                     },
+                    onNavigateToViewModeManagement = {
+                        navController.navigate(ViewModeManagementRoute(route.spaceId))
+                    },
                     themeMode = themeMode,
                     onThemeModeChange = { themeMode = it },
                     useDynamicColors = useDynamicColors,
@@ -153,9 +161,16 @@ private fun AppContent() {
                     onNavigateBack = {
                         navController.popBackStack()
                     },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
                     onTaskClick = { taskId ->
                         navController.navigate(TaskDetailRoute(route.spaceId, taskId))
-                    }
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = { themeMode = it },
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = { useDynamicColors = it }
                 )
             }
 
@@ -294,6 +309,61 @@ private fun AppContent() {
                     },
                     onTaskClick = { taskId ->
                         navController.navigate(TaskDetailRoute(route.spaceId, taskId))
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = { themeMode = it },
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = { useDynamicColors = it }
+                )
+            }
+
+            composable<ViewModeManagementRoute> { backStackEntry ->
+                val route = backStackEntry.toRoute<ViewModeManagementRoute>()
+                val viewModel = remember(route.spaceId) {
+                    ViewModeViewModel(appGraph.taskRepository, route.spaceId)
+                }
+
+                ViewModeManagementScreen(
+                    viewModel = viewModel,
+                    onCreateNew = {
+                        navController.navigate(ViewModeEditorRoute(route.spaceId))
+                    },
+                    onEdit = { viewMode ->
+                        navController.navigate(ViewModeEditorRoute(route.spaceId, viewModeId = viewMode.id))
+                    },
+                    onCopy = { viewMode ->
+                        navController.navigate(ViewModeEditorRoute(route.spaceId, copyFromViewModeId = viewMode.id))
+                    },
+                    onBack = {
+                        refreshTrigger++
+                        navController.popBackStack()
+                    },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = { themeMode = it },
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = { useDynamicColors = it }
+                )
+            }
+
+            composable<ViewModeEditorRoute> { backStackEntry ->
+                val route = backStackEntry.toRoute<ViewModeEditorRoute>()
+                val viewModel = remember(route.spaceId) {
+                    ViewModeViewModel(appGraph.taskRepository, route.spaceId)
+                }
+
+                ViewModeEditorScreen(
+                    viewModel = viewModel,
+                    viewModeId = route.viewModeId,
+                    copyFromViewModeId = route.copyFromViewModeId,
+                    spaceId = route.spaceId,
+                    onSave = {
+                        navController.popBackStack()
+                    },
+                    onCancel = {
+                        navController.popBackStack()
                     },
                     themeMode = themeMode,
                     onThemeModeChange = { themeMode = it },

@@ -22,8 +22,6 @@ import kotlin.time.Instant
  * All compound operations (read-modify-write) are protected by a coroutine Mutex
  * to ensure thread safety.
  *
- * Note: Space selection is managed by the UI layer. All methods that operate
- * on tasks within a space require an explicit spaceId parameter.
  */
 class SqlDelightTaskRepository(
     private val database: ZhedulerDatabase,
@@ -516,6 +514,62 @@ class SqlDelightTaskRepository(
 
     override suspend fun saveFilterPanelOpen(spaceId: String, isOpen: Boolean) {
         queries.setFilterPanelState(spaceId, if (isOpen) 1 else 0)
+    }
+
+    // ============ View mode management ============
+
+    override suspend fun getAllViewModes(spaceId: String): List<ViewMode> {
+        val builtIn = ViewMode.getBuiltInModes(spaceId)
+        val custom = queries.getAllCustomViewModes(spaceId).awaitAsList().map { row ->
+            row.configJson.toViewMode(spaceId, row.id, row.name)
+        }
+        return builtIn + custom
+    }
+
+    override suspend fun getViewModeById(spaceId: String, viewModeId: String): ViewMode? {
+        // Check built-in modes first
+        ViewMode.getBuiltInModes(spaceId).find { it.id == viewModeId }?.let { return it }
+        // Check custom modes
+        return queries.getCustomViewModeById(spaceId, viewModeId).awaitAsOneOrNull()?.let { row ->
+            row.configJson.toViewMode(spaceId, row.id, row.name)
+        }
+    }
+
+    override suspend fun saveViewMode(viewMode: ViewMode): ViewMode {
+        require(!viewMode.isBuiltIn) { "Cannot modify built-in view modes" }
+        queries.insertOrUpdateCustomViewMode(
+            id = viewMode.id,
+            spaceId = viewMode.spaceId,
+            name = viewMode.name,
+            configJson = viewMode.toConfigJson()
+        )
+        return viewMode
+    }
+
+    override suspend fun deleteViewMode(spaceId: String, viewModeId: String): Boolean = mutex.withLock {
+        // Cannot delete built-in modes
+        if (ViewMode.getBuiltInModes(spaceId).any { it.id == viewModeId }) {
+            return false
+        }
+        val deletedCount = queries.deleteCustomViewMode(spaceId, viewModeId)
+        if (deletedCount == 0L) {
+            return false
+        }
+        // If this was the active mode, reset to default
+        val activeId = queries.getActiveViewModeId(spaceId).awaitAsOneOrNull()
+        if (activeId == viewModeId) {
+            queries.setActiveViewModeId(spaceId, "priority")
+        }
+        return true
+    }
+
+    override suspend fun getActiveViewMode(spaceId: String): ViewMode {
+        val activeId = queries.getActiveViewModeId(spaceId).awaitAsOneOrNull() ?: "priority"
+        return getViewModeById(spaceId, activeId) ?: ViewMode.priority(spaceId)
+    }
+
+    override suspend fun setActiveViewMode(spaceId: String, viewModeId: String) {
+        queries.setActiveViewModeId(spaceId, viewModeId)
     }
 
     override suspend fun exportSpaceToJson(spaceId: String, prettyPrint: Boolean): String? {

@@ -177,28 +177,6 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      */
     protected abstract suspend fun getConnectionsForTaskSync(taskId: String): Set<TaskConnection>?
 
-    // todo implement generalised
-    override suspend fun groupTasksByResolutionStatus(tasks: List<TaskWithTotals>): GroupedTasks {
-        val comparator = prioritySortComparator()
-        val unresolved = mutableListOf<TaskWithTotals>()
-        val blocked = mutableListOf<TaskWithTotals>()
-        val resolved = mutableListOf<TaskWithTotals>()
-
-        tasks.forEach { taskWithTotals ->
-            when (taskWithTotals.task.status) {
-                is TaskStatus.Done, is TaskStatus.Declined -> resolved.add(taskWithTotals)
-                is TaskStatus.Blocked -> blocked.add(taskWithTotals)
-                else -> unresolved.add(taskWithTotals)
-            }
-        }
-
-        return GroupedTasks(
-            unresolved = unresolved.sortedWith(comparator),
-            blocked = blocked.sortedWith(comparator),
-            resolved = resolved.sortedWith(comparator)
-        )
-    }
-
     protected suspend fun getCalculatedStatusFromSubtasks(subtasksIds: List<String>, getByIdUnsafe: suspend (String) -> Task?): TaskStatus? {
         val subtasks = subtasksIds.mapNotNull { getByIdUnsafe(it) }
         if (subtasks.isEmpty()) return null
@@ -875,23 +853,6 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             connection.type == connectionType && connection.targetTaskId.uppercase() in taskIds
         }
     }
-
-    /**
-     * Sorting comparator for Priority view:
-     * 1. Closeness of due time (those without due time have lower priority)
-     * 2. Descending by priority (higher priority first, null priority last)
-     * 3. Ascending by ID
-     */
-    protected fun prioritySortComparator(): Comparator<TaskWithTotals> = compareBy<TaskWithTotals>(
-        // Due date: closer dates first, null dates last
-        { it.totalDueDate == null },
-        { it.totalDueDate },
-        // Priority: higher priority first (descending), null priority last
-        { it.totalPriority == null },
-        { -(it.totalPriority?.value ?: 0) },
-        // ID: ascending
-        { it.task.id.takeLastWhile(Char::isDigit).toInt() }
-    )
 
     /**
      * Filter tasks based on the provided criteria.

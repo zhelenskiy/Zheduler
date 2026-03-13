@@ -1118,4 +1118,376 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         assertEquals(2, newRepo.getAllTasks(imported.id).size)
     }
+
+    // ==================== View Mode Tests ====================
+
+    @Test
+    fun `deleteViewMode returns false for built-in mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val result = repo.deleteViewMode(spaceId, "chronological")
+        assertFalse(result)
+        // Built-in mode should still exist
+        val viewMode = repo.getActiveViewMode(spaceId)
+        assertNotNull(viewMode)
+    }
+
+    @Test
+    fun `deleteViewMode returns false for non-existent mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val result = repo.deleteViewMode(spaceId, "non-existent-id")
+        assertFalse(result)
+    }
+
+    @Test
+    fun `deleteViewMode returns true for existing custom mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customViewMode = ViewMode(
+            id = "custom-test-mode",
+            name = "Custom Test Mode",
+            spaceId = spaceId,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customViewMode)
+
+        val result = repo.deleteViewMode(spaceId, "custom-test-mode")
+        assertTrue(result)
+
+        // Mode should no longer exist
+        val allModes = repo.getAllViewModes(spaceId)
+        assertFalse(allModes.any { it.id == "custom-test-mode" })
+    }
+
+    @Test
+    fun `deleteViewMode resets active mode when deleting active custom mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customViewMode = ViewMode(
+            id = "custom-active-mode",
+            name = "Custom Active Mode",
+            spaceId = spaceId,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customViewMode)
+        repo.setActiveViewMode(spaceId, "custom-active-mode")
+
+        // Verify it's active
+        assertEquals("custom-active-mode", repo.getActiveViewMode(spaceId).id)
+
+        // Delete it
+        val result = repo.deleteViewMode(spaceId, "custom-active-mode")
+        assertTrue(result)
+
+        // Active mode should be reset to default
+        val activeMode = repo.getActiveViewMode(spaceId)
+        assertTrue(activeMode.isBuiltIn)
+    }
+
+    @Test
+    fun `deleteViewMode twice returns false on second call`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customViewMode = ViewMode(
+            id = "delete-twice-mode",
+            name = "Delete Twice Mode",
+            spaceId = spaceId,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customViewMode)
+
+        val firstResult = repo.deleteViewMode(spaceId, "delete-twice-mode")
+        assertTrue(firstResult)
+
+        val secondResult = repo.deleteViewMode(spaceId, "delete-twice-mode")
+        assertFalse(secondResult)
+    }
+
+    // ==================== View Mode Repository Tests ====================
+
+    @Test
+    fun `getAllViewModes returns built-in modes for new space`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val viewModes = repo.getAllViewModes(spaceId)
+
+        assertTrue(viewModes.isNotEmpty())
+        assertTrue(viewModes.any { it.id == "chronological" })
+        assertTrue(viewModes.any { it.id == "priority" })
+    }
+
+    @Test
+    fun `getAllViewModes includes custom modes`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customMode = ViewMode(
+            id = "custom-mode",
+            name = "Custom Mode",
+            spaceId = spaceId,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customMode)
+
+        val viewModes = repo.getAllViewModes(spaceId)
+
+        assertTrue(viewModes.any { it.id == "custom-mode" })
+        assertTrue(viewModes.any { it.id == "chronological" })
+        assertTrue(viewModes.any { it.id == "priority" })
+    }
+
+    @Test
+    fun `getViewModeById returns built-in mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val viewMode = repo.getViewModeById(spaceId, "chronological")
+
+        assertNotNull(viewMode)
+        assertEquals("chronological", viewMode.id)
+        assertTrue(viewMode.isBuiltIn)
+    }
+
+    @Test
+    fun `getViewModeById returns custom mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customMode = ViewMode(
+            id = "custom-mode",
+            name = "Custom Mode",
+            spaceId = spaceId,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customMode)
+
+        val viewMode = repo.getViewModeById(spaceId, "custom-mode")
+
+        assertNotNull(viewMode)
+        assertEquals("custom-mode", viewMode.id)
+        assertEquals("Custom Mode", viewMode.name)
+        assertFalse(viewMode.isBuiltIn)
+    }
+
+    @Test
+    fun `getViewModeById returns null for non-existent mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val viewMode = repo.getViewModeById(spaceId, "non-existent")
+
+        assertNull(viewMode)
+    }
+
+    @Test
+    fun `saveViewMode creates new custom mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customMode = ViewMode(
+            id = "new-mode",
+            name = "New Mode",
+            spaceId = spaceId,
+            isBuiltIn = false,
+            groupingLevels = listOf(
+                GroupingLevel(
+                    field = GroupableField.Status,
+                    groups = listOf(
+                        GroupDefinition("Active", setOf("Open", "InProgress"))
+                    )
+                )
+            )
+        )
+
+        val saved = repo.saveViewMode(customMode)
+
+        assertEquals("new-mode", saved.id)
+        val retrieved = repo.getViewModeById(spaceId, "new-mode")
+        assertNotNull(retrieved)
+        assertEquals("New Mode", retrieved.name)
+        assertEquals(1, retrieved.groupingLevels.size)
+    }
+
+    @Test
+    fun `saveViewMode updates existing custom mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customMode = ViewMode(
+            id = "update-mode",
+            name = "Original Name",
+            spaceId = spaceId,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customMode)
+
+        val updatedMode = customMode.copy(name = "Updated Name")
+        repo.saveViewMode(updatedMode)
+
+        val retrieved = repo.getViewModeById(spaceId, "update-mode")
+        assertNotNull(retrieved)
+        assertEquals("Updated Name", retrieved.name)
+    }
+
+    @Test
+    fun `getActiveViewMode returns default priority mode for new space`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val activeMode = repo.getActiveViewMode(spaceId)
+
+        assertEquals("priority", activeMode.id)
+        assertTrue(activeMode.isBuiltIn)
+    }
+
+    @Test
+    fun `setActiveViewMode changes active mode`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+
+        repo.setActiveViewMode(spaceId, "chronological")
+        val activeMode = repo.getActiveViewMode(spaceId)
+
+        assertEquals("chronological", activeMode.id)
+    }
+
+    @Test
+    fun `setActiveViewMode can set custom mode as active`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val customMode = ViewMode(
+            id = "custom-active",
+            name = "Custom Active",
+            spaceId = spaceId,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customMode)
+
+        repo.setActiveViewMode(spaceId, "custom-active")
+        val activeMode = repo.getActiveViewMode(spaceId)
+
+        assertEquals("custom-active", activeMode.id)
+    }
+
+    @Test
+    fun `setActiveViewMode with non-existent mode falls back to default`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+
+        repo.setActiveViewMode(spaceId, "non-existent-mode")
+        val activeMode = repo.getActiveViewMode(spaceId)
+
+        // Should fall back to default built-in mode
+        assertTrue(activeMode.isBuiltIn)
+    }
+
+    @Test
+    fun `deleteViewMode preserves other custom modes`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+
+        repo.saveViewMode(ViewMode(id = "mode-1", name = "Mode 1", spaceId = spaceId, isBuiltIn = false))
+        repo.saveViewMode(ViewMode(id = "mode-2", name = "Mode 2", spaceId = spaceId, isBuiltIn = false))
+
+        repo.deleteViewMode(spaceId, "mode-1")
+
+        val allModes = repo.getAllViewModes(spaceId)
+        assertFalse(allModes.any { it.id == "mode-1" })
+        assertTrue(allModes.any { it.id == "mode-2" })
+    }
+
+    // ==================== getTasksByIds Tests ====================
+
+    @Test
+    fun `getTasksByIds returns empty list for empty input`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        val tasks = repo.getTasksByIds(emptySet())
+        assertTrue(tasks.isEmpty())
+    }
+
+    @Test
+    fun `getTasksByIds returns matching tasks`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        repo.addTask(spaceId, title = "Task 3")!!
+
+        val tasks = repo.getTasksByIds(setOf(task1.id, task2.id))
+
+        assertEquals(2, tasks.size)
+        assertTrue(tasks.any { it.id == task1.id })
+        assertTrue(tasks.any { it.id == task2.id })
+    }
+
+    @Test
+    fun `getTasksByIds ignores non-existent ids`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+
+        val tasks = repo.getTasksByIds(setOf(task1.id, "NON-EXISTENT-1", "NON-EXISTENT-2"))
+
+        assertEquals(1, tasks.size)
+        assertEquals(task1.id, tasks[0].id)
+    }
+
+    @Test
+    fun `getTasksByIds returns empty for all non-existent ids`() = runTest {
+        val (repo, _) = createRepositoryWithSpace()
+        val tasks = repo.getTasksByIds(setOf("NON-EXISTENT-1", "NON-EXISTENT-2"))
+        assertTrue(tasks.isEmpty())
+    }
+
+    // ==================== View Mode with Different Spaces Tests ====================
+
+    @Test
+    fun `view modes are isolated per space`() = runTest {
+        val repo = createEmptyRepository()
+        val space1 = repo.createSpace("Space 1", "ONE")!!
+        val space2 = repo.createSpace("Space 2", "TWO")!!
+
+        val customMode = ViewMode(
+            id = "space1-mode",
+            name = "Space 1 Mode",
+            spaceId = space1.id,
+            isBuiltIn = false
+        )
+        repo.saveViewMode(customMode)
+
+        val space1Modes = repo.getAllViewModes(space1.id)
+        val space2Modes = repo.getAllViewModes(space2.id)
+
+        assertTrue(space1Modes.any { it.id == "space1-mode" })
+        assertFalse(space2Modes.any { it.id == "space1-mode" })
+    }
+
+    @Test
+    fun `active view mode is isolated per space`() = runTest {
+        val repo = createEmptyRepository()
+        val space1 = repo.createSpace("Space 1", "ONE")!!
+        val space2 = repo.createSpace("Space 2", "TWO")!!
+
+        repo.setActiveViewMode(space1.id, "chronological")
+        repo.setActiveViewMode(space2.id, "priority")
+
+        assertEquals("chronological", repo.getActiveViewMode(space1.id).id)
+        assertEquals("priority", repo.getActiveViewMode(space2.id).id)
+    }
+
+    // ==================== filterTasksForSelection Tests ====================
+
+    @Test
+    fun `filterTasksForSelection excludes current task`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val task1 = repo.addTask(spaceId, title = "Task 1")!!
+        val task2 = repo.addTask(spaceId, title = "Task 2")!!
+        val task3 = repo.addTask(spaceId, title = "Task 3")!!
+
+        val result = repo.filterTasksForSelection(spaceId, task1.id)
+
+        assertEquals(2, result.size)
+        assertFalse(result.any { it.id == task1.id })
+        assertTrue(result.any { it.id == task2.id })
+        assertTrue(result.any { it.id == task3.id })
+    }
+
+    @Test
+    fun `filterTasksForSelection with search query`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTask(spaceId, title = "Apple Task")!!
+        repo.addTask(spaceId, title = "Banana Task")!!
+        repo.addTask(spaceId, title = "Cherry Task")!!
+
+        val result = repo.filterTasksForSelection(spaceId, null, "Apple")
+
+        assertEquals(1, result.size)
+        assertEquals("Apple Task", result[0].title)
+    }
+
+    @Test
+    fun `filterTasksForSelection with null excludeTaskId returns all tasks`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTask(spaceId, title = "Task 1")!!
+        repo.addTask(spaceId, title = "Task 2")!!
+
+        val result = repo.filterTasksForSelection(spaceId, null)
+
+        assertEquals(2, result.size)
+    }
 }

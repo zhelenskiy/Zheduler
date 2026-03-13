@@ -1,0 +1,1149 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.TagSelectionDialog
+import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
+import org.jetbrains.compose.resources.painterResource
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import zheduler.composeapp.generated.resources.Res
+import zheduler.composeapp.generated.resources.ic_align_end
+import zheduler.composeapp.generated.resources.ic_align_start
+
+@Composable
+fun ViewModeEditorScreen(
+    viewModel: ViewModeViewModel,
+    viewModeId: String?,
+    copyFromViewModeId: String?,
+    spaceId: String,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    useDynamicColors: Boolean,
+    onDynamicColorsChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val allTags by viewModel.allTags.collectAsState()
+    val isCopy = copyFromViewModeId != null
+
+    var viewMode by remember { mutableStateOf<ViewMode?>(null) }
+    LaunchedEffect(viewModeId, copyFromViewModeId) {
+        viewMode = when {
+            viewModeId != null -> viewModel.getViewModeById(viewModeId)
+            copyFromViewModeId != null -> viewModel.getViewModeById(copyFromViewModeId)?.let {
+                viewModel.copyViewMode(it)
+            }
+            else -> null
+        }
+    }
+    val state = rememberViewModeEditorState(viewMode, spaceId, isCopy)
+    val validationResult by remember {
+        derivedStateOf { state.validate() }
+    }
+    val isValid = validationResult is GroupingValidationResult.Valid
+    val isNewMode = viewMode == null
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Discard changes?") },
+            text = { Text("You have unsaved changes. Are you sure you want to discard them?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onCancel()
+                }) {
+                    Text("Discard")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text("Keep editing")
+                }
+            }
+        )
+    }
+
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            TopAppBar(
+                title = { Text(if (isNewMode) "New View Mode" else "Edit View Mode") },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        if (state.hasChanges()) {
+                            showDiscardDialog = true
+                        } else {
+                            onCancel()
+                        }
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cancel")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            viewModel.saveViewMode(state.toViewMode())
+                            onSave()
+                        },
+                        enabled = isValid && state.name.isNotBlank()
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = "Save")
+                    }
+                    ThemeMenuButton(
+                        themeMode = themeMode,
+                        onThemeModeChange = onThemeModeChange,
+                        useDynamicColors = useDynamicColors,
+                        onDynamicColorsChange = onDynamicColorsChange
+                    )
+                },
+                colors = appTopAppBarColors()
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Name field
+            item {
+                OutlinedTextField(
+                    value = state.name,
+                    onValueChange = { state.name = it },
+                    label = { Text("View Mode Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = state.name.isBlank()
+                )
+            }
+
+            item {
+                ValidationStatusCard(validationResult, state.name.isBlank())
+            }
+
+            item {
+                GroupingLevelsSection(state, allTags)
+            }
+
+            item {
+                DefaultOrderingRulesSection(state)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ValidationStatusCard(validationResult: GroupingValidationResult, isNameBlank: Boolean) {
+    val errors = buildList {
+        if (isNameBlank) {
+            add("Name is required")
+        }
+        when (validationResult) {
+            is GroupingValidationResult.Valid -> {}
+            is GroupingValidationResult.Invalid -> {
+                validationResult.errors.forEach { error ->
+                    when (error) {
+                        is GroupingValidationError.EmptyGroup -> {
+                            add("Group '${error.groupLabel.ifBlank { "(unnamed)" }}' in ${error.field.displayName} has no values")
+                        }
+                        is GroupingValidationError.EmptyGroupLabel -> {
+                            add("A group in ${error.field.displayName} has no name")
+                        }
+                        is GroupingValidationError.InvalidRange -> {
+                            add("Group '${error.groupLabel.ifBlank { "(unnamed)" }}' in ${error.field.displayName} has invalid range")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Skip animation on initial composition to avoid flicker
+    var initialComposition by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        initialComposition = false
+    }
+
+    if (initialComposition) {
+        if (errors.isNotEmpty()) {
+            ValidationErrorsCard(errors)
+        }
+    } else {
+        AnimatedVisibility(
+            visible = errors.isNotEmpty(),
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            ValidationErrorsCard(errors)
+        }
+    }
+}
+
+@Composable
+private fun ValidationErrorsCard(errors: List<String>) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            errors.forEach { error ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Error,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+private sealed class LevelEditorMode {
+    data class Edit(val index: Int) : LevelEditorMode()
+    data object Create : LevelEditorMode()
+}
+
+@Composable
+private fun GroupingLevelsSection(state: ViewModeEditorState, allTags: Set<String>) {
+    val lazyListState = rememberLazyListState()
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        state.moveGroupingLevel(from.index, to.index)
+    }
+    var editorMode by remember { mutableStateOf<LevelEditorMode?>(null) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Grouping Levels", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { editorMode = LevelEditorMode.Create }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add grouping level")
+                }
+            }
+
+            if (state.groupingLevels.isEmpty()) {
+                Text(
+                    "No grouping - tasks will be shown in a flat list",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(
+                    state = lazyListState,
+                    modifier = Modifier.heightIn(max = 400.dp)
+                ) {
+                    items(state.groupingLevels.size, key = { state.groupingLevels[it].id }) { index ->
+                        ReorderableItem(reorderableLazyListState, key = state.groupingLevels[index].id) { isDragging ->
+                            val elevation by animateDpAsState(if (isDragging) 8.dp else 1.dp)
+
+                            GroupingLevelSummaryCard(
+                                level = state.groupingLevels[index],
+                                index = index,
+                                onEdit = { editorMode = LevelEditorMode.Edit(index) },
+                                onRemove = { state.removeGroupingLevel(index) },
+                                dragModifier = Modifier.draggableHandle(),
+                                modifier = Modifier
+                                    .animateItem()
+                                    .padding(vertical = 4.dp)
+                                    .shadow(elevation, shape = MaterialTheme.shapes.medium)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Editor dialog - works on a copy, applies only on Done
+    when (val mode = editorMode) {
+        is LevelEditorMode.Edit -> {
+            val index = mode.index
+            if (index in state.groupingLevels.indices) {
+                // Create a working copy from current state
+                val initialSnapshot = remember(index) { state.groupingLevels[index].createSnapshot() }
+                val workingCopy = remember(index) {
+                    GroupingLevelState().apply { restoreFromSnapshot(initialSnapshot) }
+                }
+
+                GroupingLevelEditorDialog(
+                    level = workingCopy,
+                    levelIndex = index,
+                    allTags = allTags,
+                    onDone = {
+                        // Apply changes from working copy to actual state
+                        state.groupingLevels[index].restoreFromSnapshot(workingCopy.createSnapshot())
+                        editorMode = null
+                    },
+                    onCancel = {
+                        // Just close - original state is unchanged
+                        editorMode = null
+                    }
+                )
+            }
+        }
+        is LevelEditorMode.Create -> {
+            // Create a fresh working copy for new level
+            val workingCopy = remember { GroupingLevelState() }
+
+            GroupingLevelEditorDialog(
+                level = workingCopy,
+                levelIndex = state.groupingLevels.size,
+                allTags = allTags,
+                onDone = {
+                    // Add the new level from working copy
+                    state.groupingLevels.add(
+                        GroupingLevelState().apply { restoreFromSnapshot(workingCopy.createSnapshot()) }
+                    )
+                    editorMode = null
+                },
+                onCancel = {
+                    // Just close - nothing added
+                    editorMode = null
+                }
+            )
+        }
+        null -> {}
+    }
+}
+
+@Composable
+private fun GroupingLevelSummaryCard(
+    level: GroupingLevelState,
+    index: Int,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+    dragModifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        onClick = onEdit
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        Icons.Default.DragHandle,
+                        contentDescription = "Drag to reorder",
+                        modifier = dragModifier
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            "Level ${index + 1}: ${level.field.displayName}",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            "${level.groups.size} groups" + if (level.showEmptyGroups) " (show empty)" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (level.groups.isNotEmpty()) {
+                            Text(
+                                level.groups.joinToString(", ") { it.label.ifBlank { "(unnamed)" } },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Row {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit")
+                    }
+                    IconButton(onClick = onRemove) {
+                        Icon(Icons.Default.Delete, contentDescription = "Remove")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupingLevelEditorDialog(
+    level: GroupingLevelState,
+    levelIndex: Int,
+    allTags: Set<String>,
+    onDone: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val lazyListState = rememberLazyListState()
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        // Offset by 4 for the header items (field selector, checkbox, validation errors, groups header)
+        val hasErrors = level.validate().isNotEmpty()
+        val headerCount = if (hasErrors) 4 else 3
+        level.moveGroup(from.index - headerCount, to.index - headerCount)
+    }
+
+    val validationErrors by remember { derivedStateOf { level.validate() } }
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.9f),
+        title = { Text("Edit Level ${levelIndex + 1}") },
+        text = {
+            LazyColumn(
+                state = lazyListState,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(key = "field_selector") {
+                    GroupableFieldSelector(
+                        selected = level.field,
+                        onSelect = {
+                            if (level.field != it) {
+                                level.field = it
+                                level.initializeDefaultGroups()
+                            }
+                        }
+                    )
+                }
+
+                item(key = "show_empty") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = level.showEmptyGroups,
+                            onCheckedChange = { level.showEmptyGroups = it }
+                        )
+                        Text("Show empty groups")
+                    }
+                }
+
+                // Show validation errors in the dialog
+                item(key = "validation_errors") {
+                    AnimatedVisibility(
+                        visible = validationErrors.isNotEmpty(),
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                validationErrors.forEach { error ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Error,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = when (error) {
+                                                is GroupingValidationError.EmptyGroup ->
+                                                    "Group '${error.groupLabel.ifBlank { "(unnamed)" }}' has no values"
+                                                is GroupingValidationError.EmptyGroupLabel ->
+                                                    "A group has no name"
+                                                is GroupingValidationError.InvalidRange ->
+                                                    "Group '${error.groupLabel.ifBlank { "(unnamed)" }}' has invalid range"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item(key = "groups_header") {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Groups", style = MaterialTheme.typography.labelLarge)
+                            IconButton(
+                                onClick = { level.addGroup() },
+                                enabled = level.canAddGroup()
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add group")
+                            }
+                        }
+
+                        if (level.field.requiresExhaustiveCoverage()) {
+                            val allValues = level.field.getAllPossibleValues()
+                            val usedValues = level.groups.flatMap { it.values }.toSet()
+                            val availableValues = allValues - usedValues
+                            if (availableValues.isNotEmpty()) {
+                                Text(
+                                    "Available values: ${availableValues.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(level.groups.size, key = { level.groups[it].id }) { groupIndex ->
+                    ReorderableItem(reorderableLazyListState, key = level.groups[groupIndex].id) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
+
+                        GroupDefinitionCard(
+                            group = level.groups[groupIndex],
+                            field = level.field,
+                            allTags = allTags,
+                            onRemove = { level.removeGroup(groupIndex) },
+                            dragModifier = Modifier.draggableHandle(),
+                            modifier = Modifier
+                                .animateItem()
+                                .shadow(elevation)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDone,
+                enabled = validationErrors.isEmpty()
+            ) {
+                Text("Done")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun GroupableFieldSelector(
+    selected: GroupableField,
+    onSelect: (GroupableField) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        OutlinedTextField(
+            value = selected.displayName,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Group by") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            GroupableField.entries.forEach { field ->
+                DropdownMenuItem(
+                    text = { Text(field.displayName) },
+                    onClick = {
+                        onSelect(field)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupDefinitionCard(
+    group: GroupDefinitionState,
+    field: GroupableField,
+    allTags: Set<String> = emptySet(),
+    onRemove: () -> Unit,
+    dragModifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    modifier = dragModifier
+                )
+                OutlinedTextField(
+                    value = group.label,
+                    onValueChange = { group.label = it },
+                    label = { Text("Group label") },
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    singleLine = true,
+                    isError = group.label.isBlank(),
+                    supportingText = if (group.label.isBlank()) {{ Text("Label is required") }} else null
+                )
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove")
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Show custom range inputs for numeric fields, predefined values for others
+            when (field) {
+                GroupableField.Priority -> {
+                    // Priority range UI (0-100)
+                    val priorityError = group.validatePriorityRange()
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = group.priorityMinText,
+                                onValueChange = { group.priorityMinText = it },
+                                label = { Text("Min") },
+                                modifier = Modifier.width(80.dp),
+                                singleLine = true,
+                                isError = priorityError != null
+                            )
+                            Text("to")
+                            OutlinedTextField(
+                                value = group.priorityMaxText,
+                                onValueChange = { group.priorityMaxText = it },
+                                label = { Text("Max") },
+                                modifier = Modifier.width(80.dp),
+                                singleLine = true,
+                                isError = priorityError != null
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = group.includeNoPriority,
+                                onCheckedChange = { group.includeNoPriority = it }
+                            )
+                            Text("Include tasks without priority", style = MaterialTheme.typography.bodySmall)
+                        }
+                        AnimatedVisibility(
+                            visible = priorityError != null,
+                            enter = expandVertically(),
+                            exit = shrinkVertically()
+                        ) {
+                            Text(
+                                priorityError ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+                GroupableField.EstimatedTime -> {
+                    // Estimated time range UI
+                    val timeError = group.validateEstimatedTimeRange()
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = group.estimatedTimeMinText,
+                                onValueChange = { group.estimatedTimeMinText = it },
+                                label = { Text("Min") },
+                                modifier = Modifier.width(100.dp),
+                                singleLine = true,
+                                isError = timeError != null
+                            )
+                            Text("to")
+                            OutlinedTextField(
+                                value = group.estimatedTimeMaxText,
+                                onValueChange = { group.estimatedTimeMaxText = it },
+                                label = { Text("Max") },
+                                modifier = Modifier.width(100.dp),
+                                singleLine = true,
+                                isError = timeError != null
+                            )
+                        }
+                        Text(
+                            "Format: 2h 30m, 1d, 1w 2d",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = group.includeNoEstimatedTime,
+                                onCheckedChange = { group.includeNoEstimatedTime = it }
+                            )
+                            Text("Include tasks without estimate", style = MaterialTheme.typography.bodySmall)
+                        }
+                        AnimatedVisibility(
+                            visible = timeError != null,
+                            enter = expandVertically(),
+                            exit = shrinkVertically()
+                        ) {
+                            Text(
+                                timeError ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+                GroupableField.DueDate -> {
+                    // Due date range UI (days from today)
+                    val dueDateError = group.validateDueDateRange()
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = group.dueDateMinDaysText,
+                                onValueChange = { group.dueDateMinDaysText = it },
+                                label = { Text("From") },
+                                modifier = Modifier.width(80.dp),
+                                singleLine = true,
+                                isError = dueDateError != null
+                            )
+                            Text("to")
+                            OutlinedTextField(
+                                value = group.dueDateMaxDaysText,
+                                onValueChange = { group.dueDateMaxDaysText = it },
+                                label = { Text("To") },
+                                modifier = Modifier.width(80.dp),
+                                singleLine = true,
+                                isError = dueDateError != null
+                            )
+                            Text("days")
+                        }
+                        Text(
+                            "Negative = past, 0 = today, positive = future",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = group.includeNoDueDate,
+                                onCheckedChange = { group.includeNoDueDate = it }
+                            )
+                            Text("Include tasks without due date", style = MaterialTheme.typography.bodySmall)
+                        }
+                        AnimatedVisibility(
+                            visible = dueDateError != null,
+                            enter = expandVertically(),
+                            exit = shrinkVertically()
+                        ) {
+                            Text(
+                                dueDateError ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    // Predefined values UI
+                    Text("Values:", style = MaterialTheme.typography.labelMedium)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        group.values.forEach { value ->
+                            InputChip(
+                                selected = true,
+                                onClick = { group.removeValue(value) },
+                                label = { Text(value) },
+                                trailingIcon = {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", Modifier.size(16.dp))
+                                }
+                            )
+                        }
+
+                        // Add value button/dropdown for fields with predefined values
+                        if (field.requiresExhaustiveCoverage()) {
+                            val availableValues = field.getAllPossibleValues() - group.values.toSet()
+                            if (availableValues.isNotEmpty()) {
+                                var showMenu by remember { mutableStateOf(false) }
+                                Box {
+                                    AssistChip(
+                                        onClick = { showMenu = true },
+                                        label = { Text("+") }
+                                    )
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false }
+                                    ) {
+                                        availableValues.forEach { value ->
+                                            DropdownMenuItem(
+                                                text = { Text(value) },
+                                                onClick = {
+                                                    group.addValue(value)
+                                                    showMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (field == GroupableField.Tags) {
+                            // For tags, use the TagSelectionDialog
+                            var showTagDialog by remember { mutableStateOf(false) }
+                            AssistChip(
+                                onClick = { showTagDialog = true },
+                                label = { Text("Add tag") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Add, contentDescription = null, Modifier.size(16.dp))
+                                }
+                            )
+                            if (showTagDialog) {
+                                TagSelectionDialog(
+                                    selectedTags = group.values.toSet(),
+                                    filterTags = { query, excludeTags ->
+                                        allTags
+                                            .filter { it !in excludeTags }
+                                            .filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+                                            .sorted()
+                                    },
+                                    onDismiss = { showTagDialog = false },
+                                    onTagSelected = { tag ->
+                                        group.addValue(tag)
+                                        showTagDialog = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Group-specific ordering (collapsible)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (group.orderingRules.isEmpty()) "Order (uses default)"
+                        else "Order (${group.orderingRules.size} rules)"
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                GroupOrderingRulesSection(group)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupOrderingRulesSection(group: GroupDefinitionState) {
+    val lazyListState = rememberLazyListState()
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        group.moveOrderingRule(from.index, to.index)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Order rules", style = MaterialTheme.typography.labelMedium)
+            Row {
+                if (group.orderingRules.isNotEmpty()) {
+                    TextButton(onClick = { group.orderingRules.clear() }) {
+                        Text("Clear")
+                    }
+                }
+                IconButton(onClick = { group.addOrderingRule() }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add ordering rule")
+                }
+            }
+        }
+
+        if (group.orderingRules.isEmpty()) {
+            Text(
+                "Using default ordering",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.heightIn(max = 200.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(group.orderingRules.size, key = { group.orderingRules[it].id }) { index ->
+                    ReorderableItem(reorderableLazyListState, key = group.orderingRules[index].id) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 8.dp else 1.dp)
+
+                        OrderingRuleRow(
+                            rule = group.orderingRules[index],
+                            onRemove = { group.removeOrderingRule(index) },
+                            dragModifier = Modifier.draggableHandle(),
+                            modifier = Modifier.shadow(elevation, shape = MaterialTheme.shapes.small)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultOrderingRulesSection(state: ViewModeEditorState) {
+    val lazyListState = rememberLazyListState()
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        state.moveOrderingRule(from.index, to.index)
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Default Order", style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = { state.addOrderingRule() }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add ordering rule")
+                }
+            }
+
+            Text(
+                "Applied when groups don't have custom order",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.heightIn(max = 300.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(state.defaultOrderingRules.size, key = { state.defaultOrderingRules[it].id }) { index ->
+                    ReorderableItem(reorderableLazyListState, key = state.defaultOrderingRules[index].id) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 8.dp else 1.dp)
+
+                        OrderingRuleRow(
+                            rule = state.defaultOrderingRules[index],
+                            onRemove = { state.removeOrderingRule(index) },
+                            canRemove = state.defaultOrderingRules.size > 1,
+                            dragModifier = Modifier.draggableHandle(),
+                            modifier = Modifier.shadow(elevation, shape = MaterialTheme.shapes.small)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderingRuleRow(
+    rule: OrderingRuleState,
+    onRemove: () -> Unit,
+    canRemove: Boolean = true,
+    dragModifier: Modifier = Modifier,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Drag handle
+            Icon(
+                Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder",
+                modifier = dragModifier
+            )
+
+            // Field selector
+            var fieldExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = fieldExpanded,
+                onExpandedChange = { fieldExpanded = it },
+                modifier = Modifier.weight(1f)
+            ) {
+                OutlinedTextField(
+                    value = rule.field.displayName,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Field") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fieldExpanded) },
+                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryEditable)
+                )
+                ExposedDropdownMenu(
+                    expanded = fieldExpanded,
+                    onDismissRequest = { fieldExpanded = false }
+                ) {
+                    OrderableField.entries.forEach { field ->
+                        DropdownMenuItem(
+                            text = { Text(field.displayName) },
+                            onClick = {
+                                rule.field = field
+                                fieldExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Null position toggle (only for nullable fields)
+            if (rule.field.canBeNull()) {
+                IconButton(
+                    onClick = {
+                        rule.nullPosition = if (rule.nullPosition == NullPosition.First)
+                            NullPosition.Last else NullPosition.First
+                    }
+                ) {
+                    NullPositionIcon(rule.nullPosition)
+                }
+            }
+
+            // Direction toggle
+            IconButton(
+                onClick = {
+                    rule.direction = if (rule.direction == OrderDirection.Ascending)
+                        OrderDirection.Descending else OrderDirection.Ascending
+                }
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Sort,
+                    contentDescription = rule.direction.displayName,
+                    modifier = if (rule.direction == OrderDirection.Ascending)
+                        Modifier.scale(scaleX = 1f, scaleY = -1f) else Modifier
+                )
+            }
+
+            // Remove button
+            IconButton(onClick = onRemove, enabled = canRemove) {
+                Icon(Icons.Default.Delete, contentDescription = "Remove")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NullPositionIcon(nullPosition: NullPosition) {
+    val density = LocalDensity.current
+    // Use fixed pixel size independent of density
+    val textSize = with(density) { 8.dp.toSp() }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        if (nullPosition == NullPosition.First) {
+            Text(
+                text = "null",
+                fontSize = textSize,
+                fontWeight = FontWeight.Bold,
+                lineHeight = textSize
+            )
+            Icon(
+                painterResource(Res.drawable.ic_align_start),
+                contentDescription = "Nulls first",
+                modifier = Modifier.size(16.dp)
+            )
+        } else {
+            Icon(
+                painterResource(Res.drawable.ic_align_end),
+                contentDescription = "Nulls last",
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "null",
+                fontSize = textSize,
+                fontWeight = FontWeight.Bold,
+                lineHeight = textSize
+            )
+        }
+    }
+}

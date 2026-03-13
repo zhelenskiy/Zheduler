@@ -22,6 +22,7 @@ kotlinx-coroutines = "1.10.2"
 kotlinx-datetime = "0.7.1"
 kotlinx-serialization = "1.8.0"
 navigation = "2.9.1"
+reorderable = "3.0.0"
 richeditor = "1.0.0-rc13"
 ktor = "3.3.3"
 logback = "1.5.24"
@@ -58,6 +59,7 @@ kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-s
 kotlinx-serializationJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "navigation" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 richeditor-compose = { module = "com.mohamedrejeb.richeditor:richeditor-compose", version.ref = "richeditor" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 ktor-serverCore = { module = "io.ktor:ktor-server-core-jvm", version.ref = "ktor" }

@@ -1,10 +1,11 @@
-@file:OptIn(ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class, ExperimentalMaterial3Api::class)
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,14 +15,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskCard
@@ -34,7 +39,6 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDia
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
-import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewMode
 import kotlin.time.ExperimentalTime
 
 @Composable
@@ -71,7 +75,8 @@ private fun rememberRepositoryFilterState(
 }
 
 private data class TaskListUiData(
-    val viewMode: TaskListViewMode,
+    val activeViewMode: ViewMode,
+    val viewModes: List<ViewMode>,
     val isFilterPanelOpen: Boolean,
     val filteredTasks: List<TaskWithTotals>
 )
@@ -86,16 +91,15 @@ private fun rememberTaskListUiState(
 ): MutableState<ScreenState<TaskListUiData>> {
     val uiState = remember { mutableStateOf<ScreenState<TaskListUiData>>(ScreenState.Loading) }
 
-    // Load view mode from repository
+    // Load view modes from repository
     LaunchedEffect(spaceId) {
         if (spaceId != null) {
-            val viewMode = when (repository.getViewMode(spaceId)) {
-                "Chronological" -> TaskListViewMode.Chronological
-                else -> TaskListViewMode.Priority
-            }
+            val viewModes = repository.getAllViewModes(spaceId)
+            val activeViewMode = repository.getActiveViewMode(spaceId)
             val isFilterPanelOpen = repository.getFilterPanelOpen(spaceId)
             val data = TaskListUiData(
-                viewMode = viewMode,
+                activeViewMode = activeViewMode,
+                viewModes = viewModes,
                 isFilterPanelOpen = isFilterPanelOpen,
                 filteredTasks = emptyList()
             )
@@ -113,12 +117,12 @@ private fun rememberTaskListUiState(
             }
     }
 
-    // Save view mode
+    // Save active view mode
     LaunchedEffect(uiState.value) {
         val data = (uiState.value as? ScreenState.InitiallyLoaded)?.data
             ?: (uiState.value as? ScreenState.Ready)?.data
         if (data != null && spaceId != null) {
-            repository.saveViewMode(spaceId, data.viewMode.name)
+            repository.setActiveViewMode(spaceId, data.activeViewMode.id)
         }
     }
 
@@ -143,12 +147,11 @@ private fun rememberTaskListUiState(
     return uiState
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TaskListTopAppBar(
     spaceName: String?,
-    viewMode: TaskListViewMode,
-    onViewModeToggle: () -> Unit,
+    viewModeName: String,
+    onViewModeClick: () -> Unit,
     onNavigateToCalendar: () -> Unit,
     onNavigateToSpaceList: () -> Unit,
     themeMode: ThemeMode,
@@ -166,17 +169,10 @@ private fun TaskListTopAppBar(
             }
         },
         actions = {
-            IconButton(onClick = onViewModeToggle) {
-                Icon(
-                    imageVector = when (viewMode) {
-                        TaskListViewMode.Chronological -> Icons.Default.Schedule
-                        TaskListViewMode.Priority -> Icons.Default.ViewAgenda
-                    },
-                    contentDescription = when (viewMode) {
-                        TaskListViewMode.Chronological -> "Switch to Priority view"
-                        TaskListViewMode.Priority -> "Switch to Chronological view"
-                    }
-                )
+            TextButton(onClick = onViewModeClick) {
+                Icon(Icons.AutoMirrored.Filled.ViewList, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(viewModeName, style = MaterialTheme.typography.labelMedium)
             }
             IconButton(onClick = onNavigateToCalendar) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = "Calendar")
@@ -254,14 +250,27 @@ private fun TaskListEmptyStates(
     }
 }
 
+/**
+ * Displays tasks according to the view mode's grouping and ordering configuration.
+ */
 @Composable
-private fun ChronologicalTaskList(
+private fun DynamicTaskList(
+    viewMode: ViewMode,
     filteredTasks: List<TaskWithTotals>,
     shouldAnimate: Boolean,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
 ) {
+    val taskGroups = remember(viewMode, filteredTasks) {
+        viewMode.applyTo(filteredTasks)
+    }
+
+    // Track collapsed state for each group by its key (survives configuration changes)
+    var collapsedGroupsSet by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    // Track expanded state for uncategorized groups (collapsed by default)
+    var expandedUncategorizedSet by rememberSaveable { mutableStateOf(emptySet<String>()) }
+
     AnimatedVisibility(
         visible = filteredTasks.isNotEmpty(),
         enter = if (shouldAnimate) fadeIn() else EnterTransition.None,
@@ -272,87 +281,156 @@ private fun ChronologicalTaskList(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 16.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)
         ) {
-            items(filteredTasks, key = { it.task.id }) { taskWithTotals ->
-                TaskCard(
-                    taskWithTotals = taskWithTotals,
-                    onClick = { onTaskClick(taskWithTotals.task.id) },
-                    onDelete = { onDelete(taskWithTotals) },
-                    onCopy = { onCopy(taskWithTotals.task.id) },
-                    modifier = Modifier.animateItem(),
+            TaskGroupItems(
+                groups = taskGroups,
+                collapsedGroups = collapsedGroupsSet,
+                expandedUncategorized = expandedUncategorizedSet,
+                onToggleCollapse = { key ->
+                    collapsedGroupsSet = if (key in collapsedGroupsSet) {
+                        collapsedGroupsSet - key
+                    } else {
+                        collapsedGroupsSet + key
+                    }
+                },
+                onToggleUncategorized = { key ->
+                    expandedUncategorizedSet = if (key in expandedUncategorizedSet) {
+                        expandedUncategorizedSet - key
+                    } else {
+                        expandedUncategorizedSet + key
+                    }
+                },
+                onTaskClick = onTaskClick,
+                onDelete = onDelete,
+                onCopy = onCopy,
+                parentKey = ""
+            )
+        }
+    }
+}
+
+/**
+ * Recursively adds task group items to the LazyListScope.
+ */
+private fun LazyListScope.TaskGroupItems(
+    groups: List<TaskGroup>,
+    collapsedGroups: Set<String>,
+    expandedUncategorized: Set<String>,
+    onToggleCollapse: (String) -> Unit,
+    onToggleUncategorized: (String) -> Unit,
+    onTaskClick: (String) -> Unit,
+    onDelete: (TaskWithTotals) -> Unit,
+    onCopy: (String) -> Unit,
+    parentKey: String
+) {
+    for (group in groups) {
+        val displayLabel = if (group.isUncategorized) "Uncategorized" else group.label
+        val groupKey = if (parentKey.isEmpty()) displayLabel else "${parentKey}_$displayLabel"
+        val isCollapsed = if (group.isUncategorized) {
+            groupKey !in expandedUncategorized // Uncategorized collapsed by default
+        } else {
+            groupKey in collapsedGroups
+        }
+
+        val showHeader = group.label.isNotEmpty() || group.isUncategorized
+
+        // Add group header
+        if (showHeader) {
+            item(key = "header_$groupKey") {
+                val rotationAngle by animateFloatAsState(
+                    targetValue = if (isCollapsed) 0f else 90f,
+                    label = "collapse_rotation"
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem()
+                        .padding(
+                            top = if (group.level == 0) 2.dp else 0.dp,
+                            bottom = if (group.level == 0) 2.dp else 0.dp,
+                            start = (group.level * 16).dp,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (group.isUncategorized) {
+                                onToggleUncategorized(groupKey)
+                            } else {
+                                onToggleCollapse(groupKey)
+                            }
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = if (isCollapsed) "Expand" else "Collapse",
+                            tint = if (group.isUncategorized)
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            else
+                                MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp).rotate(rotationAngle)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = displayLabel,
+                        style = if (group.level == 0)
+                            MaterialTheme.typography.titleMedium
+                        else
+                            MaterialTheme.typography.titleSmall,
+                        fontStyle = if (group.isUncategorized) FontStyle.Italic else FontStyle.Normal,
+                        color = if (group.isUncategorized)
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        else
+                            MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+
+        // Add children only if not collapsed (or if there's no header to collapse)
+        if (!isCollapsed || !showHeader) {
+            if (group.subgroups.isNotEmpty()) {
+                // Recursively add subgroup items
+                TaskGroupItems(
+                    groups = group.subgroups,
+                    collapsedGroups = collapsedGroups,
+                    expandedUncategorized = expandedUncategorized,
+                    onToggleCollapse = onToggleCollapse,
+                    onToggleUncategorized = onToggleUncategorized,
+                    onTaskClick = onTaskClick,
+                    onDelete = onDelete,
+                    onCopy = onCopy,
+                    parentKey = groupKey
+                )
+            } else {
+                // Add task items at leaf level
+                items(group.tasks, key = { "${groupKey}_${it.task.id}" }) { taskWithTotals ->
+                    TaskCard(
+                        taskWithTotals = taskWithTotals,
+                        onClick = { onTaskClick(taskWithTotals.task.id) },
+                        onDelete = { onDelete(taskWithTotals) },
+                        onCopy = { onCopy(taskWithTotals.task.id) },
+                        modifier = Modifier
+                            .animateItem()
+                            .padding(start = (group.level * 16).dp),
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PriorityTaskList(
-    filteredTasks: List<TaskWithTotals>,
-    tasksWithTotals: List<TaskWithTotals>,
-    filterState: TaskFilterState,
-    viewModel: TaskListViewModel,
-    shouldAnimate: Boolean,
-    onTaskClick: (String) -> Unit,
-    onDelete: (TaskWithTotals) -> Unit,
-    onCopy: (String) -> Unit,
-) {
-    var groupedTasks by remember { mutableStateOf(GroupedTasks(emptyList(), emptyList(), emptyList())) }
-    val currentFilterCriteria = filterState.toCriteria()
-
-    LaunchedEffect(tasksWithTotals, currentFilterCriteria) {
-        groupedTasks = viewModel.getTasksGroupedByResolutionStatus()
-    }
-
-    AnimatedVisibility(
-        visible = filteredTasks.isNotEmpty(),
-        enter = if (shouldAnimate) fadeIn() else EnterTransition.None,
-        exit = if (shouldAnimate) fadeOut() else ExitTransition.None,
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
-        ) {
-            PriorityViewTaskGroup(
-                title = "Unresolved",
-                tasks = groupedTasks.unresolved,
-                onTaskClick = onTaskClick,
-                onDelete = onDelete,
-                onCopy = onCopy
-            )
-
-            PriorityViewTaskGroup(
-                title = "Blocked",
-                tasks = groupedTasks.blocked,
-                onTaskClick = onTaskClick,
-                onDelete = onDelete,
-                onCopy = onCopy
-            )
-
-            PriorityViewTaskGroup(
-                title = "Resolved",
-                tasks = groupedTasks.resolved,
-                onTaskClick = onTaskClick,
-                onDelete = onDelete,
-                onCopy = onCopy
-            )
-        }
-    }
-}
-
-@Composable
 private fun TaskListContent(
-    viewModel: TaskListViewModel,
     tasksWithTotals: List<TaskWithTotals>,
     filteredTasks: List<TaskWithTotals>,
     filterState: TaskFilterState,
     allTags: Set<String>,
     spaceIdPrefix: String?,
-    viewMode: TaskListViewMode,
+    viewMode: ViewMode,
     isFilterPanelOpen: Boolean,
     onToggleFilterPanel: () -> Unit,
     shouldAnimate: Boolean,
@@ -380,30 +458,18 @@ private fun TaskListContent(
                 onClearFilters = { filterState.clearAll() }
             )
 
-            when (viewMode) {
-                TaskListViewMode.Chronological -> ChronologicalTaskList(
-                    filteredTasks = filteredTasks,
-                    shouldAnimate = shouldAnimate,
-                    onTaskClick = onTaskClick,
-                    onDelete = onDelete,
-                    onCopy = onCopy
-                )
-                TaskListViewMode.Priority -> PriorityTaskList(
-                    filteredTasks = filteredTasks,
-                    tasksWithTotals = tasksWithTotals,
-                    filterState = filterState,
-                    viewModel = viewModel,
-                    shouldAnimate = shouldAnimate,
-                    onTaskClick = onTaskClick,
-                    onDelete = onDelete,
-                    onCopy = onCopy
-                )
-            }
+            DynamicTaskList(
+                viewMode = viewMode,
+                filteredTasks = filteredTasks,
+                shouldAnimate = shouldAnimate,
+                onTaskClick = onTaskClick,
+                onDelete = onDelete,
+                onCopy = onCopy
+            )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskListScreen(
     viewModel: TaskListViewModel,
@@ -415,6 +481,7 @@ fun TaskListScreen(
     onRefresh: () -> Unit,
     onNavigateToSpaceList: () -> Unit,
     onNavigateToCalendar: () -> Unit,
+    onNavigateToViewModeManagement: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
@@ -446,19 +513,8 @@ fun TaskListScreen(
         topBar = {
             TaskListTopAppBar(
                 spaceName = currentSpace?.name,
-                viewMode = uiData?.viewMode ?: TaskListViewMode.Priority,
-                onViewModeToggle = {
-                    val data = uiData ?: return@TaskListTopAppBar
-                    val newViewMode = when (data.viewMode) {
-                        TaskListViewMode.Chronological -> TaskListViewMode.Priority
-                        TaskListViewMode.Priority -> TaskListViewMode.Chronological
-                    }
-                    uiState.value = when (currentUiState) {
-                        is ScreenState.Loading -> currentUiState
-                        is ScreenState.InitiallyLoaded -> ScreenState.InitiallyLoaded(data.copy(viewMode = newViewMode))
-                        is ScreenState.Ready -> ScreenState.Ready(data.copy(viewMode = newViewMode))
-                    }
-                },
+                viewModeName = uiData?.activeViewMode?.name ?: "Loading...",
+                onViewModeClick = onNavigateToViewModeManagement,
                 onNavigateToCalendar = onNavigateToCalendar,
                 onNavigateToSpaceList = onNavigateToSpaceList,
                 themeMode = themeMode,
@@ -479,13 +535,12 @@ fun TaskListScreen(
                 Box(modifier = Modifier.fillMaxSize())
             } else {
                 TaskListContent(
-                    viewModel = viewModel,
                     tasksWithTotals = tasksWithTotals,
                     filteredTasks = uiData.filteredTasks,
                     filterState = filterState,
                     allTags = allTags,
                     spaceIdPrefix = currentSpace?.idPrefix,
-                    viewMode = uiData.viewMode,
+                    viewMode = uiData.activeViewMode,
                     isFilterPanelOpen = uiData.isFilterPanelOpen,
                     onToggleFilterPanel = {
                         uiState.value = when (currentUiState) {
@@ -513,35 +568,6 @@ fun TaskListScreen(
                 onRefresh()
             },
             onDismiss = { taskToDelete = null }
-        )
-    }
-}
-
-private fun LazyListScope.PriorityViewTaskGroup(
-    title: String,
-    tasks: List<TaskWithTotals>,
-    onTaskClick: (String) -> Unit,
-    onDelete: (TaskWithTotals) -> Unit,
-    onCopy: (String) -> Unit,
-) {
-    if (tasks.isEmpty()) return
-
-    item(key = "header_$title") {
-        Text(
-            text = "$title (${tasks.size})",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(vertical = 8.dp),
-        )
-    }
-
-    items(tasks, key = { "${title}_${it.task.id}" }) { taskWithTotals ->
-        TaskCard(
-            taskWithTotals = taskWithTotals,
-            onClick = { onTaskClick(taskWithTotals.task.id) },
-            onDelete = { onDelete(taskWithTotals) },
-            onCopy = { onCopy(taskWithTotals.task.id) },
-            modifier = Modifier.animateItem(),
         )
     }
 }

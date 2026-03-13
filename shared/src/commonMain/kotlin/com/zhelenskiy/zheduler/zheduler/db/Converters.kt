@@ -3,6 +3,7 @@
 package com.zhelenskiy.zheduler.zheduler.db
 
 import com.zhelenskiy.zheduler.zheduler.*
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.jvm.JvmName
 import kotlin.time.ExperimentalTime
@@ -109,7 +110,7 @@ fun String.toTaskFilterCriteria(): TaskFilterCriteria = dbJson.decodeFromString<
 /**
  * Serializable version of TaskFilterCriteria
  */
-@kotlinx.serialization.Serializable
+@Serializable
 data class TaskFilterCriteriaSerializable(
     val searchQuery: String = "",
     val textSearchFields: Set<TaskTextSearchField> = setOf(TaskTextSearchField.Id, TaskTextSearchField.Title),
@@ -197,4 +198,42 @@ data class TaskFilterCriteriaSerializable(
             declinedReason = criteria.declinedReason
         )
     }
+}
+
+/**
+ * Serializable version of ViewMode config (without id, spaceId, name, isBuiltIn which are stored separately)
+ */
+@Serializable
+data class ViewModeConfigSerializable(
+    val groupingLevels: List<GroupingLevel> = emptyList(),
+    val defaultOrderingRules: List<OrderingRule> = listOf(
+        OrderingRule(OrderableField.TotalDueDate, OrderDirection.Ascending, NullPosition.Last),
+        OrderingRule(OrderableField.TotalPriority, OrderDirection.Descending, NullPosition.Last),
+        OrderingRule(OrderableField.Id, OrderDirection.Ascending)
+    )
+)
+
+/**
+ * Convert ViewMode to config JSON string for storage
+ */
+fun ViewMode.toConfigJson(): String = dbJson.encodeToString(
+    ViewModeConfigSerializable(
+        groupingLevels = groupingLevels,
+        defaultOrderingRules = defaultOrderingRules
+    )
+)
+
+/**
+ * Convert JSON string to ViewMode
+ */
+fun String.toViewMode(spaceId: String, id: String, name: String): ViewMode {
+    val config = dbJson.decodeFromString<ViewModeConfigSerializable>(this)
+    return ViewMode(
+        id = id,
+        name = name,
+        spaceId = spaceId,
+        isBuiltIn = false,
+        groupingLevels = config.groupingLevels,
+        defaultOrderingRules = config.defaultOrderingRules
+    )
 }

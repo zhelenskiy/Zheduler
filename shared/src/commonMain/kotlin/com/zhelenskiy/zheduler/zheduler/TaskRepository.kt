@@ -190,7 +190,6 @@ interface TaskRepository {
      * @param notifications List of notification settings (optional)
      * @param customId Custom task ID (optional, generates auto-incrementing ID if not provided)
      * @param recurrenceRules List of recurrence rules for recurring tasks (defaults to empty)
-     * @param resetStatusOnRecurrence Status to reset to when recurrence triggers (defaults to Open)
      * @param autoUpdateStatusFromSubtasks Whether to automatically update status based on subtasks (defaults to false)
      * @return The created task, or null if creation failed
      */
@@ -363,13 +362,6 @@ interface TaskRepository {
      */
     suspend fun getAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals>
 
-    /**
-     * Group tasks by their resolution status (unresolved, blocked, resolved).
-     * @param tasks List of tasks to group
-     * @return Grouped tasks
-     */
-    suspend fun groupTasksByResolutionStatus(tasks: List<TaskWithTotals>): GroupedTasks
-
     // ============ Filter state persistence ============
 
     /**
@@ -413,6 +405,53 @@ interface TaskRepository {
      * @param isOpen Whether the filter panel is open
      */
     suspend fun saveFilterPanelOpen(spaceId: String, isOpen: Boolean)
+
+    // ============ View mode management ============
+
+    /**
+     * Get all view modes for a space, including built-in modes.
+     * @param spaceId The space ID
+     * @return List of all view modes for the space
+     */
+    suspend fun getAllViewModes(spaceId: String): List<ViewMode>
+
+    /**
+     * Get a view mode by its ID.
+     * @param spaceId The space ID
+     * @param viewModeId The view mode ID
+     * @return The view mode, or null if not found
+     */
+    suspend fun getViewModeById(spaceId: String, viewModeId: String): ViewMode?
+
+    /**
+     * Save a view mode (create or update).
+     * @param viewMode The view mode to save
+     * @return The saved view mode
+     */
+    suspend fun saveViewMode(viewMode: ViewMode): ViewMode
+
+    /**
+     * Delete a view mode by its ID.
+     * Cannot delete built-in view modes.
+     * @param spaceId The space ID
+     * @param viewModeId The view mode ID
+     * @return true if deleted successfully, false if not found or is built-in
+     */
+    suspend fun deleteViewMode(spaceId: String, viewModeId: String): Boolean
+
+    /**
+     * Get the active view mode for a space.
+     * @param spaceId The space ID
+     * @return The active view mode (defaults to "priority" if not set)
+     */
+    suspend fun getActiveViewMode(spaceId: String): ViewMode
+
+    /**
+     * Set the active view mode for a space.
+     * @param spaceId The space ID
+     * @param viewModeId The view mode ID to set as active
+     */
+    suspend fun setActiveViewMode(spaceId: String, viewModeId: String)
 
     // ============ Import/Export ============
 
