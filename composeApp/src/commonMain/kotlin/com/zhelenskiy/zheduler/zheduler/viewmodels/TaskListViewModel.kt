@@ -5,6 +5,7 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId as generateIdImpl
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,6 +78,22 @@ class TaskListViewModel(
     suspend fun saveFilterPanelOpen(isOpen: Boolean) {
         repository.saveFilterPanelOpen(spaceId, isOpen)
     }
+
+    // ============ Saved filter operations ============
+
+    suspend fun getSavedFilterById(filterId: String): SavedFilter? =
+        repository.getSavedFilterById(spaceId, filterId)
+
+    suspend fun getViewModeById(viewModeId: String): ViewMode? =
+        repository.getViewModeById(spaceId, viewModeId)
+
+    fun saveSavedFilter(filter: SavedFilter) {
+        viewModelScope.launch {
+            repository.saveSavedFilter(filter)
+        }
+    }
+
+    fun generateId(): String = generateIdImpl()
 
     // ============ Task group operations ============
 

@@ -938,3 +938,32 @@ WHERE t.spaceId = :spaceId
       AND (:requireNotSubtask = 0 OR NOT EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
     )
   );
+
+
+-- ============ Saved filters ============
+
+-- Saved filters table
+CREATE TABLE saved_filters (
+    id TEXT NOT NULL,
+    spaceId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    criteriaJson TEXT NOT NULL,
+    viewModeId TEXT,
+    PRIMARY KEY (spaceId, id),
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_saved_filters_spaceId ON saved_filters(spaceId);
+
+-- Saved filter queries
+getAllSavedFilters:
+SELECT * FROM saved_filters WHERE spaceId = ?;
+
+getSavedFilterById:
+SELECT * FROM saved_filters WHERE spaceId = ? AND id = ?;
+
+insertOrUpdateSavedFilter:
+INSERT OR REPLACE INTO saved_filters(id, spaceId, name, criteriaJson, viewModeId) VALUES (?, ?, ?, ?, ?);
+
+deleteSavedFilter:
+DELETE FROM saved_filters WHERE spaceId = ? AND id = ?;

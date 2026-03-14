@@ -42,3 +42,6 @@ data class ViewModeEditorRoute(
     val viewModeId: String? = null,
     val copyFromViewModeId: String? = null
 )
+
+@Serializable
+data class SavedFilterManagementRoute(val spaceId: String)

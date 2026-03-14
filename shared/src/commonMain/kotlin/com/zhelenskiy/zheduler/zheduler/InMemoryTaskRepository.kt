@@ -45,6 +45,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     private val filterPanelOpenBySpaceId = mutableMapOf<String, Boolean>()
     private val customViewModes = mutableMapOf<String, MutableMap<String, ViewMode>>() // spaceId -> (viewModeId -> ViewMode)
     private val activeViewModeBySpaceId = mutableMapOf<String, String>()
+    private val savedFilters = mutableMapOf<String, MutableMap<String, SavedFilter>>() // spaceId -> (filterId -> SavedFilter)
 
     override suspend fun hasSpaces(): Boolean = mutex.withLock { spaces.isNotEmpty() }
 
@@ -113,6 +114,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         filterStateBySpaceId.remove(spaceId)
         viewModeBySpaceId.remove(spaceId)
         filterPanelOpenBySpaceId.remove(spaceId)
+        savedFilters.remove(spaceId)
 
         true
     }
@@ -731,6 +733,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         filterPanelOpenBySpaceId.clear()
         customViewModes.clear()
         activeViewModeBySpaceId.clear()
+        savedFilters.clear()
     }
 
     // ============ Grouped task queries ============
@@ -818,5 +821,35 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
 
         filteredTasks.sortedWith(createComparator(orderingRules))
+    }
+
+    // ============ Saved filter management ============
+
+    override suspend fun getAllSavedFilters(spaceId: String): List<SavedFilter> = mutex.withLock {
+        savedFilters[spaceId]?.values?.toList().orEmpty()
+    }
+
+    override suspend fun getAllSavedFiltersWithViewModes(spaceId: String): List<SavedFilterWithViewMode> {
+        val filters = getAllSavedFilters(spaceId)
+        return filters.map { filter ->
+            SavedFilterWithViewMode(
+                filter = filter,
+                attachedViewMode = filter.viewModeId?.let { getViewModeById(spaceId, it) }
+            )
+        }
+    }
+
+    override suspend fun getSavedFilterById(spaceId: String, filterId: String): SavedFilter? = mutex.withLock {
+        savedFilters[spaceId]?.get(filterId)
+    }
+
+    override suspend fun saveSavedFilter(filter: SavedFilter): SavedFilter = mutex.withLock {
+        val spaceFilters = savedFilters.getOrPut(filter.spaceId) { mutableMapOf() }
+        spaceFilters[filter.id] = filter
+        filter
+    }
+
+    override suspend fun deleteSavedFilter(spaceId: String, filterId: String): Boolean = mutex.withLock {
+        savedFilters[spaceId]?.remove(filterId) != null
     }
 }

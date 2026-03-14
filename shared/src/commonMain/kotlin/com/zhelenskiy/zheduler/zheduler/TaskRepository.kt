@@ -530,4 +530,43 @@ interface TaskRepository {
         orderingRules: List<OrderingRule>,
         filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
     ): List<TaskWithTotals>
+
+    // ============ Saved filter management ============
+
+    /**
+     * Get all saved filters for a space.
+     * @param spaceId The space ID
+     * @return List of all saved filters for the space
+     */
+    suspend fun getAllSavedFilters(spaceId: String): List<SavedFilter>
+
+    /**
+     * Get all saved filters for a space with their attached view modes resolved.
+     * @param spaceId The space ID
+     * @return List of all saved filters with their attached view modes
+     */
+    suspend fun getAllSavedFiltersWithViewModes(spaceId: String): List<SavedFilterWithViewMode>
+
+    /**
+     * Get a saved filter by its ID.
+     * @param spaceId The space ID
+     * @param filterId The filter ID
+     * @return The saved filter, or null if not found
+     */
+    suspend fun getSavedFilterById(spaceId: String, filterId: String): SavedFilter?
+
+    /**
+     * Save a filter (create or update).
+     * @param filter The filter to save
+     * @return The saved filter
+     */
+    suspend fun saveSavedFilter(filter: SavedFilter): SavedFilter
+
+    /**
+     * Delete a saved filter by its ID.
+     * @param spaceId The space ID
+     * @param filterId The filter ID
+     * @return true if deleted successfully, false if not found
+     */
+    suspend fun deleteSavedFilter(spaceId: String, filterId: String): Boolean
 }
