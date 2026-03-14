@@ -42,6 +42,17 @@ CREATE INDEX idx_tasks_autoUpdateStatusFromSubtasks ON tasks(spaceId, autoUpdate
 CREATE INDEX idx_tasks_isRecurring ON tasks(spaceId, isRecurring);
 CREATE INDEX idx_tasks_notificationsJson ON tasks(spaceId, notificationsJson);
 
+-- Task tags junction table (normalized for efficient tag queries)
+CREATE TABLE task_tags (
+    taskId TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (taskId, tag),
+    FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_task_tags_tag ON task_tags(tag);
+CREATE INDEX idx_task_tags_taskId ON task_tags(taskId);
+
 -- Task connections
 CREATE TABLE task_connections (
     sourceTaskId TEXT NOT NULL,
@@ -250,6 +261,16 @@ INSERT OR IGNORE INTO tags(name) VALUES (?);
 
 deleteTag:
 DELETE FROM tags WHERE name = ?;
+
+-- Task tag queries (for normalized task_tags table)
+insertTaskTag:
+INSERT OR IGNORE INTO task_tags(taskId, tag) VALUES (?, ?);
+
+deleteTaskTags:
+DELETE FROM task_tags WHERE taskId = ?;
+
+getTagsForTask:
+SELECT tag FROM task_tags WHERE taskId = ?;
 
 -- Filter state queries
 getFilterState:
@@ -760,16 +781,12 @@ WHERE t.spaceId = :spaceId
   );
 
 -- Get tasks that have specific tags (for HasTags group filter)
+-- Uses normalized task_tags table for efficient lookups
 getTaskIdsByTags:
 SELECT DISTINCT t.id FROM tasks t
+INNER JOIN task_tags tt ON t.id = tt.taskId
 WHERE t.spaceId = :spaceId
-  AND (
-    t.tagsJson LIKE '%"' || :tag1 || '"%'
-    OR (:tag2 IS NOT NULL AND t.tagsJson LIKE '%"' || :tag2 || '"%')
-    OR (:tag3 IS NOT NULL AND t.tagsJson LIKE '%"' || :tag3 || '"%')
-    OR (:tag4 IS NOT NULL AND t.tagsJson LIKE '%"' || :tag4 || '"%')
-    OR (:tag5 IS NOT NULL AND t.tagsJson LIKE '%"' || :tag5 || '"%')
-  );
+  AND tt.tag IN :tags;
 
 -- Count tasks matching comprehensive filters (for efficient group counting)
 countTasksFiltered:
