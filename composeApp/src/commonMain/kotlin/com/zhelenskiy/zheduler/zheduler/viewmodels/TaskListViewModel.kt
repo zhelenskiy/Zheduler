@@ -49,4 +49,49 @@ class TaskListViewModel(
      */
     suspend fun getFilteredTasks(criteria: TaskFilterCriteria): List<TaskWithTotals> =
         repository.getAllWithTotalsFiltered(spaceId, criteria)
+
+    // ============ View mode operations ============
+
+    suspend fun getAllViewModes(): List<ViewMode> =
+        repository.getAllViewModes(spaceId)
+
+    suspend fun getActiveViewMode(): ViewMode =
+        repository.getActiveViewMode(spaceId)
+
+    suspend fun setActiveViewMode(viewModeId: String) {
+        repository.setActiveViewMode(spaceId, viewModeId)
+    }
+
+    // ============ Filter state operations ============
+
+    suspend fun getFilterState(): TaskFilterCriteria =
+        repository.getFilterState(spaceId)
+
+    suspend fun saveFilterState(criteria: TaskFilterCriteria) {
+        repository.saveFilterState(spaceId, criteria)
+    }
+
+    suspend fun getFilterPanelOpen(): Boolean =
+        repository.getFilterPanelOpen(spaceId)
+
+    suspend fun saveFilterPanelOpen(isOpen: Boolean) {
+        repository.saveFilterPanelOpen(spaceId, isOpen)
+    }
+
+    // ============ Task group operations ============
+
+    suspend fun getTaskGroups(
+        viewMode: ViewMode,
+        levelIndex: Int,
+        parentFilters: List<GroupFilter>,
+        filterCriteria: TaskFilterCriteria
+    ): List<TaskGroupInfo> =
+        repository.getTaskGroups(spaceId, viewMode, levelIndex, parentFilters, filterCriteria)
+
+    suspend fun getTasksForGroup(
+        filters: List<GroupFilter>,
+        orderingRules: List<OrderingRule>,
+        filterCriteria: TaskFilterCriteria
+    ): List<TaskWithTotals> =
+        repository.getTasksForGroup(spaceId, filters, orderingRules, filterCriteria)
 }

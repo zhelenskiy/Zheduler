@@ -136,7 +136,6 @@ private fun AppContent(
             }
             TaskListScreen(
                 viewModel = viewModel,
-                repository = appGraph.taskRepository,
                 refreshTrigger = refreshTrigger,
                 onTaskClick = { taskId ->
                     navController.navigate(TaskDetailRoute(route.spaceId, taskId))
