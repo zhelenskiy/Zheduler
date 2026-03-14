@@ -34,6 +34,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.EmptyState
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptySearchResults
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.common.ScreenState
+import com.zhelenskiy.zheduler.zheduler.components.common.dataOrNull
 import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
@@ -41,18 +42,23 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
 import kotlin.time.ExperimentalTime
 
+private data class TaskListUiData(
+    val activeViewMode: ViewMode,
+    val viewModes: List<ViewMode>,
+    val isFilterPanelOpen: Boolean,
+    val filteredTasks: List<TaskWithTotals>,
+)
+
 @Composable
-private fun rememberRepositoryFilterState(
-    repository: TaskRepository,
-    spaceId: String?
+private fun rememberPersistedFilterState(
+    onLoadFilterState: suspend () -> TaskFilterCriteria,
+    onSaveFilterState: suspend (TaskFilterCriteria) -> Unit
 ): TaskFilterState {
     val filterState = rememberTaskFilterState()
 
-    LaunchedEffect(spaceId) {
-        if (spaceId != null) {
-            val criteria = repository.getFilterState(spaceId)
-            filterState.loadFromCriteria(criteria)
-        }
+    LaunchedEffect(Unit) {
+        val criteria = onLoadFilterState()
+        filterState.loadFromCriteria(criteria)
     }
 
     LaunchedEffect(
@@ -66,48 +72,28 @@ private fun rememberRepositoryFilterState(
         filterState.subtaskOfTaskIds, filterState.parentOfTaskIds,
         filterState.blockedByTaskIds, filterState.blockedByComment, filterState.declinedReason
     ) {
-        if (spaceId != null) {
-            repository.saveFilterState(spaceId, filterState.toCriteria())
-        }
+        onSaveFilterState(filterState.toCriteria())
     }
 
     return filterState
 }
 
-private data class TaskListUiData(
-    val activeViewMode: ViewMode,
-    val viewModes: List<ViewMode>,
-    val isFilterPanelOpen: Boolean,
-    val filteredTasks: List<TaskWithTotals>
-)
-
 @Composable
 private fun rememberTaskListUiState(
-    repository: TaskRepository,
-    spaceId: String?,
-    viewModel: TaskListViewModel,
-    filterState: TaskFilterState,
-    tasksWithTotals: List<TaskWithTotals>
+    tasksWithTotals: List<TaskWithTotals>,
+    onLoadInitialData: suspend () -> TaskListUiData,
+    onSaveActiveViewMode: suspend (String) -> Unit,
+    onSaveFilterPanelOpen: suspend (Boolean) -> Unit,
+    onGetFilteredTasks: suspend (TaskFilterCriteria) -> List<TaskWithTotals>,
+    filterState: TaskFilterState
 ): MutableState<ScreenState<TaskListUiData>> {
     val uiState = remember { mutableStateOf<ScreenState<TaskListUiData>>(ScreenState.Loading) }
 
-    // Load view modes from repository
-    LaunchedEffect(spaceId) {
-        if (spaceId != null) {
-            val viewModes = repository.getAllViewModes(spaceId)
-            val activeViewMode = repository.getActiveViewMode(spaceId)
-            val isFilterPanelOpen = repository.getFilterPanelOpen(spaceId)
-            val data = TaskListUiData(
-                activeViewMode = activeViewMode,
-                viewModes = viewModes,
-                isFilterPanelOpen = isFilterPanelOpen,
-                filteredTasks = emptyList()
-            )
-            uiState.value = ScreenState.InitiallyLoaded(data)
-        }
+    LaunchedEffect(Unit) {
+        val data = onLoadInitialData()
+        uiState.value = ScreenState.InitiallyLoaded(data)
     }
 
-    // Enable animations after initial load
     LaunchedEffect(Unit) {
         snapshotFlow { uiState.value }
             .collect { state ->
@@ -117,30 +103,32 @@ private fun rememberTaskListUiState(
             }
     }
 
-    // Save active view mode
     LaunchedEffect(uiState.value) {
-        val data = (uiState.value as? ScreenState.InitiallyLoaded)?.data
-            ?: (uiState.value as? ScreenState.Ready)?.data
-        if (data != null && spaceId != null) {
-            repository.setActiveViewMode(spaceId, data.activeViewMode.id)
+        val data = uiState.value.dataOrNull
+        if (data != null) {
+            onSaveActiveViewMode(data.activeViewMode.id)
         }
     }
 
-    // Save filter panel state
     LaunchedEffect(uiState.value) {
         val state = uiState.value
-        if (state is ScreenState.Ready && spaceId != null) {
-            repository.saveFilterPanelOpen(spaceId, state.data.isFilterPanelOpen)
+        if (state is ScreenState.Ready) {
+            onSaveFilterPanelOpen(state.data.isFilterPanelOpen)
         }
     }
 
-    // Filter tasks
-    LaunchedEffect(filterState.toCriteria(), tasksWithTotals) {
-        val filtered = viewModel.getFilteredTasks(filterState.toCriteria())
+    LaunchedEffect(filterState.toCriteria(), tasksWithTotals, uiState.value) {
+        if (uiState.value.dataOrNull == null) return@LaunchedEffect
+        val criteria = filterState.toCriteria()
+        val filtered = onGetFilteredTasks(criteria)
         when (val state = uiState.value) {
             is ScreenState.Loading -> {}
-            is ScreenState.InitiallyLoaded -> uiState.value = ScreenState.InitiallyLoaded(state.data.copy(filteredTasks = filtered))
-            is ScreenState.Ready -> uiState.value = ScreenState.Ready(state.data.copy(filteredTasks = filtered))
+            is ScreenState.InitiallyLoaded -> uiState.value = ScreenState.InitiallyLoaded(
+                state.data.copy(filteredTasks = filtered)
+            )
+            is ScreenState.Ready -> uiState.value = ScreenState.Ready(
+                state.data.copy(filteredTasks = filtered)
+            )
         }
     }
 
@@ -251,31 +239,156 @@ private fun TaskListEmptyStates(
 }
 
 /**
+ * Wrapper to hold loaded group data with its metadata.
+ */
+private data class LoadedGroupData(
+    val groupInfo: TaskGroupInfo,
+    val groupKey: String,
+    val level: Int,
+    val parentFilters: List<GroupFilter>
+)
+
+/**
+ * Wrapper to hold loaded tasks with metadata.
+ */
+private data class LoadedTasksData(
+    val tasks: List<TaskWithTotals>,
+    val groupKey: String,
+    val level: Int
+)
+
+/**
  * Displays tasks according to the view mode's grouping and ordering configuration.
+ * Groups are loaded lazily when expanded.
  */
 @Composable
 private fun DynamicTaskList(
     viewMode: ViewMode,
-    filteredTasks: List<TaskWithTotals>,
+    filterCriteria: TaskFilterCriteria,
+    hasAnyFilteredTasks: Boolean,
     shouldAnimate: Boolean,
+    onGetTaskGroups: suspend (ViewMode, Int, List<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
+    onGetTasksForGroup: suspend (List<GroupFilter>, List<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
 ) {
-    val taskGroups = remember(viewMode, filteredTasks) {
-        viewMode.applyTo(filteredTasks)
-    }
-
     // Track collapsed state for each group by its key (survives configuration changes)
     var collapsedGroupsSet by rememberSaveable { mutableStateOf(emptySet<String>()) }
     // Track expanded state for uncategorized groups (collapsed by default)
     var expandedUncategorizedSet by rememberSaveable { mutableStateOf(emptySet<String>()) }
 
+    // Cache for loaded groups at each level, keyed by parentKey
+    var loadedGroups by remember { mutableStateOf<Map<String, List<LoadedGroupData>>>(emptyMap()) }
+    // Cache for loaded tasks, keyed by groupKey
+    var loadedTasks by remember { mutableStateOf<Map<String, LoadedTasksData>>(emptyMap()) }
+
+    // Helper function to load a group's children
+    suspend fun loadGroupChildren(groupData: LoadedGroupData): Pair<String, Any> {
+        val newFilters = groupData.parentFilters + listOfNotNull(groupData.groupInfo.filter)
+        val nextLevelIndex = groupData.level + 1
+
+        return if (nextLevelIndex < viewMode.groupingLevels.size) {
+            val subgroups = onGetTaskGroups(viewMode, nextLevelIndex, newFilters, filterCriteria)
+            groupData.groupKey to subgroups.map { groupInfo ->
+                val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
+                val subgroupKey = "${groupData.groupKey}_$displayLabel"
+                LoadedGroupData(
+                    groupInfo = groupInfo,
+                    groupKey = subgroupKey,
+                    level = nextLevelIndex,
+                    parentFilters = newFilters
+                )
+            }
+        } else {
+            // Leaf level - load tasks
+            val tasks = onGetTasksForGroup(newFilters, viewMode.defaultOrderingRules, filterCriteria)
+            groupData.groupKey to LoadedTasksData(tasks, groupData.groupKey, nextLevelIndex)
+        }
+    }
+
+    // Load root level groups and reload all expanded groups when filter changes
+    LaunchedEffect(viewMode, filterCriteria) {
+        if (viewMode.groupingLevels.isNotEmpty()) {
+            // Load root level
+            val groups = onGetTaskGroups(viewMode, 0, emptyList(), filterCriteria)
+            val rootGroups = groups.map { groupInfo ->
+                val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
+                LoadedGroupData(
+                    groupInfo = groupInfo,
+                    groupKey = displayLabel,
+                    level = 0,
+                    parentFilters = emptyList()
+                )
+            }
+
+            // Collect keys that were previously expanded (had loaded children)
+            val previouslyExpandedGroupKeys = loadedGroups.keys.filter { it.isNotEmpty() }.toSet()
+            val previouslyLoadedTaskKeys = loadedTasks.keys.filter { it.isNotEmpty() }.toSet()
+
+            // Start with root groups
+            val newLoadedGroups = mutableMapOf("" to rootGroups)
+            val newLoadedTasks = mutableMapOf<String, LoadedTasksData>()
+
+            // BFS to reload expanded groups in order
+            val groupsToProcess = ArrayDeque(rootGroups)
+            while (groupsToProcess.isNotEmpty()) {
+                val groupData = groupsToProcess.removeFirst()
+                val wasExpanded = groupData.groupKey in previouslyExpandedGroupKeys ||
+                                  groupData.groupKey in previouslyLoadedTaskKeys
+
+                if (wasExpanded) {
+                    val result = loadGroupChildren(groupData)
+                    when (val value = result.second) {
+                        is List<*> -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val subgroups = value as List<LoadedGroupData>
+                            newLoadedGroups[result.first] = subgroups
+                            groupsToProcess.addAll(subgroups)
+                        }
+                        is LoadedTasksData -> {
+                            newLoadedTasks[result.first] = value
+                        }
+                    }
+                }
+            }
+
+            loadedGroups = newLoadedGroups
+            loadedTasks = newLoadedTasks
+        } else {
+            // No grouping levels - load all tasks directly
+            val tasks = onGetTasksForGroup(emptyList(), viewMode.defaultOrderingRules, filterCriteria)
+            loadedTasks = mapOf("" to LoadedTasksData(tasks, "", 0))
+            loadedGroups = emptyMap()
+        }
+    }
+
+    // Function to load subgroups for a specific group (used for on-demand loading when expanding)
+    val loadSubgroups: suspend (LoadedGroupData) -> Unit = { groupData ->
+        val result = loadGroupChildren(groupData)
+        when (val value = result.second) {
+            is List<*> -> {
+                @Suppress("UNCHECKED_CAST")
+                loadedGroups = loadedGroups + (result.first to (value as List<LoadedGroupData>))
+            }
+            is LoadedTasksData -> {
+                loadedTasks = loadedTasks + (result.first to value)
+            }
+        }
+    }
+
+    // Only show the list when data is loaded to avoid animation glitches on initial render
+    val hasLoadedData = loadedGroups.isNotEmpty() || loadedTasks.isNotEmpty()
+    var shouldAnimateInner by remember { mutableStateOf(true) }
+
     AnimatedVisibility(
-        visible = filteredTasks.isNotEmpty(),
+        visible = hasAnyFilteredTasks && hasLoadedData,
         enter = if (shouldAnimate) fadeIn() else EnterTransition.None,
         exit = if (shouldAnimate) fadeOut() else ExitTransition.None,
     ) {
+        LaunchedEffect(transition.isRunning) {
+            shouldAnimateInner = !transition.isRunning
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -283,79 +396,121 @@ private fun DynamicTaskList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)
         ) {
-            TaskGroupItems(
-                groups = taskGroups,
-                collapsedGroups = collapsedGroupsSet,
-                expandedUncategorized = expandedUncategorizedSet,
-                onToggleCollapse = { key ->
-                    collapsedGroupsSet = if (key in collapsedGroupsSet) {
-                        collapsedGroupsSet - key
-                    } else {
-                        collapsedGroupsSet + key
+            // If no grouping levels, show tasks directly
+            if (viewMode.groupingLevels.isEmpty()) {
+                val tasksData = loadedTasks[""]
+                if (tasksData != null) {
+                    items(tasksData.tasks, key = { it.task.id }) { taskWithTotals ->
+                        TaskCard(
+                            taskWithTotals = taskWithTotals,
+                            onClick = { onTaskClick(taskWithTotals.task.id) },
+                            onDelete = { onDelete(taskWithTotals) },
+                            onCopy = { onCopy(taskWithTotals.task.id) },
+                            modifier = Modifier.animateItem(),
+                        )
                     }
-                },
-                onToggleUncategorized = { key ->
-                    expandedUncategorizedSet = if (key in expandedUncategorizedSet) {
-                        expandedUncategorizedSet - key
-                    } else {
-                        expandedUncategorizedSet + key
-                    }
-                },
-                onTaskClick = onTaskClick,
-                onDelete = onDelete,
-                onCopy = onCopy,
-                parentKey = ""
-            )
+                }
+            } else {
+                // Render groups recursively
+                TaskGroupItems(
+                    loadedGroups = loadedGroups,
+                    loadedTasks = loadedTasks,
+                    parentKey = "",
+                    collapsedGroups = collapsedGroupsSet,
+                    expandedUncategorized = expandedUncategorizedSet,
+                    onToggleCollapse = { key ->
+                        collapsedGroupsSet = if (key in collapsedGroupsSet) {
+                            collapsedGroupsSet - key
+                        } else {
+                            collapsedGroupsSet + key
+                        }
+                    },
+                    onToggleUncategorized = { key ->
+                        expandedUncategorizedSet = if (key in expandedUncategorizedSet) {
+                            expandedUncategorizedSet - key
+                        } else {
+                            expandedUncategorizedSet + key
+                        }
+                    },
+                    onRequestLoad = loadSubgroups,
+                    viewMode = viewMode,
+                    onTaskClick = onTaskClick,
+                    onDelete = onDelete,
+                    onCopy = onCopy,
+                    shouldAnimateInner = shouldAnimateInner,
+                )
+            }
         }
     }
 }
 
 /**
- * Recursively adds task group items to the LazyListScope.
+ * Recursively renders task groups with proper LazyColumn item animations.
  */
 private fun LazyListScope.TaskGroupItems(
-    groups: List<TaskGroup>,
+    loadedGroups: Map<String, List<LoadedGroupData>>,
+    loadedTasks: Map<String, LoadedTasksData>,
+    parentKey: String,
     collapsedGroups: Set<String>,
     expandedUncategorized: Set<String>,
     onToggleCollapse: (String) -> Unit,
     onToggleUncategorized: (String) -> Unit,
+    onRequestLoad: suspend (LoadedGroupData) -> Unit,
+    viewMode: ViewMode,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
-    parentKey: String
+    shouldAnimateInner: Boolean,
 ) {
-    for (group in groups) {
-        val displayLabel = if (group.isUncategorized) "Uncategorized" else group.label
-        val groupKey = if (parentKey.isEmpty()) displayLabel else "${parentKey}_$displayLabel"
-        val isCollapsed = if (group.isUncategorized) {
-            groupKey !in expandedUncategorized // Uncategorized collapsed by default
+    val groups = loadedGroups[parentKey] ?: return
+
+    for (groupData in groups) {
+        val groupInfo = groupData.groupInfo
+        val groupKey = groupData.groupKey
+        val level = groupData.level
+
+        val isCollapsed = if (groupInfo.isUncategorized) {
+            groupKey !in expandedUncategorized
         } else {
             groupKey in collapsedGroups
         }
 
-        val showHeader = group.label.isNotEmpty() || group.isUncategorized
+        val showHeader = groupInfo.label.isNotEmpty() || groupInfo.isUncategorized
 
-        // Add group header
+        // Group header
         if (showHeader) {
             item(key = "header_$groupKey") {
                 val rotationAngle by animateFloatAsState(
                     targetValue = if (isCollapsed) 0f else 90f,
                     label = "collapse_rotation"
                 )
+
+                // Trigger loading when expanded
+                LaunchedEffect(isCollapsed) {
+                    if (!isCollapsed) {
+                        val hasSubgroups = groupKey in loadedGroups
+                        val hasTasks = groupKey in loadedTasks
+                        if (!hasSubgroups && !hasTasks) {
+                            onRequestLoad(groupData)
+                        }
+                    }
+                }
+
+                val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .animateItem()
+                        .then(if (shouldAnimateInner) Modifier.animateItem() else Modifier)
                         .padding(
-                            top = if (group.level == 0) 2.dp else 0.dp,
-                            bottom = if (group.level == 0) 2.dp else 0.dp,
-                            start = (group.level * 16).dp,
+                            top = if (level == 0) 2.dp else 0.dp,
+                            bottom = if (level == 0) 2.dp else 0.dp,
+                            start = (level * 16).dp,
                         ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = {
-                            if (group.isUncategorized) {
+                            if (groupInfo.isUncategorized) {
                                 onToggleUncategorized(groupKey)
                             } else {
                                 onToggleCollapse(groupKey)
@@ -366,7 +521,7 @@ private fun LazyListScope.TaskGroupItems(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = if (isCollapsed) "Expand" else "Collapse",
-                            tint = if (group.isUncategorized)
+                            tint = if (groupInfo.isUncategorized)
                                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             else
                                 MaterialTheme.colorScheme.primary,
@@ -375,13 +530,13 @@ private fun LazyListScope.TaskGroupItems(
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = displayLabel,
-                        style = if (group.level == 0)
+                        text = "$displayLabel (${groupInfo.taskCount})",
+                        style = if (level == 0)
                             MaterialTheme.typography.titleMedium
                         else
                             MaterialTheme.typography.titleSmall,
-                        fontStyle = if (group.isUncategorized) FontStyle.Italic else FontStyle.Normal,
-                        color = if (group.isUncategorized)
+                        fontStyle = if (groupInfo.isUncategorized) FontStyle.Italic else FontStyle.Normal,
+                        color = if (groupInfo.isUncategorized)
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         else
                             MaterialTheme.colorScheme.primary,
@@ -390,33 +545,43 @@ private fun LazyListScope.TaskGroupItems(
             }
         }
 
-        // Add children only if not collapsed (or if there's no header to collapse)
+        // Children (only if expanded)
         if (!isCollapsed || !showHeader) {
-            if (group.subgroups.isNotEmpty()) {
-                // Recursively add subgroup items
+            val nextLevelIndex = level + 1
+            val hasMoreGroupingLevels = nextLevelIndex < viewMode.groupingLevels.size
+
+            if (hasMoreGroupingLevels) {
+                // Recurse into subgroups
                 TaskGroupItems(
-                    groups = group.subgroups,
+                    loadedGroups = loadedGroups,
+                    loadedTasks = loadedTasks,
+                    parentKey = groupKey,
                     collapsedGroups = collapsedGroups,
                     expandedUncategorized = expandedUncategorized,
                     onToggleCollapse = onToggleCollapse,
                     onToggleUncategorized = onToggleUncategorized,
+                    onRequestLoad = onRequestLoad,
+                    viewMode = viewMode,
                     onTaskClick = onTaskClick,
                     onDelete = onDelete,
                     onCopy = onCopy,
-                    parentKey = groupKey
+                    shouldAnimateInner = shouldAnimateInner,
                 )
             } else {
-                // Add task items at leaf level
-                items(group.tasks, key = { "${groupKey}_${it.task.id}" }) { taskWithTotals ->
-                    TaskCard(
-                        taskWithTotals = taskWithTotals,
-                        onClick = { onTaskClick(taskWithTotals.task.id) },
-                        onDelete = { onDelete(taskWithTotals) },
-                        onCopy = { onCopy(taskWithTotals.task.id) },
-                        modifier = Modifier
-                            .animateItem()
-                            .padding(start = (group.level * 16).dp),
-                    )
+                // Leaf level - render tasks (tasks always animate for smooth expand/collapse)
+                val tasksData = loadedTasks[groupKey]
+                if (tasksData != null) {
+                    items(tasksData.tasks, key = { "${groupKey}_${it.task.id}" }) { taskWithTotals ->
+                        TaskCard(
+                            taskWithTotals = taskWithTotals,
+                            onClick = { onTaskClick(taskWithTotals.task.id) },
+                            onDelete = { onDelete(taskWithTotals) },
+                            onCopy = { onCopy(taskWithTotals.task.id) },
+                            modifier = Modifier
+                                .animateItem()
+                                .padding(start = (nextLevelIndex * 16).dp),
+                        )
+                    }
                 }
             }
         }
@@ -425,15 +590,17 @@ private fun LazyListScope.TaskGroupItems(
 
 @Composable
 private fun TaskListContent(
+    viewMode: ViewMode,
     tasksWithTotals: List<TaskWithTotals>,
     filteredTasks: List<TaskWithTotals>,
     filterState: TaskFilterState,
     allTags: Set<String>,
     spaceIdPrefix: String?,
-    viewMode: ViewMode,
     isFilterPanelOpen: Boolean,
     onToggleFilterPanel: () -> Unit,
     shouldAnimate: Boolean,
+    onGetTaskGroups: suspend (ViewMode, Int, List<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
+    onGetTasksForGroup: suspend (List<GroupFilter>, List<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
@@ -460,8 +627,11 @@ private fun TaskListContent(
 
             DynamicTaskList(
                 viewMode = viewMode,
-                filteredTasks = filteredTasks,
+                filterCriteria = filterState.toCriteria(),
+                hasAnyFilteredTasks = filteredTasks.isNotEmpty(),
                 shouldAnimate = shouldAnimate,
+                onGetTaskGroups = onGetTaskGroups,
+                onGetTasksForGroup = onGetTasksForGroup,
                 onTaskClick = onTaskClick,
                 onDelete = onDelete,
                 onCopy = onCopy
@@ -473,7 +643,6 @@ private fun TaskListContent(
 @Composable
 fun TaskListScreen(
     viewModel: TaskListViewModel,
-    repository: TaskRepository,
     refreshTrigger: Int,
     onTaskClick: (String) -> Unit,
     onAddTask: () -> Unit,
@@ -492,21 +661,33 @@ fun TaskListScreen(
     val allTags by viewModel.allTags.collectAsState()
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
 
-    val spaceId = currentSpace?.id
-
     LaunchedEffect(refreshTrigger) {
         viewModel.loadTasks()
     }
 
-    val filterState = rememberRepositoryFilterState(repository, spaceId)
-    val uiState = rememberTaskListUiState(repository, spaceId, viewModel, filterState, tasksWithTotals)
+    val filterState = rememberPersistedFilterState(
+        onLoadFilterState = viewModel::getFilterState,
+        onSaveFilterState = viewModel::saveFilterState
+    )
+
+    val uiState = rememberTaskListUiState(
+        tasksWithTotals = tasksWithTotals,
+        onLoadInitialData = {
+            TaskListUiData(
+                activeViewMode = viewModel.getActiveViewMode(),
+                viewModes = viewModel.getAllViewModes(),
+                isFilterPanelOpen = viewModel.getFilterPanelOpen(),
+                filteredTasks = emptyList(),
+            )
+        },
+        onSaveActiveViewMode = viewModel::setActiveViewMode,
+        onSaveFilterPanelOpen = viewModel::saveFilterPanelOpen,
+        onGetFilteredTasks = viewModel::getFilteredTasks,
+        filterState = filterState
+    )
 
     val currentUiState = uiState.value
-    val uiData = when (currentUiState) {
-        is ScreenState.Loading -> null
-        is ScreenState.InitiallyLoaded -> currentUiState.data
-        is ScreenState.Ready -> currentUiState.data
-    }
+    val uiData = currentUiState.dataOrNull
 
     Scaffold(
         modifier = Modifier.imePadding(),
@@ -535,21 +716,23 @@ fun TaskListScreen(
                 Box(modifier = Modifier.fillMaxSize())
             } else {
                 TaskListContent(
+                    viewMode = uiData.activeViewMode,
                     tasksWithTotals = tasksWithTotals,
                     filteredTasks = uiData.filteredTasks,
                     filterState = filterState,
                     allTags = allTags,
                     spaceIdPrefix = currentSpace?.idPrefix,
-                    viewMode = uiData.activeViewMode,
                     isFilterPanelOpen = uiData.isFilterPanelOpen,
                     onToggleFilterPanel = {
-                        uiState.value = when (currentUiState) {
-                            is ScreenState.Loading -> currentUiState
-                            is ScreenState.InitiallyLoaded -> ScreenState.InitiallyLoaded(uiData.copy(isFilterPanelOpen = !uiData.isFilterPanelOpen))
-                            is ScreenState.Ready -> ScreenState.Ready(uiData.copy(isFilterPanelOpen = !uiData.isFilterPanelOpen))
+                        uiState.value = when (val state = uiState.value) {
+                            is ScreenState.Loading -> state
+                            is ScreenState.InitiallyLoaded -> ScreenState.InitiallyLoaded(state.data.copy(isFilterPanelOpen = !state.data.isFilterPanelOpen))
+                            is ScreenState.Ready -> ScreenState.Ready(state.data.copy(isFilterPanelOpen = !state.data.isFilterPanelOpen))
                         }
                     },
                     shouldAnimate = currentUiState.shouldAnimate,
+                    onGetTaskGroups = viewModel::getTaskGroups,
+                    onGetTasksForGroup = viewModel::getTasksForGroup,
                     onTaskClick = onTaskClick,
                     onDelete = { taskToDelete = it },
                     onCopy = onCopyTask

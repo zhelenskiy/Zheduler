@@ -368,6 +368,111 @@ data class TaskGroup(
 )
 
 /**
+ * Represents a filter constraint for querying tasks within a group.
+ * This is derived from a GroupDefinition and can be used to build SQL WHERE clauses.
+ */
+@Serializable
+sealed class GroupFilter {
+    abstract val field: GroupableField
+
+    /**
+     * Filter by exact string values (for Status, HasConnections, IsRecurring, etc.)
+     */
+    @Serializable
+    data class Values(
+        override val field: GroupableField,
+        val values: Set<String>
+    ) : GroupFilter()
+
+    /**
+     * Filter by priority range
+     */
+    @Serializable
+    data class PriorityRange(
+        override val field: GroupableField = GroupableField.Priority,
+        val min: Int? = null,
+        val max: Int? = null,
+        val includeNull: Boolean = false
+    ) : GroupFilter()
+
+    /**
+     * Filter by estimated time range (in seconds)
+     */
+    @Serializable
+    data class EstimatedTimeRange(
+        override val field: GroupableField = GroupableField.EstimatedTime,
+        val minSeconds: Long? = null,
+        val maxSeconds: Long? = null,
+        val includeNull: Boolean = false
+    ) : GroupFilter()
+
+    /**
+     * Filter by due date range (days from today)
+     */
+    @Serializable
+    data class DueDateRange(
+        override val field: GroupableField = GroupableField.DueDate,
+        val minDays: Int? = null,
+        val maxDays: Int? = null,
+        val includeNull: Boolean = false
+    ) : GroupFilter()
+
+    /**
+     * Filter by tags (task must have at least one of the specified tags)
+     */
+    @Serializable
+    data class HasTags(
+        override val field: GroupableField = GroupableField.Tags,
+        val tags: Set<String>
+    ) : GroupFilter()
+
+    /**
+     * Negation filter - matches tasks that DON'T match any of the given filters.
+     * Used for "Uncategorized" groups.
+     */
+    @Serializable
+    data class Not(
+        override val field: GroupableField,
+        val filters: List<GroupFilter>
+    ) : GroupFilter()
+}
+
+/**
+ * Information about a group retrieved from the repository.
+ * Used for building the group hierarchy without loading all tasks.
+ */
+data class TaskGroupInfo(
+    val label: String,
+    val taskCount: Int,
+    val isUncategorized: Boolean = false,
+    val groupDefinition: GroupDefinition? = null, // null for uncategorized
+    val filter: GroupFilter? = null // The filter to apply when loading tasks/subgroups for this group (null means no filtering)
+)
+
+/**
+ * Converts a GroupDefinition to a GroupFilter for the given field.
+ */
+fun GroupDefinition.toFilter(field: GroupableField): GroupFilter = when (field) {
+    GroupableField.Priority -> GroupFilter.PriorityRange(
+        min = priorityMin,
+        max = priorityMax,
+        includeNull = includeNoPriority
+    )
+    GroupableField.EstimatedTime -> GroupFilter.EstimatedTimeRange(
+        minSeconds = estimatedTimeMin?.toApproximateSeconds(),
+        maxSeconds = estimatedTimeMax?.toApproximateSeconds(),
+        includeNull = includeNoEstimatedTime
+    )
+    GroupableField.DueDate -> GroupFilter.DueDateRange(
+        minDays = dueDateMinDays,
+        maxDays = dueDateMaxDays,
+        includeNull = includeNoDueDate
+    )
+    GroupableField.Tags -> GroupFilter.HasTags(tags = values)
+    else -> GroupFilter.Values(field = field, values = values)
+}
+
+/**
  * Groups and orders tasks according to the view mode configuration.
  */
 fun ViewMode.applyTo(tasks: List<TaskWithTotals>): List<TaskGroup> {
@@ -467,50 +572,77 @@ private fun ViewMode.applyGroupingLevel(
 
 /**
  * Checks if a task matches a group definition based on the field type.
- * Handles both value-based matching and custom range matching.
  */
 private fun matchesGroup(task: TaskWithTotals, field: GroupableField, group: GroupDefinition): Boolean {
-    return when (field) {
-        GroupableField.Priority -> {
-            val priority = task.task.priority?.value
+    return task.matchesGroupFilter(group.toFilter(field))
+}
+
+/**
+ * Checks if a task matches a GroupFilter.
+ */
+internal fun TaskWithTotals.matchesGroupFilter(filter: GroupFilter): Boolean {
+    return when (filter) {
+        is GroupFilter.Values -> {
+            getFieldValue(filter.field) in filter.values
+        }
+        is GroupFilter.PriorityRange -> {
+            val priority = task.priority?.value
             if (priority == null) {
-                group.includeNoPriority
+                filter.includeNull
             } else {
-                val minOk = group.priorityMin == null || priority >= group.priorityMin
-                val maxOk = group.priorityMax == null || priority <= group.priorityMax
-                minOk && maxOk
+                // If there's no range specified (both min and max are null) and includeNull is true,
+                // this filter is for "null only" - non-null values should NOT match
+                if (filter.min == null && filter.max == null && filter.includeNull) {
+                    false
+                } else {
+                    val minOk = filter.min == null || priority >= filter.min
+                    val maxOk = filter.max == null || priority <= filter.max
+                    minOk && maxOk
+                }
             }
         }
-        GroupableField.DueDate -> {
-            val dueDate = task.task.dueDate
-            if (dueDate == null) {
-                group.includeNoDueDate
-            } else {
-                val now = Clock.System.now()
-                val today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
-                val taskDate = dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date
-                val daysDiff = taskDate.toEpochDays() - today.toEpochDays()
-                val minOk = group.dueDateMinDays == null || daysDiff >= group.dueDateMinDays
-                val maxOk = group.dueDateMaxDays == null || daysDiff <= group.dueDateMaxDays
-                minOk && maxOk
-            }
-        }
-        GroupableField.EstimatedTime -> {
-            val estimatedTime = task.task.estimatedTime
+        is GroupFilter.EstimatedTimeRange -> {
+            val estimatedTime = task.estimatedTime
             if (estimatedTime == null) {
-                group.includeNoEstimatedTime
+                filter.includeNull
             } else {
-                val seconds = estimatedTime.toApproximateSeconds()
-                val minOk = group.estimatedTimeMin == null || seconds >= group.estimatedTimeMin.toApproximateSeconds()
-                val maxOk = group.estimatedTimeMax == null || seconds <= group.estimatedTimeMax.toApproximateSeconds()
-                minOk && maxOk
+                // If there's no range specified (both min and max are null) and includeNull is true,
+                // this filter is for "null only" - non-null values should NOT match
+                if (filter.minSeconds == null && filter.maxSeconds == null && filter.includeNull) {
+                    false
+                } else {
+                    val seconds = estimatedTime.toApproximateSeconds()
+                    val minOk = filter.minSeconds == null || seconds >= filter.minSeconds
+                    val maxOk = filter.maxSeconds == null || seconds <= filter.maxSeconds
+                    minOk && maxOk
+                }
             }
         }
-        GroupableField.Tags -> {
-            task.task.tags.any { it in group.values }
+        is GroupFilter.DueDateRange -> {
+            val dueDate = task.dueDate
+            if (dueDate == null) {
+                filter.includeNull
+            } else {
+                // If there's no range specified (both min and max are null) and includeNull is true,
+                // this filter is for "null only" - non-null values should NOT match
+                if (filter.minDays == null && filter.maxDays == null && filter.includeNull) {
+                    false
+                } else {
+                    val now = Clock.System.now()
+                    val today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
+                    val taskDate = dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date
+                    val daysDiff = taskDate.toEpochDays() - today.toEpochDays()
+                    val minOk = filter.minDays == null || daysDiff >= filter.minDays
+                    val maxOk = filter.maxDays == null || daysDiff <= filter.maxDays
+                    minOk && maxOk
+                }
+            }
         }
-        else -> {
-            task.getFieldValue(field) in group.values
+        is GroupFilter.HasTags -> {
+            task.tags.any { it in filter.tags }
+        }
+        is GroupFilter.Not -> {
+            filter.filters.none { matchesGroupFilter(it) }
         }
     }
 }
@@ -519,7 +651,7 @@ private fun matchesGroup(task: TaskWithTotals, field: GroupableField, group: Gro
  * Creates a comparator from ordering rules.
  */
 @Suppress("UNCHECKED_CAST")
-private fun createComparator(rules: List<OrderingRule>): Comparator<TaskWithTotals> {
+internal fun createComparator(rules: List<OrderingRule>): Comparator<TaskWithTotals> {
     return Comparator { a, b ->
         for (rule in rules) {
             val valueA = a.getOrderableValue(rule.field)

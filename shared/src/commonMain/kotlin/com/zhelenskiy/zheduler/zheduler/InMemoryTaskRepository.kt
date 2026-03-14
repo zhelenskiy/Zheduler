@@ -494,6 +494,13 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     override suspend fun getAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals> = mutex.withLock {
+        getAllWithTotalsFilteredUnsafe(spaceId, criteria)
+    }
+
+    /**
+     * Internal version that doesn't acquire mutex - for use within methods that already hold the lock.
+     */
+    private suspend fun getAllWithTotalsFilteredUnsafe(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals> {
         val spaceTasks = tasks.values.filter { it.spaceId == spaceId }
         val blockedTasks = getBlockedTasks()
         val tasksById = spaceTasks.associateBy { it.id }
@@ -504,7 +511,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 totalPriority = calculateTotalPriority(task, blockedTasks, tasksById)
             )
         }
-        filterTasksWithCriteria(tasksWithTotals, criteria)
+        return filterTasksWithCriteria(tasksWithTotals, criteria)
     }
 
     override suspend fun getFilterState(spaceId: String): TaskFilterCriteria = mutex.withLock {
@@ -724,5 +731,92 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         filterPanelOpenBySpaceId.clear()
         customViewModes.clear()
         activeViewModeBySpaceId.clear()
+    }
+
+    // ============ Grouped task queries ============
+
+    override suspend fun getTaskGroups(
+        spaceId: String,
+        viewMode: ViewMode,
+        levelIndex: Int,
+        parentFilters: List<GroupFilter>,
+        filterCriteria: TaskFilterCriteria
+    ): List<TaskGroupInfo> = mutex.withLock {
+        if (levelIndex >= viewMode.groupingLevels.size) {
+            return@withLock emptyList()
+        }
+
+        val level = viewMode.groupingLevels[levelIndex]
+
+        // Get all tasks matching parent filters and filter criteria
+        // Note: use internal method without mutex since we already hold it
+        val allTasks = getAllWithTotalsFilteredUnsafe(spaceId, filterCriteria)
+        val filteredTasks = allTasks.filter { task ->
+            parentFilters.all { filter -> task.matchesGroupFilter(filter) }
+        }
+
+        val result = mutableListOf<TaskGroupInfo>()
+        val matchedTaskIds = mutableSetOf<String>()
+
+        // Process each group definition
+        for (group in level.groups) {
+            val groupFilter = group.toFilter(level.field)
+            val matchingTasks = filteredTasks.filter { task ->
+                task.matchesGroupFilter(groupFilter)
+            }
+
+            matchedTaskIds.addAll(matchingTasks.map { it.task.id })
+
+            if (matchingTasks.isNotEmpty() || level.showEmptyGroups) {
+                result.add(
+                    TaskGroupInfo(
+                        label = group.label,
+                        taskCount = matchingTasks.size,
+                        isUncategorized = false,
+                        groupDefinition = group,
+                        filter = groupFilter
+                    )
+                )
+            }
+        }
+
+        // Add uncategorized group for tasks that didn't match any group
+        val uncategorizedTasks = filteredTasks.filter { it.task.id !in matchedTaskIds }
+        if (uncategorizedTasks.isNotEmpty()) {
+            // Create a negation filter for uncategorized
+            val allGroupFilters = level.groups.map { it.toFilter(level.field) }
+            val uncategorizedFilter = GroupFilter.Not(
+                field = level.field,
+                filters = allGroupFilters
+            )
+
+            result.add(
+                TaskGroupInfo(
+                    label = "",
+                    taskCount = uncategorizedTasks.size,
+                    isUncategorized = true,
+                    groupDefinition = null,
+                    filter = uncategorizedFilter
+                )
+            )
+        }
+
+        result
+    }
+
+    override suspend fun getTasksForGroup(
+        spaceId: String,
+        filters: List<GroupFilter>,
+        orderingRules: List<OrderingRule>,
+        filterCriteria: TaskFilterCriteria
+    ): List<TaskWithTotals> = mutex.withLock {
+        // Note: use internal method without mutex since we already hold it
+        val allTasks = getAllWithTotalsFilteredUnsafe(spaceId, filterCriteria)
+
+        val filteredTasks = allTasks.filter { task ->
+            filters.all { filter -> task.matchesGroupFilter(filter) }
+        }
+
+        filteredTasks.sortedWith(createComparator(orderingRules))
     }
 }

@@ -493,4 +493,41 @@ interface TaskRepository {
      */
     suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task>
     suspend fun clearAllData()
+
+    // ============ Grouped task queries ============
+
+    /**
+     * Get task groups at a specific grouping level.
+     * This method retrieves group information (labels, counts) without loading all tasks.
+     *
+     * @param spaceId The space ID
+     * @param viewMode The view mode configuration
+     * @param levelIndex The grouping level index (0 = first level)
+     * @param parentFilters Filters from parent groups (empty for first level)
+     * @param filterCriteria Additional filter criteria (e.g., from filter panel)
+     * @return List of group information including task counts
+     */
+    suspend fun getTaskGroups(
+        spaceId: String,
+        viewMode: ViewMode,
+        levelIndex: Int,
+        parentFilters: List<GroupFilter>,
+        filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
+    ): List<TaskGroupInfo>
+
+    /**
+     * Get tasks for a specific group (leaf node or when tasks need to be displayed).
+     *
+     * @param spaceId The space ID
+     * @param filters Combined filters from all parent groups
+     * @param orderingRules Ordering rules to apply
+     * @param filterCriteria Additional filter criteria (e.g., from filter panel)
+     * @return List of tasks matching all filters, ordered appropriately
+     */
+    suspend fun getTasksForGroup(
+        spaceId: String,
+        filters: List<GroupFilter>,
+        orderingRules: List<OrderingRule>,
+        filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
+    ): List<TaskWithTotals>
 }
