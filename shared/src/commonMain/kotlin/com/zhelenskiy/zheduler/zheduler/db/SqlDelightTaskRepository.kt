@@ -351,6 +351,12 @@ class SqlDelightTaskRepository(
         val newTags = finalTask.tags - oldTask.tags
         newTags.forEach { queries.insertTag(it) }
 
+        // Update task_tags junction table
+        if (finalTask.tags != oldTask.tags) {
+            queries.deleteTaskTags(finalTask.id)
+            finalTask.tags.forEach { queries.insertTaskTag(finalTask.id, it) }
+        }
+
         handleStatusCascadeOnUpdate(finalTask.id, oldTask.status, finalTask.status)
 
         finalTask
@@ -756,6 +762,9 @@ class SqlDelightTaskRepository(
 
         tags.forEach { queries.insertTag(it) }
 
+        // Populate task_tags junction table
+        tags.forEach { queries.insertTaskTag(taskId, it) }
+
         return task
     }
 
@@ -1134,32 +1143,19 @@ class SqlDelightTaskRepository(
 
     /**
      * Filter tasks to only those having at least one of the specified tags.
-     * Uses SQL for the first 5 tags and in-memory filtering for remaining tags.
+     * Uses SQL with normalized task_tags junction table.
      */
     private suspend fun filterTasksByTagsAny(
         spaceId: String,
         tasks: List<Task>,
         tags: Set<String>
     ): List<Task> {
-        val tagsList = tags.toList()
+        if (tags.isEmpty()) return emptyList()
         val matchingIds = queries.getTaskIdsByTags(
             spaceId = spaceId,
-            tag1 = tagsList.getOrNull(0) ?: "",
-            tag2 = tagsList.getOrNull(1),
-            tag3 = tagsList.getOrNull(2),
-            tag4 = tagsList.getOrNull(3),
-            tag5 = tagsList.getOrNull(4)
+            tags = tags
         ).awaitAsList().toSet()
-
-        // If there are more than 5 tags, we need to check the remaining ones
-        return if (tagsList.size > 5) {
-            val remainingTags = tagsList.drop(5).toSet()
-            tasks.filter { task ->
-                task.id in matchingIds || task.tags.any { it in remainingTags }
-            }
-        } else {
-            tasks.filter { it.id in matchingIds }
-        }
+        return tasks.filter { it.id in matchingIds }
     }
 
     /**
