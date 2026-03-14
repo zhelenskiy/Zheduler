@@ -18,6 +18,7 @@ composeMultiplatform = "1.10.0"
 junit = "4.13.2"
 nucleus = "1.4.7"
 robolectric = "4.14.1"
+sqlite-requery = "3.49.0"
 # 2.3.0 has https://youtrack.jetbrains.com/projects/KT/issues/KT-83372/compileDebugKotlinAndroid-hangs-in-2.3.0-with-SQLDelight
 kotlin = "2.2.21"
 kotlinx-coroutines = "1.10.2"
@@ -44,6 +45,7 @@ nucleus-decorated-window-jni = { module = "io.github.kdroidfilter:nucleus.decora
 nucleus-decorated-window-material = { module = "io.github.kdroidfilter:nucleus.decorated-window-material", version.ref = "nucleus" }
 nucleus-system-color = { module = "io.github.kdroidfilter:nucleus.system-color", version.ref = "nucleus" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+sqlite-requery = { module = "com.github.requery:sqlite-android", version.ref = "sqlite-requery" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-testExt-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-testExt" }
 androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-espresso" }
