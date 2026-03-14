@@ -119,6 +119,7 @@ android {
                 it.exclude("**/DatabaseCalculateStatusFromSubtasksRepositoryTest.class")
                 it.exclude("**/DatabaseIsMissedRepositoryTest.class")
                 it.exclude("**/DatabaseSearchTasksForConnectionTest.class")
+                it.exclude("**/DatabaseSavedFilterRepositoryTest.class")
                 it.exclude("**/GroupedTaskQueriesComparisonTest.class")
             }
         }

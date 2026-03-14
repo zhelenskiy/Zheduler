@@ -16,10 +16,13 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.ViewAgenda
+import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SaveFilterDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
@@ -34,6 +37,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.EmptyState
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptySearchResults
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.common.ScreenState
+import com.zhelenskiy.zheduler.zheduler.components.common.mapData
 import com.zhelenskiy.zheduler.zheduler.components.common.dataOrNull
 import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
@@ -138,8 +142,8 @@ private fun rememberTaskListUiState(
 @Composable
 private fun TaskListTopAppBar(
     spaceName: String?,
-    viewModeName: String,
-    onViewModeClick: () -> Unit,
+    onNavigateToViewModeManagement: () -> Unit,
+    onNavigateToSavedFilterManagement: () -> Unit,
     onNavigateToCalendar: () -> Unit,
     onNavigateToSpaceList: () -> Unit,
     themeMode: ThemeMode,
@@ -147,6 +151,8 @@ private fun TaskListTopAppBar(
     useDynamicColors: Boolean,
     onDynamicColorsChange: (Boolean) -> Unit
 ) {
+    var settingsMenuExpanded by remember { mutableStateOf(false) }
+
     TopAppBar(
         title = {
             Column {
@@ -157,10 +163,35 @@ private fun TaskListTopAppBar(
             }
         },
         actions = {
-            TextButton(onClick = onViewModeClick) {
-                Icon(Icons.AutoMirrored.Filled.ViewList, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(viewModeName, style = MaterialTheme.typography.labelMedium)
+            Box {
+                IconButton(onClick = { settingsMenuExpanded = true }) {
+                    Icon(Icons.Default.Bookmarks, contentDescription = "Settings menu")
+                }
+                DropdownMenu(
+                    expanded = settingsMenuExpanded,
+                    onDismissRequest = { settingsMenuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("View Modes") },
+                        onClick = {
+                            settingsMenuExpanded = false
+                            onNavigateToViewModeManagement()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.ViewAgenda, contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Saved Filters") },
+                        onClick = {
+                            settingsMenuExpanded = false
+                            onNavigateToSavedFilterManagement()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.FilterList, contentDescription = null)
+                        }
+                    )
+                }
             }
             IconButton(onClick = onNavigateToCalendar) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = "Calendar")
@@ -186,12 +217,14 @@ private fun TaskListSearchAndFilter(
     spaceIdPrefix: String?,
     isFilterPanelOpen: Boolean,
     onToggleFilterPanel: () -> Unit,
+    onSaveFilter: () -> Unit,
     shouldAnimate: Boolean,
 ) {
     TaskSearchBar(
         filterState = filterState,
         isFilterPanelOpen = isFilterPanelOpen,
         onToggleFilterPanel = onToggleFilterPanel,
+        onSaveFilter = onSaveFilter,
         shouldAnimate = shouldAnimate,
         modifier = Modifier.padding(horizontal = 16.dp).padding(top = 24.dp, bottom = 8.dp)
     )
@@ -598,6 +631,7 @@ private fun TaskListContent(
     spaceIdPrefix: String?,
     isFilterPanelOpen: Boolean,
     onToggleFilterPanel: () -> Unit,
+    onSaveFilter: () -> Unit,
     shouldAnimate: Boolean,
     onGetTaskGroups: suspend (ViewMode, Int, List<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
     onGetTasksForGroup: suspend (List<GroupFilter>, List<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
@@ -613,6 +647,7 @@ private fun TaskListContent(
                 spaceIdPrefix = spaceIdPrefix,
                 isFilterPanelOpen = isFilterPanelOpen,
                 onToggleFilterPanel = onToggleFilterPanel,
+                onSaveFilter = onSaveFilter,
                 shouldAnimate = shouldAnimate
             )
         }
@@ -644,6 +679,8 @@ private fun TaskListContent(
 fun TaskListScreen(
     viewModel: TaskListViewModel,
     refreshTrigger: Int,
+    loadedFilterId: String?,
+    onFilterLoaded: () -> Unit,
     onTaskClick: (String) -> Unit,
     onAddTask: () -> Unit,
     onCopyTask: (String) -> Unit,
@@ -651,6 +688,7 @@ fun TaskListScreen(
     onNavigateToSpaceList: () -> Unit,
     onNavigateToCalendar: () -> Unit,
     onNavigateToViewModeManagement: () -> Unit,
+    onNavigateToSavedFilterManagement: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
@@ -660,6 +698,7 @@ fun TaskListScreen(
     val currentSpace by viewModel.currentSpace.collectAsState()
     val allTags by viewModel.allTags.collectAsState()
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
+    var showSaveFilterDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshTrigger) {
         viewModel.loadTasks()
@@ -689,13 +728,28 @@ fun TaskListScreen(
     val currentUiState = uiState.value
     val uiData = currentUiState.dataOrNull
 
+    // Handle loading saved filter - wait for UI state to be ready
+    var filterApplied by remember { mutableStateOf(false) }
+    LaunchedEffect(loadedFilterId, uiState.value) {
+        if (loadedFilterId != null && uiState.value.dataOrNull != null && !filterApplied) {
+            filterApplied = true
+            applySavedFilter(
+                loadedFilterId = loadedFilterId,
+                viewModel = viewModel,
+                filterState = filterState,
+                uiState = uiState
+            )
+            onFilterLoaded()
+        }
+    }
+
     Scaffold(
         modifier = Modifier.imePadding(),
         topBar = {
             TaskListTopAppBar(
                 spaceName = currentSpace?.name,
-                viewModeName = uiData?.activeViewMode?.name ?: "Loading...",
-                onViewModeClick = onNavigateToViewModeManagement,
+                onNavigateToViewModeManagement = onNavigateToViewModeManagement,
+                onNavigateToSavedFilterManagement = onNavigateToSavedFilterManagement,
                 onNavigateToCalendar = onNavigateToCalendar,
                 onNavigateToSpaceList = onNavigateToSpaceList,
                 themeMode = themeMode,
@@ -730,6 +784,7 @@ fun TaskListScreen(
                             is ScreenState.Ready -> ScreenState.Ready(state.data.copy(isFilterPanelOpen = !state.data.isFilterPanelOpen))
                         }
                     },
+                    onSaveFilter = { showSaveFilterDialog = true },
                     shouldAnimate = currentUiState.shouldAnimate,
                     onGetTaskGroups = viewModel::getTaskGroups,
                     onGetTasksForGroup = viewModel::getTasksForGroup,
@@ -753,4 +808,38 @@ fun TaskListScreen(
             onDismiss = { taskToDelete = null }
         )
     }
+
+    // Save filter dialog
+    val space = currentSpace
+    if (showSaveFilterDialog && uiData != null && space != null) {
+        SaveFilterDialog(
+            criteria = filterState.toCriteria(),
+            viewModes = uiData.viewModes,
+            currentActiveViewModeId = uiData.activeViewMode.id,
+            spaceId = space.id,
+            allTags = allTags,
+            spaceIdPrefix = space.idPrefix,
+            generateId = viewModel::generateId,
+            onSave = { filter ->
+                viewModel.saveSavedFilter(filter)
+                showSaveFilterDialog = false
+            },
+            onDismiss = { showSaveFilterDialog = false }
+        )
+    }
+}
+
+private suspend fun applySavedFilter(
+    loadedFilterId: String,
+    viewModel: TaskListViewModel,
+    filterState: TaskFilterState,
+    uiState: MutableState<ScreenState<TaskListUiData>>
+) {
+    val savedFilter = viewModel.getSavedFilterById(loadedFilterId) ?: return
+    filterState.loadFromCriteria(savedFilter.criteria)
+
+    val attachedViewModeId = savedFilter.viewModeId ?: return
+    val viewMode = viewModel.getViewModeById(attachedViewModeId) ?: return
+    uiState.value = uiState.value.mapData { it.copy(activeViewMode = viewMode) }
+    viewModel.setActiveViewMode(viewMode.id)
 }

@@ -1459,7 +1459,52 @@ class SqlDelightTaskRepository(
         }
         return result
     }
+
+    // ============ Saved filter management ============
+
+    override suspend fun getAllSavedFilters(spaceId: String): List<SavedFilter> =
+        queries.getAllSavedFilters(spaceId).awaitAsList().map { it.toSavedFilterModel() }
+
+    override suspend fun getAllSavedFiltersWithViewModes(spaceId: String): List<SavedFilterWithViewMode> = mutex.withLock{
+        val filters = getAllSavedFilters(spaceId)
+        filters.map { filter ->
+            SavedFilterWithViewMode(
+                filter = filter,
+                attachedViewMode = filter.viewModeId?.let { getViewModeById(spaceId, it) }
+            )
+        }
+    }
+
+    override suspend fun getSavedFilterById(spaceId: String, filterId: String): SavedFilter? =
+        queries.getSavedFilterById(spaceId, filterId).awaitAsOneOrNull()?.toSavedFilterModel()
+
+    override suspend fun saveSavedFilter(filter: SavedFilter): SavedFilter {
+        queries.insertOrUpdateSavedFilter(
+            id = filter.id,
+            spaceId = filter.spaceId,
+            name = filter.name,
+            criteriaJson = filter.criteria.toJson(),
+            viewModeId = filter.viewModeId
+        )
+        return filter
+    }
+
+    override suspend fun deleteSavedFilter(spaceId: String, filterId: String): Boolean = mutex.withLock {
+        val exists = queries.getSavedFilterById(spaceId, filterId).awaitAsOneOrNull() != null
+        if (exists) {
+            queries.deleteSavedFilter(spaceId, filterId)
+        }
+        exists
+    }
 }
+
+private fun Saved_filters.toSavedFilterModel() = SavedFilter(
+    id = id,
+    name = name,
+    spaceId = spaceId,
+    criteria = criteriaJson.toTaskFilterCriteria(),
+    viewModeId = viewModeId
+)
 
 private fun Spaces.toModel() = Space(
     id = id,

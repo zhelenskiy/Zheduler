@@ -5,9 +5,11 @@ package com.zhelenskiy.zheduler.zheduler.screens.tasklist
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.interaction.Interaction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
@@ -36,6 +39,7 @@ fun TaskSearchBar(
     filterState: TaskFilterState,
     isFilterPanelOpen: Boolean,
     onToggleFilterPanel: () -> Unit,
+    onSaveFilter: (() -> Unit)? = null,
     shouldAnimate: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
@@ -44,6 +48,8 @@ fun TaskSearchBar(
             filterState = filterState,
             isFilterPanelOpen = isFilterPanelOpen,
             onToggleFilterPanel = onToggleFilterPanel,
+            onSaveFilter = onSaveFilter,
+            shouldAnimate = shouldAnimate,
         )
 
         ActiveFiltersChips(
@@ -58,6 +64,8 @@ private fun SearchInputRow(
     filterState: TaskFilterState,
     isFilterPanelOpen: Boolean,
     onToggleFilterPanel: () -> Unit,
+    onSaveFilter: (() -> Unit)?,
+    shouldAnimate: Boolean,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -68,6 +76,20 @@ private fun SearchInputRow(
             filterState = filterState,
             modifier = Modifier.weight(1f),
         )
+
+        // Save filter button - appears when filters are active
+        AnimatedVisibility(
+            visible = filterState.hasActiveFilters && onSaveFilter != null,
+            enter = if (shouldAnimate) fadeIn() + expandHorizontally() else EnterTransition.None,
+            exit = if (shouldAnimate) fadeOut() + shrinkHorizontally() else ExitTransition.None,
+        ) {
+            IconButton(onClick = { onSaveFilter?.invoke() }) {
+                Icon(
+                    Icons.Default.Save,
+                    contentDescription = "Save current filter"
+                )
+            }
+        }
 
         FilterToggleButton(
             isFilterPanelOpen = isFilterPanelOpen,
@@ -162,6 +184,25 @@ private fun FilterChipsList(
     filterState: TaskFilterState,
     modifier: Modifier = Modifier,
 ) {
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        items(buildFilterChips(filterState).entries.toList(), key = { it.key }) { (_, chip) ->
+            FilterChip(
+                text = chip,
+                modifier = Modifier.animateItem()
+            )
+        }
+    }
+}
+
+@Composable
+fun FilterChip(
+    text: String,
+    modifier: Modifier = Modifier
+) {
     val noOpInteractionSource = remember {
         object : MutableInteractionSource {
             override val interactions: Flow<Interaction> = emptyFlow()
@@ -170,20 +211,12 @@ private fun FilterChipsList(
         }
     }
 
-    LazyRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        items(buildFilterChips(filterState).entries.toList(), key = { it.key }) { (_, chip) ->
-            SuggestionChip(
-                onClick = { },
-                label = { Text(text = chip, style = MaterialTheme.typography.labelSmall) },
-                interactionSource = noOpInteractionSource,
-                modifier = Modifier.animateItem()
-            )
-        }
-    }
+    SuggestionChip(
+        onClick = { },
+        label = { Text(text = text, style = MaterialTheme.typography.labelSmall) },
+        interactionSource = noOpInteractionSource,
+        modifier = modifier
+    )
 }
 
 @Composable
@@ -196,7 +229,7 @@ private fun ClearFiltersButton(onClick: () -> Unit) {
     }
 }
 
-private enum class FilterChipType {
+enum class FilterChipType {
     Search,
     Status,
     DueDate,
@@ -214,54 +247,61 @@ private enum class FilterChipType {
     Tags
 }
 
-private fun buildFilterChips(filterState: TaskFilterState): Map<FilterChipType, String> = buildMap {
-    addSearchChip(filterState)
-    addStatusChip(filterState)
-    addDueDateChip(filterState)
-    addPriorityChip(filterState)
-    addEstimatedTimeChip(filterState)
-    addRecurrenceChip(filterState)
-    addNotificationsChip(filterState)
-    addAutoUpdateChip(filterState)
-    addConnectionChips(filterState)
-    addTagsChip(filterState)
+private fun buildFilterChips(filterState: TaskFilterState): Map<FilterChipType, String> =
+    buildFilterChipsFromCriteria(filterState.toCriteria())
+
+/**
+ * Build filter chips from TaskFilterCriteria.
+ * This can be used to display filter chips in various contexts.
+ */
+fun buildFilterChipsFromCriteria(criteria: TaskFilterCriteria): Map<FilterChipType, String> = buildMap {
+    addSearchChip(criteria)
+    addStatusChip(criteria)
+    addDueDateChip(criteria)
+    addPriorityChip(criteria)
+    addEstimatedTimeChip(criteria)
+    addRecurrenceChip(criteria)
+    addNotificationsChip(criteria)
+    addAutoUpdateChip(criteria)
+    addConnectionChips(criteria)
+    addTagsChip(criteria)
 }
 
-private fun MutableMap<FilterChipType, String>.addSearchChip(filterState: TaskFilterState) {
-    if (filterState.searchQuery.isNotBlank()) {
-        val searchFields = filterState.textSearchFields.joinToString(", ") { it.displayName }
-        put(FilterChipType.Search, "Search in: $searchFields")
+private fun MutableMap<FilterChipType, String>.addSearchChip(criteria: TaskFilterCriteria) {
+    if (criteria.searchQuery.isNotBlank()) {
+        val searchFields = criteria.textSearchFields.joinToString(", ") { it.displayName }
+        put(FilterChipType.Search, "\"${criteria.searchQuery}\" in $searchFields")
     }
 }
 
-private fun MutableMap<FilterChipType, String>.addStatusChip(filterState: TaskFilterState) {
-    if (filterState.statusFilters.isEmpty()) return
+private fun MutableMap<FilterChipType, String>.addStatusChip(criteria: TaskFilterCriteria) {
+    if (criteria.statusFilters.isEmpty()) return
 
-    val updatedStatuses = filterState.statusFilters.map { status ->
+    val updatedStatuses = criteria.statusFilters.map { status ->
         when (status) {
             is TaskStatus.Blocked -> {
-                val ids = filterState.blockedByTaskIds
+                val ids = criteria.blockedByTaskIds
                     .takeIf { it.isNotBlank() }
                     ?.split(",")
                     ?.map { it.trim() }
                     ?.filter { Regex("[a-zA-Z]+-[1-9][0-9]*").matchEntire(it) != null }
                     .orEmpty()
                     .toSet()
-                status.copy(blockerTaskIds = ids, comment = filterState.blockedByComment)
+                status.copy(blockerTaskIds = ids, comment = criteria.blockedByComment)
             }
-            is TaskStatus.Declined -> status.copy(reason = filterState.declinedReason)
+            is TaskStatus.Declined -> status.copy(reason = criteria.declinedReason)
             else -> status
         }
     }
     put(FilterChipType.Status, "Status: ${updatedStatuses.joinToString(", ") { it.toBriefString() }}")
 }
 
-private fun MutableMap<FilterChipType, String>.addDueDateChip(filterState: TaskFilterState) {
-    if (filterState.dueDateFilter == DueDateFilter.Any) return
+private fun MutableMap<FilterChipType, String>.addDueDateChip(criteria: TaskFilterCriteria) {
+    if (criteria.dueDateFilter == DueDateFilter.Any) return
 
-    val dueSummary = if (filterState.dueDateFilter == DueDateFilter.Custom) {
-        val after = filterState.customDueDateAfter?.let { formatDueDate(it) }
-        val before = filterState.customDueDateBefore?.let { formatDueDate(it) }
+    val dueSummary = if (criteria.dueDateFilter == DueDateFilter.Custom) {
+        val after = criteria.customDueDateAfter?.let { formatDueDate(it) }
+        val before = criteria.customDueDateBefore?.let { formatDueDate(it) }
         when {
             after != null && before != null && after == before -> "Due: $after"
             after != null && before != null -> "Due: $after - $before"
@@ -270,17 +310,17 @@ private fun MutableMap<FilterChipType, String>.addDueDateChip(filterState: TaskF
             else -> "Due: Some"
         }
     } else {
-        "Due: ${filterState.dueDateFilter.displayName}"
+        "Due: ${criteria.dueDateFilter.displayName}"
     }
     put(FilterChipType.DueDate, dueSummary)
 }
 
-private fun MutableMap<FilterChipType, String>.addPriorityChip(filterState: TaskFilterState) {
-    if (filterState.priorityFilter == PriorityFilter.Any) return
+private fun MutableMap<FilterChipType, String>.addPriorityChip(criteria: TaskFilterCriteria) {
+    if (criteria.priorityFilter == PriorityFilter.Any) return
 
-    val prioritySummary = if (filterState.priorityFilter == PriorityFilter.Custom) {
-        val min = filterState.customPriorityMin.takeIf { it.isNotBlank() }
-        val max = filterState.customPriorityMax.takeIf { it.isNotBlank() }
+    val prioritySummary = if (criteria.priorityFilter == PriorityFilter.Custom) {
+        val min = criteria.customPriorityMin.takeIf { it.isNotBlank() }
+        val max = criteria.customPriorityMax.takeIf { it.isNotBlank() }
         when {
             min != null && max != null && min == max -> "Priority: $min"
             min != null && max != null -> "Priority: $min-$max"
@@ -289,17 +329,17 @@ private fun MutableMap<FilterChipType, String>.addPriorityChip(filterState: Task
             else -> "Priority: Some"
         }
     } else {
-        "Priority: ${filterState.priorityFilter.displayName}"
+        "Priority: ${criteria.priorityFilter.displayName}"
     }
     put(FilterChipType.Priority, prioritySummary)
 }
 
-private fun MutableMap<FilterChipType, String>.addEstimatedTimeChip(filterState: TaskFilterState) {
-    if (filterState.estimatedTimeFilter == EstimatedTimeFilter.Any) return
+private fun MutableMap<FilterChipType, String>.addEstimatedTimeChip(criteria: TaskFilterCriteria) {
+    if (criteria.estimatedTimeFilter == EstimatedTimeFilter.Any) return
 
-    val timeSummary = if (filterState.estimatedTimeFilter == EstimatedTimeFilter.Custom) {
-        val minStr = filterState.customEstimatedTimeMin.takeIf { it.isNotBlank() }
-        val maxStr = filterState.customEstimatedTimeMax.takeIf { it.isNotBlank() }
+    val timeSummary = if (criteria.estimatedTimeFilter == EstimatedTimeFilter.Custom) {
+        val minStr = criteria.customEstimatedTimeMin.takeIf { it.isNotBlank() }
+        val maxStr = criteria.customEstimatedTimeMax.takeIf { it.isNotBlank() }
         val minPeriod = minStr?.let { parseCompactTimeToPeriod(it) }
         val maxPeriod = maxStr?.let { parseCompactTimeToPeriod(it) }
 
@@ -311,52 +351,52 @@ private fun MutableMap<FilterChipType, String>.addEstimatedTimeChip(filterState:
             else -> "Duration: Some"
         }
     } else {
-        "Duration: ${filterState.estimatedTimeFilter.displayName}"
+        "Duration: ${criteria.estimatedTimeFilter.displayName}"
     }
     put(FilterChipType.EstimatedTime, timeSummary)
 }
 
-private fun MutableMap<FilterChipType, String>.addRecurrenceChip(filterState: TaskFilterState) {
-    if (filterState.recurrenceFilter != RecurrenceFilter.Any) {
-        put(FilterChipType.Recurrence, "Recurrence: ${filterState.recurrenceFilter.displayName}")
+private fun MutableMap<FilterChipType, String>.addRecurrenceChip(criteria: TaskFilterCriteria) {
+    if (criteria.recurrenceFilter != RecurrenceFilter.Any) {
+        put(FilterChipType.Recurrence, "Recurrence: ${criteria.recurrenceFilter.displayName}")
     }
 }
 
-private fun MutableMap<FilterChipType, String>.addNotificationsChip(filterState: TaskFilterState) {
-    if (filterState.notificationsFilter != NotificationsFilter.Any) {
-        put(FilterChipType.Notifications, "Notifications: ${filterState.notificationsFilter.displayName}")
+private fun MutableMap<FilterChipType, String>.addNotificationsChip(criteria: TaskFilterCriteria) {
+    if (criteria.notificationsFilter != NotificationsFilter.Any) {
+        put(FilterChipType.Notifications, "Notifications: ${criteria.notificationsFilter.displayName}")
     }
 }
 
-private fun MutableMap<FilterChipType, String>.addAutoUpdateChip(filterState: TaskFilterState) {
-    if (filterState.autoUpdateStatusFilter != AutoUpdateStatusFilter.Any) {
-        put(FilterChipType.AutoUpdate, "Status update: ${filterState.autoUpdateStatusFilter.displayName}")
+private fun MutableMap<FilterChipType, String>.addAutoUpdateChip(criteria: TaskFilterCriteria) {
+    if (criteria.autoUpdateStatusFilter != AutoUpdateStatusFilter.Any) {
+        put(FilterChipType.AutoUpdate, "Status update: ${criteria.autoUpdateStatusFilter.displayName}")
     }
 }
 
-private fun MutableMap<FilterChipType, String>.addConnectionChips(filterState: TaskFilterState) {
+private fun MutableMap<FilterChipType, String>.addConnectionChips(criteria: TaskFilterCriteria) {
     ConnectionTypeOption.entries.forEach { type ->
-        if (type in filterState.connectionTypeFilters) {
+        if (type in criteria.connectionTypeFilters) {
             val (chipType, label) = when (type) {
                 ConnectionTypeOption.DependsOn ->
-                    FilterChipType.ConnectionDependsOn to if (filterState.dependsOnTaskIds.isNotBlank())
-                        "Depends on: ${filterState.dependsOnTaskIds}"
+                    FilterChipType.ConnectionDependsOn to if (criteria.dependsOnTaskIds.isNotBlank())
+                        "Depends on: ${criteria.dependsOnTaskIds}"
                     else type.displayName
                 ConnectionTypeOption.IsDependencyOf ->
-                    FilterChipType.ConnectionIsDependencyOf to if (filterState.isDependencyOfTaskIds.isNotBlank())
-                        "Is dependency of: ${filterState.isDependencyOfTaskIds}"
+                    FilterChipType.ConnectionIsDependencyOf to if (criteria.isDependencyOfTaskIds.isNotBlank())
+                        "Is dependency of: ${criteria.isDependencyOfTaskIds}"
                     else type.displayName
                 ConnectionTypeOption.RelatesTo ->
-                    FilterChipType.ConnectionRelatesTo to if (filterState.relatesToTaskIds.isNotBlank())
-                        "Relates to: ${filterState.relatesToTaskIds}"
+                    FilterChipType.ConnectionRelatesTo to if (criteria.relatesToTaskIds.isNotBlank())
+                        "Relates to: ${criteria.relatesToTaskIds}"
                     else type.displayName
                 ConnectionTypeOption.SubtaskOf ->
-                    FilterChipType.ConnectionSubtaskOf to if (filterState.subtaskOfTaskIds.isNotBlank())
-                        "Is subtask of: ${filterState.subtaskOfTaskIds}"
+                    FilterChipType.ConnectionSubtaskOf to if (criteria.subtaskOfTaskIds.isNotBlank())
+                        "Is subtask of: ${criteria.subtaskOfTaskIds}"
                     else type.displayName
                 ConnectionTypeOption.ParentOf ->
-                    FilterChipType.ConnectionParentOf to if (filterState.parentOfTaskIds.isNotBlank())
-                        "Is parent of: ${filterState.parentOfTaskIds}"
+                    FilterChipType.ConnectionParentOf to if (criteria.parentOfTaskIds.isNotBlank())
+                        "Is parent of: ${criteria.parentOfTaskIds}"
                     else type.displayName
                 ConnectionTypeOption.NotSubtask -> FilterChipType.ConnectionNotSubtask to type.displayName
             }
@@ -365,8 +405,8 @@ private fun MutableMap<FilterChipType, String>.addConnectionChips(filterState: T
     }
 }
 
-private fun MutableMap<FilterChipType, String>.addTagsChip(filterState: TaskFilterState) {
-    if (filterState.selectedTags.isNotEmpty()) {
-        put(FilterChipType.Tags, "Tag: ${filterState.selectedTags.joinToString(", ")}")
+private fun MutableMap<FilterChipType, String>.addTagsChip(criteria: TaskFilterCriteria) {
+    if (criteria.selectedTags.isNotEmpty()) {
+        put(FilterChipType.Tags, "Tag: ${criteria.selectedTags.joinToString(", ")}")
     }
 }

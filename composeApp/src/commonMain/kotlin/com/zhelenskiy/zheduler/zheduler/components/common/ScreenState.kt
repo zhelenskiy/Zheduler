@@ -41,3 +41,13 @@ val <T> ScreenState<T>.dataOrNull: T?
         is ScreenState.InitiallyLoaded -> data
         is ScreenState.Ready -> data
     }
+
+/**
+ * Maps the data inside the state, preserving the state type (InitiallyLoaded or Ready).
+ * Returns the same Loading state if currently loading.
+ */
+inline fun <T> ScreenState<T>.mapData(transform: (T) -> T): ScreenState<T> = when (this) {
+    is ScreenState.Loading -> this
+    is ScreenState.InitiallyLoaded -> ScreenState.InitiallyLoaded(transform(data))
+    is ScreenState.Ready -> ScreenState.Ready(transform(data))
+}

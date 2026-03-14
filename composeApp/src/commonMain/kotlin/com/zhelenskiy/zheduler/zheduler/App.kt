@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalTime::class)
+
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlin.time.ExperimentalTime
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -30,6 +33,7 @@ import com.zhelenskiy.zheduler.zheduler.navigation.TaskEditRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.TaskListRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.ViewModeEditorRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.ViewModeManagementRoute
+import com.zhelenskiy.zheduler.zheduler.navigation.SavedFilterManagementRoute
 import com.zhelenskiy.zheduler.zheduler.screens.calendar.CalendarScreen
 import com.zhelenskiy.zheduler.zheduler.screens.newtask.NewTaskScreen
 import com.zhelenskiy.zheduler.zheduler.screens.spacelist.SpaceListScreen
@@ -38,7 +42,9 @@ import com.zhelenskiy.zheduler.zheduler.screens.taskedit.TaskEditScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.TaskListScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeEditorScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeManagementScreen
+import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SavedFilterManagementScreen
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterViewModel
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
 
@@ -131,12 +137,21 @@ private fun AppContent(
 
         composable<TaskListRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<TaskListRoute>()
+            val savedStateHandle = backStackEntry.savedStateHandle
             val viewModel = remember(route.spaceId) {
                 appGraph.taskListViewModelFactory.create(route.spaceId)
             }
+
+            // Observe loaded filter from SavedFilterManagementScreen
+            val loadedFilterId by savedStateHandle.getStateFlow<String?>("loadedFilterId", null).collectAsState()
+
             TaskListScreen(
                 viewModel = viewModel,
                 refreshTrigger = refreshTrigger,
+                loadedFilterId = loadedFilterId,
+                onFilterLoaded = {
+                    savedStateHandle["loadedFilterId"] = null
+                },
                 onTaskClick = { taskId ->
                     navController.navigate(TaskDetailRoute(route.spaceId, taskId))
                 },
@@ -155,6 +170,9 @@ private fun AppContent(
                 },
                 onNavigateToViewModeManagement = {
                     navController.navigate(ViewModeManagementRoute(route.spaceId))
+                },
+                onNavigateToSavedFilterManagement = {
+                    navController.navigate(SavedFilterManagementRoute(route.spaceId))
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
@@ -379,6 +397,33 @@ private fun AppContent(
                 },
                 onCancel = {
                     navController.popBackStack()
+                },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                useDynamicColors = useDynamicColors,
+                onDynamicColorsChange = onUseDynamicColorsChange
+            )
+        }
+
+        composable<SavedFilterManagementRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<SavedFilterManagementRoute>()
+            val viewModel = remember(route.spaceId) {
+                SavedFilterViewModel(appGraph.taskRepository, route.spaceId)
+            }
+
+            SavedFilterManagementScreen(
+                viewModel = viewModel,
+                onLoad = { filter ->
+                    // Navigate back with the filter to apply
+                    navController.previousBackStackEntry?.savedStateHandle?.set("loadedFilterId", filter.id)
+                    navController.popBackStack()
+                },
+                onBack = {
+                    refreshTrigger++
+                    navController.popBackStack()
+                },
+                onNavigateToSpaceList = {
+                    navController.popBackStack(SpaceListRoute, inclusive = false)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
