@@ -46,6 +46,7 @@ kotlin {
 
         androidMain.dependencies {
             implementation(libs.sqldelight.android)
+            implementation(libs.sqlite.requery)  // SQLite with JSON1 extension support
         }
 
         androidUnitTest.dependencies {
@@ -118,6 +119,7 @@ android {
                 it.exclude("**/DatabaseCalculateStatusFromSubtasksRepositoryTest.class")
                 it.exclude("**/DatabaseIsMissedRepositoryTest.class")
                 it.exclude("**/DatabaseSearchTasksForConnectionTest.class")
+                it.exclude("**/GroupedTaskQueriesComparisonTest.class")
             }
         }
     }

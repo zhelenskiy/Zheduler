@@ -55,3 +55,8 @@ class AndroidDatabaseIsMissedRepositoryTest : IsMissedRepositoryTest(), Database
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
 class AndroidDatabaseSearchTasksForConnectionTest : SearchTasksForConnectionTest(), DatabaseRepositoryTest
+
+// Note: GroupedTaskQueriesComparisonTest is excluded from Android unit tests because the SQL queries
+// for getTaskGroups/getTasksForGroup use json_extract which is not supported by Robolectric's SQLite.
+// The requery sqlite-android library provides JSON1 support but uses native code that can't be loaded
+// in the Robolectric JVM environment. The test runs on JVM which has full SQLite JSON1 extension support.
