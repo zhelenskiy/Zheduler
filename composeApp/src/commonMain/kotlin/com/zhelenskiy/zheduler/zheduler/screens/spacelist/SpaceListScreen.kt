@@ -65,7 +65,7 @@ private fun SpaceSearchBar(
                 value = searchQuery,
                 onValueChange = onSearchQueryChange,
                 placeholder = {
-                    Text("Search spaces by ${searchOptions.joinToString(", ") { it.displayName }}")
+                    Text("Search by ${searchOptions.joinToString(", ") { it.displayName }}")
                 },
                 modifier = Modifier.weight(1f),
                 singleLine = true,

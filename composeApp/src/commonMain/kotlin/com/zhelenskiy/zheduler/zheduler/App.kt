@@ -10,16 +10,19 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.materialkolor.rememberDynamicColorScheme
+import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.di.AppGraph
 import com.zhelenskiy.zheduler.zheduler.di.AppGraphProvider
 import com.zhelenskiy.zheduler.zheduler.di.LocalAppGraph
@@ -45,8 +48,11 @@ import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeManage
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SavedFilterManagementScreen
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterViewModel
+import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
+import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
+import kotlinx.coroutines.flow.first
 
 val DefaultSeedColor = Color(0xFF1E90FF)
 
@@ -64,36 +70,93 @@ data class ColorSettings(
     val effectiveColor: Color get() = previewColor ?: savedColor
 }
 
+/**
+ * Holds the persisted theme state with callbacks.
+ * Used to share theme state between App and external window decorations (e.g., JVM title bar).
+ */
+@Stable
+class ThemeState(
+    themeMode: ThemeMode = ThemeMode.System,
+    useDynamicColors: Boolean = true,
+    colorSettings: ColorSettings = ColorSettings()
+) {
+    var themeMode by mutableStateOf(themeMode)
+    var useDynamicColors by mutableStateOf(useDynamicColors)
+    var colorSettings by mutableStateOf(colorSettings)
+    var settingsLoaded by mutableStateOf(false)
+
+    val colorScheme: ColorScheme
+        @Composable get() = getColorScheme(themeMode, useDynamicColors, colorSettings.effectiveColor)
+}
+
+@Composable
+fun rememberThemeState(): ThemeState {
+    val themeSettingsStore = remember { createThemeSettingsStore() }
+    val themeState = remember { ThemeState() }
+
+    // Load settings on startup
+    LaunchedEffect(Unit) {
+        val settings = themeSettingsStore.updates.first() ?: ThemeSettings()
+        themeState.themeMode = settings.themeMode
+        themeState.useDynamicColors = settings.useDynamicColors
+        themeState.colorSettings = ColorSettings(savedColor = Color(settings.customSeedColorArgb))
+        themeState.settingsLoaded = true
+    }
+
+    // Save settings when they change (only savedColor, not previewColor)
+    LaunchedEffect(themeState.themeMode, themeState.useDynamicColors, themeState.colorSettings.savedColor) {
+        if (themeState.settingsLoaded) {
+            themeSettingsStore.set(
+                ThemeSettings(
+                    themeMode = themeState.themeMode,
+                    useDynamicColors = themeState.useDynamicColors,
+                    customSeedColorArgb = themeState.colorSettings.savedColor.toArgb()
+                )
+            )
+        }
+    }
+
+    return themeState
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun App(
-    themeModeState: MutableState<ThemeMode> = remember { mutableStateOf(ThemeMode.System) },
-    useDynamicColorsState: MutableState<Boolean> = remember { mutableStateOf(true) },
-    colorSettingsState: MutableState<ColorSettings> = remember { mutableStateOf(ColorSettings()) }
-) {
+fun App(themeState: ThemeState = rememberThemeState()) {
     var appGraph by remember { mutableStateOf<AppGraph?>(null) }
 
     LaunchedEffect(Unit) {
         awaitDatabaseInitialization()
         appGraph = createAppGraph()
     }
-    val (themeMode, onThemeModeChange) = themeModeState
-    val (useDynamicColors, onUseDynamicColorsChange) = useDynamicColorsState
-    val (colorSettings, onColorSettingsChange) = colorSettingsState
+
+    val onThemeModeChange: (ThemeMode) -> Unit = { themeState.themeMode = it }
+    val onUseDynamicColorsChange: (Boolean) -> Unit = { themeState.useDynamicColors = it }
+    val onColorSettingsChange: (ColorSettings) -> Unit = { themeState.colorSettings = it }
 
     val graph = appGraph
     if (graph != null) {
-        MaterialTheme(colorScheme = getColorScheme(themeMode, useDynamicColors, colorSettings.effectiveColor)) {
+        MaterialTheme(colorScheme = themeState.colorScheme) {
             AppGraphProvider(graph) {
-                AppContent(themeMode, onThemeModeChange, useDynamicColors, onUseDynamicColorsChange, colorSettings, onColorSettingsChange)
+                AppContent(
+                    themeState.themeMode, onThemeModeChange,
+                    themeState.useDynamicColors, onUseDynamicColorsChange,
+                    themeState.colorSettings, onColorSettingsChange
+                )
             }
         }
     } else {
         // Show loading state while database initializes
-        MaterialTheme(colorScheme = getColorScheme(themeMode, useDynamicColors, colorSettings.effectiveColor)) {
-            Surface {
+        MaterialTheme(colorScheme = themeState.colorScheme) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Zheduler") },
+                        colors = appTopAppBarColors()
+                    )
+                }
+            ) { paddingValues ->
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
