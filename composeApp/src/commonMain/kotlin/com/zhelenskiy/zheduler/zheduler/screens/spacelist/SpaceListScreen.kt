@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
+import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -244,7 +245,9 @@ private fun SpaceListTopAppBar(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     TopAppBar(
         title = { Text("Zheduler - Spaces") },
@@ -259,7 +262,9 @@ private fun SpaceListTopAppBar(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         },
         colors = appTopAppBarColors(),
@@ -276,7 +281,9 @@ fun SpaceListScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val hasSpaces by viewModel.hasSpaces.collectAsState()
     val allTags by viewModel.allTags.collectAsState()
@@ -320,7 +327,9 @@ fun SpaceListScreen(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         },
         floatingActionButton = {

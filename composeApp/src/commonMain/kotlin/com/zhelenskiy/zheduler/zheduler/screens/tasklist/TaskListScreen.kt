@@ -26,6 +26,7 @@ import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SaveFilterD
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
+import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -149,7 +150,9 @@ private fun TaskListTopAppBar(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     var settingsMenuExpanded by remember { mutableStateOf(false) }
 
@@ -203,7 +206,9 @@ private fun TaskListTopAppBar(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         },
         colors = appTopAppBarColors(),
@@ -693,6 +698,8 @@ fun TaskListScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
     onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val tasksWithTotals by viewModel.tasksWithTotals.collectAsState()
     val currentSpace by viewModel.currentSpace.collectAsState()
@@ -755,7 +762,9 @@ fun TaskListScreen(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         },
         floatingActionButton = {

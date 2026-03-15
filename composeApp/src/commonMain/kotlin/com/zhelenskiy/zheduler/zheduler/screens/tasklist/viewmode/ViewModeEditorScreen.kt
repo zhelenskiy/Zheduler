@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.TagSelectionDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
@@ -49,6 +50,8 @@ fun ViewModeEditorScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
     onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val allTags by viewModel.allTags.collectAsState()
@@ -123,7 +126,9 @@ fun ViewModeEditorScreen(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
                         useDynamicColors = useDynamicColors,
-                        onDynamicColorsChange = onDynamicColorsChange
+                        onDynamicColorsChange = onDynamicColorsChange,
+                        colorSettings = colorSettings,
+                        onColorSettingsChange = onColorSettingsChange
                     )
                 },
                 colors = appTopAppBarColors()

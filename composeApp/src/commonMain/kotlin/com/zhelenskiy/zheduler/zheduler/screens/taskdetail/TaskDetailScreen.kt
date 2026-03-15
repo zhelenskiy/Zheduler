@@ -21,6 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
@@ -118,7 +119,9 @@ private fun TaskDetailTopAppBar(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     TopAppBar(
         title = {
@@ -147,7 +150,9 @@ private fun TaskDetailTopAppBar(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         },
         colors = appTopAppBarColors(),
@@ -618,7 +623,9 @@ fun TaskDetailScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val taskWithTotals by viewModel.taskWithTotals.collectAsState()
     val connectionsByType by viewModel.connectionsByType.collectAsState()
@@ -642,7 +649,9 @@ fun TaskDetailScreen(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
     ) { padding ->

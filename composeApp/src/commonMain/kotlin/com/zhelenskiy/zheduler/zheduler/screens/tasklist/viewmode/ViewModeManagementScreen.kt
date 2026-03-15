@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.GroupableField
 import com.zhelenskiy.zheduler.zheduler.GroupDefinition
 import com.zhelenskiy.zheduler.zheduler.OrderDirection
@@ -45,7 +46,9 @@ fun ViewModeManagementScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val viewModes by viewModel.viewModes.collectAsState()
     val activeViewMode by viewModel.activeViewMode.collectAsState()
@@ -69,7 +72,9 @@ fun ViewModeManagementScreen(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
                         useDynamicColors = useDynamicColors,
-                        onDynamicColorsChange = onDynamicColorsChange
+                        onDynamicColorsChange = onDynamicColorsChange,
+                        colorSettings = colorSettings,
+                        onColorSettingsChange = onColorSettingsChange
                     )
                 },
                 colors = appTopAppBarColors(),

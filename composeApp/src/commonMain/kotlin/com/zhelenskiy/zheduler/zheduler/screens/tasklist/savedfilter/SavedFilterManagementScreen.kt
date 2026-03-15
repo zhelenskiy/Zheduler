@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.SavedFilter
 import com.zhelenskiy.zheduler.zheduler.SavedFilterWithViewMode
 import com.zhelenskiy.zheduler.zheduler.ViewMode
@@ -48,7 +49,9 @@ fun SavedFilterManagementScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val savedFilters by viewModel.savedFilters.collectAsState()
     val viewModes by viewModel.viewModes.collectAsState()
@@ -66,7 +69,9 @@ fun SavedFilterManagementScreen(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         },
         floatingActionButton = {
@@ -129,7 +134,9 @@ private fun SavedFilterManagementTopAppBar(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     TopAppBar(
         title = { Text("Saved Filters") },
@@ -146,7 +153,9 @@ private fun SavedFilterManagementTopAppBar(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onDynamicColorsChange
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         },
         colors = appTopAppBarColors(),
