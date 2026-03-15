@@ -70,6 +70,7 @@ kotlin {
             implementation(projects.shared)
             implementation(libs.material.kolor)
             implementation(libs.colorpicker.compose)
+            implementation(libs.kstore)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -81,8 +82,21 @@ kotlin {
             implementation(libs.nucleus.core.runtime)
             implementation(libs.nucleus.decorated.window.jni)
             implementation(libs.nucleus.decorated.window.material)
+            implementation(libs.kstore.file)
+            implementation(libs.appdirs)
+        }
+        androidMain.dependencies {
+            implementation(libs.kstore.file)
+            implementation(libs.appdirs)
+        }
+        iosMain.dependencies {
+            implementation(libs.kstore.file)
+        }
+        jsMain.dependencies {
+            implementation(libs.kstore.storage)
         }
         wasmJsMain.dependencies {
+            implementation(libs.kstore.storage)
             implementation(npm("sql.js", "1.12.0"))
             implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
             implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))

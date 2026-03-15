@@ -120,7 +120,7 @@ private fun CustomColorMenuItem(
                 onColorSettingsChange(colorSettings.copy(previewColor = null))
                 showColorPicker = false
             },
-            onApply = { color ->
+            onSave = { color ->
                 // Save the color and clear preview
                 onColorSettingsChange(ColorSettings(savedColor = color, previewColor = null))
                 showColorPicker = false
@@ -213,7 +213,7 @@ private fun ColorPickerDialog(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit,
     onDismiss: () -> Unit,
-    onApply: (Color) -> Unit
+    onSave: (Color) -> Unit
 ) {
     val controller = rememberColorPickerController()
     val currentPreviewColor = colorSettings.previewColor ?: colorSettings.savedColor
@@ -230,8 +230,8 @@ private fun ColorPickerDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onApply(currentPreviewColor) }) {
-                Text("Apply")
+            TextButton(onClick = { onSave(currentPreviewColor) }) {
+                Text("Save")
             }
         },
         dismissButton = {
