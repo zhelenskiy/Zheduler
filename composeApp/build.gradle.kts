@@ -69,6 +69,7 @@ kotlin {
             implementation(libs.filekit.dialogs.compose)
             implementation(projects.shared)
             implementation(libs.material.kolor)
+            implementation(libs.colorpicker.compose)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

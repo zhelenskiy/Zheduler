@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
+import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,7 +136,9 @@ fun CalendarScreen(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onDynamicColorsChange: (Boolean) -> Unit
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()) }
 
@@ -177,7 +180,9 @@ fun CalendarScreen(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
                         useDynamicColors = useDynamicColors,
-                        onDynamicColorsChange = onDynamicColorsChange
+                        onDynamicColorsChange = onDynamicColorsChange,
+                        colorSettings = colorSettings,
+                        onColorSettingsChange = onColorSettingsChange
                     )
                 },
                 colors = appTopAppBarColors()

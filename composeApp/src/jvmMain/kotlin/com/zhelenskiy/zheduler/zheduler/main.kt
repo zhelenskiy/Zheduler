@@ -1,10 +1,12 @@
 package com.zhelenskiy.zheduler.zheduler
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -20,15 +22,17 @@ import io.github.kdroidfilter.nucleus.window.material.MaterialTitleBar
 fun main() = application {
     val themeModeState = remember { mutableStateOf(ThemeMode.System) }
     val useDynamicColorsState = remember { mutableStateOf(true) }
-    val colorScheme = getColorScheme(themeModeState.value, useDynamicColorsState.value)
+    val colorSettingsState = remember { mutableStateOf(ColorSettings()) }
+    val colorScheme = getColorScheme(themeModeState.value, useDynamicColorsState.value, colorSettingsState.value.effectiveColor)
     MaterialTheme(colorScheme = colorScheme) {
         MaterialDecoratedWindow(
             onCloseRequest = ::exitApplication,
             title = "Zheduler",
             state = rememberWindowState(width = 900.dp, height = 800.dp),
         ) {
+            val backgroundColor by animateColorAsState(colorScheme.primaryContainer)
             MaterialTitleBar(
-                backgroundContent = { Box(Modifier.fillMaxSize().background(colorScheme.primaryContainer)) }
+                backgroundContent = { Box(Modifier.fillMaxSize().background(backgroundColor)) }
             ) {
                 Text(
                     text = title,
@@ -38,7 +42,7 @@ fun main() = application {
                 )
             }
 
-            App(themeModeState, useDynamicColorsState)
+            App(themeModeState, useDynamicColorsState, colorSettingsState)
         }
     }
 }

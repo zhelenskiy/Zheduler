@@ -48,11 +48,28 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterViewModel
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
 
+val DefaultSeedColor = Color(0xFF1E90FF)
+
+/**
+ * Data class holding color-related settings.
+ * @param savedColor The persisted custom seed color
+ * @param previewColor Optional color being previewed (during color picker interaction).
+ *                     When null, savedColor is used.
+ */
+data class ColorSettings(
+    val savedColor: Color = DefaultSeedColor,
+    val previewColor: Color? = null
+) {
+    /** The effective color to use for theming - previewColor if set, otherwise savedColor */
+    val effectiveColor: Color get() = previewColor ?: savedColor
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(
     themeModeState: MutableState<ThemeMode> = remember { mutableStateOf(ThemeMode.System) },
-    useDynamicColorsState: MutableState<Boolean> = remember { mutableStateOf(true) }
+    useDynamicColorsState: MutableState<Boolean> = remember { mutableStateOf(true) },
+    colorSettingsState: MutableState<ColorSettings> = remember { mutableStateOf(ColorSettings()) }
 ) {
     var appGraph by remember { mutableStateOf<AppGraph?>(null) }
 
@@ -62,17 +79,18 @@ fun App(
     }
     val (themeMode, onThemeModeChange) = themeModeState
     val (useDynamicColors, onUseDynamicColorsChange) = useDynamicColorsState
+    val (colorSettings, onColorSettingsChange) = colorSettingsState
 
     val graph = appGraph
     if (graph != null) {
-        MaterialTheme(colorScheme = getColorScheme(themeMode, useDynamicColors)) {
+        MaterialTheme(colorScheme = getColorScheme(themeMode, useDynamicColors, colorSettings.effectiveColor)) {
             AppGraphProvider(graph) {
-                AppContent(themeMode, onThemeModeChange, useDynamicColors, onUseDynamicColorsChange)
+                AppContent(themeMode, onThemeModeChange, useDynamicColors, onUseDynamicColorsChange, colorSettings, onColorSettingsChange)
             }
         }
     } else {
         // Show loading state while database initializes
-        MaterialTheme(colorScheme = getColorScheme(themeMode, useDynamicColors)) {
+        MaterialTheme(colorScheme = getColorScheme(themeMode, useDynamicColors, colorSettings.effectiveColor)) {
             Surface {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -86,17 +104,17 @@ fun App(
 }
 
 @Composable
-fun getColorScheme(themeMode: ThemeMode, useDynamicColors: Boolean): ColorScheme {
+fun getColorScheme(themeMode: ThemeMode, useDynamicColors: Boolean, customSeedColor: Color): ColorScheme {
     val isDarkTheme = when (themeMode) {
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
         ThemeMode.System -> isSystemInDarkTheme()
     }
+    if (useDynamicColors) {
+        getDynamicColorScheme(isDarkTheme)?.let { return it }
+    }
 
-    val seedColor = (if (useDynamicColors) getDynamicColorScheme(isDarkTheme)?.primary else null)
-        ?: Color(0x1E90FF)
-
-    return rememberDynamicColorScheme(seedColor = seedColor, isDark = isDarkTheme)
+    return rememberDynamicColorScheme(seedColor = customSeedColor, isDark = isDarkTheme)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,7 +123,9 @@ private fun AppContent(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
-    onUseDynamicColorsChange: (Boolean) -> Unit
+    onUseDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val appGraph = LocalAppGraph.current
 
@@ -131,7 +151,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -177,7 +199,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -200,7 +224,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -249,7 +275,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -285,7 +313,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -346,7 +376,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -377,7 +409,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -401,7 +435,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
 
@@ -428,7 +464,9 @@ private fun AppContent(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange
+                onDynamicColorsChange = onUseDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange
             )
         }
     }
