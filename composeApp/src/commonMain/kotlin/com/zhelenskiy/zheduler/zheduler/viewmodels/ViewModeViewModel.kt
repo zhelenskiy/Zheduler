@@ -38,7 +38,7 @@ class ViewModeViewModel(
 
     private fun loadTags() {
         viewModelScope.launch {
-            _allTags.value = repository.getAllTags()
+            _allTags.value = repository.getAllTags(spaceId)
         }
     }
 

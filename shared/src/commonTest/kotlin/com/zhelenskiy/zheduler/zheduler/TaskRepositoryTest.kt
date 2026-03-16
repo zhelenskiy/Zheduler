@@ -430,95 +430,95 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.addTask(spaceId, title = "Task 2", tags = setOf("tag2", "tag3"))
         repo.addTask(spaceId, title = "Task 3", tags = setOf("tag1", "tag3", "tag4"))
 
-        val allTags = repo.getAllTags()
+        val allTags = repo.getAllTags(spaceId)
         assertEquals(setOf("tag1", "tag2", "tag3", "tag4"), allTags)
     }
 
     @Test
     fun `getAllTags with no tasks returns empty set`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        assertTrue(repo.getAllTags().isEmpty())
+        val (repo, spaceId) = createRepositoryWithSpace()
+        assertTrue(repo.getAllTags(spaceId).isEmpty())
     }
 
     @Test
-    fun `addTag adds tag to allTags`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        assertTrue(repo.getAllTags().isEmpty())
+    fun `addTag adds tag to space tags`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        assertTrue(repo.getAllTags(spaceId).isEmpty())
 
-        val result = repo.addTag("newTag")
+        val result = repo.addTag(spaceId, "newTag")
         assertTrue(result)
-        assertEquals(setOf("newTag"), repo.getAllTags())
+        assertEquals(setOf("newTag"), repo.getAllTags(spaceId))
     }
 
     @Test
     fun `addTag with blank tag returns false`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        assertFalse(repo.addTag(""))
-        assertFalse(repo.addTag("   "))
-        assertTrue(repo.getAllTags().isEmpty())
+        val (repo, spaceId) = createRepositoryWithSpace()
+        assertFalse(repo.addTag(spaceId, ""))
+        assertFalse(repo.addTag(spaceId, "   "))
+        assertTrue(repo.getAllTags(spaceId).isEmpty())
     }
 
     @Test
     fun `addTag trims whitespace`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("  trimmed  ")
-        assertEquals(setOf("trimmed"), repo.getAllTags())
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "  trimmed  ")
+        assertEquals(setOf("trimmed"), repo.getAllTags(spaceId))
     }
 
     @Test
     fun `addTag does not create duplicates`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("tag1")
-        repo.addTag("tag1")
-        assertEquals(setOf("tag1"), repo.getAllTags())
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "tag1")
+        repo.addTag(spaceId, "tag1")
+        assertEquals(setOf("tag1"), repo.getAllTags(spaceId))
     }
 
     @Test
-    fun `deleteTag removes tag from allTags`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("tag1")
-        repo.addTag("tag2")
-        assertEquals(setOf("tag1", "tag2"), repo.getAllTags())
+    fun `deleteTag removes tag from space tags`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "tag1")
+        repo.addTag(spaceId, "tag2")
+        assertEquals(setOf("tag1", "tag2"), repo.getAllTags(spaceId))
 
-        val result = repo.deleteTag("tag1")
+        val result = repo.deleteTag(spaceId, "tag1")
         assertTrue(result)
-        assertEquals(setOf("tag2"), repo.getAllTags())
+        assertEquals(setOf("tag2"), repo.getAllTags(spaceId))
     }
 
     @Test
     fun `deleteTag with blank tag returns false`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("tag1")
-        assertFalse(repo.deleteTag(""))
-        assertFalse(repo.deleteTag("   "))
-        assertEquals(setOf("tag1"), repo.getAllTags())
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "tag1")
+        assertFalse(repo.deleteTag(spaceId, ""))
+        assertFalse(repo.deleteTag(spaceId, "   "))
+        assertEquals(setOf("tag1"), repo.getAllTags(spaceId))
     }
 
     @Test
     fun `deleteTag trims whitespace`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("tag1")
-        repo.deleteTag("  tag1  ")
-        assertTrue(repo.getAllTags().isEmpty())
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "tag1")
+        repo.deleteTag(spaceId, "  tag1  ")
+        assertTrue(repo.getAllTags(spaceId).isEmpty())
     }
 
     @Test
     fun `deleteTag on non-existent tag does not fail`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("tag1")
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "tag1")
         // Should not throw, just return false or true depending on implementation
-        repo.deleteTag("nonexistent")
-        assertEquals(setOf("tag1"), repo.getAllTags())
+        repo.deleteTag(spaceId, "nonexistent")
+        assertEquals(setOf("tag1"), repo.getAllTags(spaceId))
     }
 
     @Test
     fun `tags added via addTag are available for tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTag("predefinedTag")
+        repo.addTag(spaceId, "predefinedTag")
 
         val task = repo.addTask(spaceId, title = "Task", tags = setOf("predefinedTag", "newTag"))!!
         assertEquals(setOf("predefinedTag", "newTag"), task.tags)
-        assertEquals(setOf("predefinedTag", "newTag"), repo.getAllTags())
+        assertEquals(setOf("predefinedTag", "newTag"), repo.getAllTags(spaceId))
     }
 
     @Test
@@ -526,88 +526,102 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val task = repo.addTask(spaceId, title = "Task", tags = setOf("tag1", "tag2"))!!
 
-        repo.deleteTag("tag1")
+        repo.deleteTag(spaceId, "tag1")
 
-        // Tag is removed from allTags but task still has it
-        assertEquals(setOf("tag2"), repo.getAllTags())
+        // Tag is removed from space tags but task still has it
+        assertEquals(setOf("tag2"), repo.getAllTags(spaceId))
         val updatedTask = repo.getTaskById(task.id)!!
         assertEquals(setOf("tag1", "tag2"), updatedTask.tags)
     }
 
     @Test
     fun `filterTags with empty query returns all tags sorted`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("zebra")
-        repo.addTag("apple")
-        repo.addTag("banana")
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "zebra")
+        repo.addTag(spaceId, "apple")
+        repo.addTag(spaceId, "banana")
 
-        val filtered = repo.filterTags("", emptySet())
+        val filtered = repo.filterTags(spaceId, "", emptySet())
         assertEquals(listOf("apple", "banana", "zebra"), filtered)
     }
 
     @Test
     fun `filterTags with query returns matching tags case-insensitive`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("backend")
-        repo.addTag("frontend")
-        repo.addTag("fullstack")
-        repo.addTag("mobile")
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "backend")
+        repo.addTag(spaceId, "frontend")
+        repo.addTag(spaceId, "fullstack")
+        repo.addTag(spaceId, "mobile")
 
-        val filtered = repo.filterTags("end", emptySet())
+        val filtered = repo.filterTags(spaceId, "end", emptySet())
         assertEquals(listOf("backend", "frontend"), filtered)
     }
 
     @Test
     fun `filterTags excludes specified tags`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("tag1")
-        repo.addTag("tag2")
-        repo.addTag("tag3")
-        repo.addTag("tag4")
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "tag1")
+        repo.addTag(spaceId, "tag2")
+        repo.addTag(spaceId, "tag3")
+        repo.addTag(spaceId, "tag4")
 
-        val filtered = repo.filterTags("", setOf("tag2", "tag4"))
+        val filtered = repo.filterTags(spaceId, "", setOf("tag2", "tag4"))
         assertEquals(listOf("tag1", "tag3"), filtered)
     }
 
     @Test
     fun `filterTags with query and exclusions works correctly`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("sentiment")
-        repo.addTag("urgent")
-        repo.addTag("optional")
-        repo.addTag("required")
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "sentiment")
+        repo.addTag(spaceId, "urgent")
+        repo.addTag(spaceId, "optional")
+        repo.addTag(spaceId, "required")
 
-        val filtered = repo.filterTags("ent", setOf("urgent"))
+        val filtered = repo.filterTags(spaceId, "ent", setOf("urgent"))
         assertEquals(listOf("sentiment"), filtered)
     }
 
     @Test
     fun `filterTags returns empty list when no tags match`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("tag1")
-        repo.addTag("tag2")
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "tag1")
+        repo.addTag(spaceId, "tag2")
 
-        val filtered = repo.filterTags("nonexistent", emptySet())
+        val filtered = repo.filterTags(spaceId, "nonexistent", emptySet())
         assertTrue(filtered.isEmpty())
     }
 
     @Test
     fun `filterTags with empty tags returns empty list`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
+        val (repo, spaceId) = createRepositoryWithSpace()
 
-        val filtered = repo.filterTags("anything", emptySet())
+        val filtered = repo.filterTags(spaceId, "anything", emptySet())
         assertTrue(filtered.isEmpty())
     }
 
     @Test
     fun `filterTags is case insensitive`() = runTest {
-        val (repo, _) = createRepositoryWithSpace()
-        repo.addTag("JavaScript")
-        repo.addTag("TypeScript")
-        repo.addTag("CoffeeScript")
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "JavaScript")
+        repo.addTag(spaceId, "TypeScript")
+        repo.addTag(spaceId, "CoffeeScript")
 
-        val filtered = repo.filterTags("SCRIPT", emptySet())
+        val filtered = repo.filterTags(spaceId, "SCRIPT", emptySet())
         assertEquals(listOf("CoffeeScript", "JavaScript", "TypeScript"), filtered)
+    }
+
+    @Test
+    fun `tags are space-scoped`() = runTest {
+        val repo = createRepository()
+        val space1 = repo.createSpace("Space 1", "S1")!!
+        val space2 = repo.createSpace("Space 2", "S2")!!
+
+        repo.addTag(space1.id, "tag1")
+        repo.addTag(space1.id, "tag2")
+        repo.addTag(space2.id, "tag3")
+
+        assertEquals(setOf("tag1", "tag2"), repo.getAllTags(space1.id))
+        assertEquals(setOf("tag3"), repo.getAllTags(space2.id))
     }
 
     // ==================== Connection Tests ====================

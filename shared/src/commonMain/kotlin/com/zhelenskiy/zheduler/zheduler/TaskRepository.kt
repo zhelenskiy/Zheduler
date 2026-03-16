@@ -141,33 +141,37 @@ interface TaskRepository {
     suspend fun getTasksByIdWithTotals(id: String): TaskWithTotals?
 
     /**
-     * Get all tags used across all tasks.
-     * @return Set of all tag strings
+     * Get all tags for a specific space.
+     * @param spaceId The space ID
+     * @return Set of all tag strings in the space
      */
-    suspend fun getAllTags(): Set<String>
+    suspend fun getAllTags(spaceId: String): Set<String>
 
     /**
-     * Filter tags by search query, excluding already selected tags.
+     * Filter tags by search query for a specific space, excluding already selected tags.
+     * @param spaceId The space ID
      * @param searchQuery The search query to filter tags (empty returns all)
      * @param excludeTags Tags to exclude from results
      * @return Sorted list of matching tags
      */
-    suspend fun filterTags(searchQuery: String = "", excludeTags: Set<String> = emptySet()): List<String>
+    suspend fun filterTags(spaceId: String, searchQuery: String = "", excludeTags: Set<String> = emptySet()): List<String>
 
     /**
-     * Add a new tag to the global tag list.
+     * Add a new tag to a space's tag list.
+     * @param spaceId The space ID
      * @param tag The tag to add
      * @return true if added, false if already exists
      */
-    suspend fun addTag(tag: String): Boolean
+    suspend fun addTag(spaceId: String, tag: String): Boolean
 
     /**
-     * Delete a tag from the global tag list.
+     * Delete a tag from a space's tag list.
      * Note: Does not remove the tag from existing tasks.
+     * @param spaceId The space ID
      * @param tag The tag to delete
      * @return true if deleted successfully
      */
-    suspend fun deleteTag(tag: String): Boolean
+    suspend fun deleteTag(spaceId: String, tag: String): Boolean
 
     /**
      * Preview what the next task ID would be without incrementing the counter.

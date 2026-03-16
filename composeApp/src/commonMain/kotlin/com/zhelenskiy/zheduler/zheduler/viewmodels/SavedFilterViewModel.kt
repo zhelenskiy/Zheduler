@@ -50,7 +50,7 @@ class SavedFilterViewModel(
 
     private fun loadAllTags() {
         viewModelScope.launch {
-            _allTags.value = repository.getAllTags()
+            _allTags.value = repository.getAllTags(spaceId)
         }
     }
 

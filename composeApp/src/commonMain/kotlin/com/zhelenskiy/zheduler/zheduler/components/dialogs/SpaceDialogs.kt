@@ -2,11 +2,14 @@ package com.zhelenskiy.zheduler.zheduler.components.dialogs
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -363,19 +366,14 @@ private fun TagList(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        AnimatedVisibility(
-            visible = allTags.isNotEmpty(),
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
-        ) {
+        AnimatedContent(allTags, transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 200.dp)
-                    .animateContentSize(),
+                    .heightIn(max = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                items(allTags.sorted()) { tag ->
+                items(it.sorted()) { tag ->
                     TagListItem(
                         tag = tag,
                         modifier = Modifier.animateItem(),

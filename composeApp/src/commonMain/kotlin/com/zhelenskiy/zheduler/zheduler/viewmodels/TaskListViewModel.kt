@@ -34,7 +34,7 @@ class TaskListViewModel(
         viewModelScope.launch {
             _tasksWithTotals.value = repository.getAllTasksWithTotals(spaceId)
             _currentSpace.value = repository.getSpaceById(spaceId)
-            _allTags.value = repository.getAllTags()
+            _allTags.value = repository.getAllTags(spaceId)
         }
     }
 

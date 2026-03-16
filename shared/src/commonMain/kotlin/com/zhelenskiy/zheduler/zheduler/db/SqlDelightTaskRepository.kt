@@ -250,11 +250,11 @@ class SqlDelightTaskRepository(
         )
     }
 
-    override suspend fun getAllTags(): Set<String> =
-        queries.getAllTags().awaitAsList().toSet()
+    override suspend fun getAllTags(spaceId: String): Set<String> =
+        queries.getAllTagsForSpace(spaceId).awaitAsList().toSet()
 
-    override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> {
-        val filteredTags = queries.filterTags(searchQuery).awaitAsList()
+    override suspend fun filterTags(spaceId: String, searchQuery: String, excludeTags: Set<String>): List<String> {
+        val filteredTags = queries.filterTagsForSpace(spaceId, searchQuery).awaitAsList()
         return if (excludeTags.isEmpty()) {
             filteredTags
         } else {
@@ -262,15 +262,15 @@ class SqlDelightTaskRepository(
         }
     }
 
-    override suspend fun addTag(tag: String): Boolean {
+    override suspend fun addTag(spaceId: String, tag: String): Boolean {
         if (tag.isBlank()) return false
-        queries.insertTag(tag.trim())
+        queries.insertTagForSpace(spaceId, tag.trim())
         return true
     }
 
-    override suspend fun deleteTag(tag: String): Boolean {
+    override suspend fun deleteTag(spaceId: String, tag: String): Boolean {
         if (tag.isBlank()) return false
-        queries.deleteTag(tag.trim())
+        queries.deleteTagForSpace(spaceId, tag.trim())
         return true
     }
 
@@ -349,7 +349,7 @@ class SqlDelightTaskRepository(
         syncToDatabase(finalTask)
 
         val newTags = finalTask.tags - oldTask.tags
-        newTags.forEach { queries.insertTag(it) }
+        newTags.forEach { queries.insertTagForSpace(finalTask.spaceId, it) }
 
         // Update task_tags junction table
         if (finalTask.tags != oldTask.tags) {
@@ -680,7 +680,7 @@ class SqlDelightTaskRepository(
                 }
             }
 
-            exportData.tags.forEach { queries.insertTag(it) }
+            exportData.tags.forEach { queries.insertTagForSpace(newSpaceId, it) }
 
             newSpace
         }
@@ -760,7 +760,7 @@ class SqlDelightTaskRepository(
             automaticChangeReasonJson = null
         )
 
-        tags.forEach { queries.insertTag(it) }
+        tags.forEach { queries.insertTagForSpace(spaceId, it) }
 
         // Populate task_tags junction table
         tags.forEach { queries.insertTaskTag(taskId, it) }

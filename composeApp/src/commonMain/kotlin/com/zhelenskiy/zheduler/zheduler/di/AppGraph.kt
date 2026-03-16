@@ -11,7 +11,7 @@ import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskViewModel
-import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
@@ -86,9 +86,9 @@ interface AppGraph {
     val taskRepository: SqlDelightTaskRepository
 
     /**
-     * Singleton SpaceListViewModel - preserves search state across navigation.
+     * Singleton SpaceListContainer - preserves search state across navigation.
      */
-    val spaceListViewModel: SpaceListViewModel
+    val spaceListContainer: SpaceListContainer
 
     /**
      * Factory for creating TaskListViewModel instances with runtime parameters.
@@ -137,8 +137,8 @@ interface AppGraph {
 
         @Provides
         @SingleIn(AppScope::class)
-        fun provideSpaceListViewModel(repository: SqlDelightTaskRepository): SpaceListViewModel =
-            SpaceListViewModel(repository)
+        fun provideSpaceListContainer(repository: SqlDelightTaskRepository): SpaceListContainer =
+            SpaceListContainer(repository)
 
         @Provides
         fun provideTaskListViewModelFactory(repository: SqlDelightTaskRepository): TaskListViewModelFactory =
