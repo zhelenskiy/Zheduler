@@ -205,7 +205,7 @@ private fun AppContent(
     ) {
         composable<SpaceListRoute> {
             SpaceListScreen(
-                viewModel = appGraph.spaceListViewModel,
+                container = appGraph.spaceListContainer,
                 refreshTrigger = refreshTrigger,
                 onSpaceClick = { spaceId ->
                     navController.navigate(TaskListRoute(spaceId))

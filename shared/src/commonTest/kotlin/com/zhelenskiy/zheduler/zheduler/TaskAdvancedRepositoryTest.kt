@@ -418,7 +418,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val updated = task.copy(tags = setOf("tag1", "tag2", "tag3"))
         repo.updateTask(updated)
 
-        val allTags = repo.getAllTags()
+        val allTags = repo.getAllTags(spaceId)
         assertTrue(allTags.containsAll(setOf("tag1", "tag2", "tag3")))
     }
 

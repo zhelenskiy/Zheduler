@@ -95,7 +95,7 @@ class TaskEditViewModel(
     override suspend fun getTaskById(id: String): Task? = repository.getTaskById(id)
 
     override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> =
-        repository.filterTags(searchQuery, excludeTags)
+        repository.filterTags(spaceId, searchQuery, excludeTags)
 
     override suspend fun filterTasksForSelection(searchQuery: String): List<Task> =
         repository.filterTasksForSelection(spaceId, taskId, searchQuery)

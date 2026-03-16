@@ -71,6 +71,8 @@ kotlin {
             implementation(libs.material.kolor)
             implementation(libs.colorpicker.compose)
             implementation(libs.kstore)
+            implementation(libs.flowmvi.core)
+            implementation(libs.flowmvi.compose)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

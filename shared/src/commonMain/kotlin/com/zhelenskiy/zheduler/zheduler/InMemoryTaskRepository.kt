@@ -39,7 +39,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     private val statusTimelines = mutableMapOf<String, List<StatusChange>>()
     private val spaces = mutableMapOf<String, Space>()
     private val nextIdBySpace = mutableMapOf<String, Int>()
-    private val allTags = mutableSetOf<String>()
+    private val tagsBySpace = mutableMapOf<String, MutableSet<String>>()
     private val filterStateBySpaceId = mutableMapOf<String, TaskFilterCriteria>()
     private val viewModeBySpaceId = mutableMapOf<String, String>()
     private val filterPanelOpenBySpaceId = mutableMapOf<String, Boolean>()
@@ -205,10 +205,13 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
     }
 
-    override suspend fun getAllTags(): Set<String> = mutex.withLock { allTags.toSet() }
+    override suspend fun getAllTags(spaceId: String): Set<String> = mutex.withLock {
+        tagsBySpace[spaceId]?.toSet() ?: emptySet()
+    }
 
-    override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> = mutex.withLock {
-        val availableTags = allTags.filter { it !in excludeTags }
+    override suspend fun filterTags(spaceId: String, searchQuery: String, excludeTags: Set<String>): List<String> = mutex.withLock {
+        val spaceTags = tagsBySpace[spaceId] ?: emptySet()
+        val availableTags = spaceTags.filter { it !in excludeTags }
         if (searchQuery.isBlank()) {
             availableTags.sorted()
         } else {
@@ -216,15 +219,15 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
     }
 
-    override suspend fun addTag(tag: String): Boolean = mutex.withLock {
+    override suspend fun addTag(spaceId: String, tag: String): Boolean = mutex.withLock {
         if (tag.isBlank()) return@withLock false
-        allTags.add(tag.trim())
+        tagsBySpace.getOrPut(spaceId) { mutableSetOf() }.add(tag.trim())
         true
     }
 
-    override suspend fun deleteTag(tag: String): Boolean = mutex.withLock {
+    override suspend fun deleteTag(spaceId: String, tag: String): Boolean = mutex.withLock {
         if (tag.isBlank()) return@withLock false
-        allTags.remove(tag.trim())
+        tagsBySpace[spaceId]?.remove(tag.trim()) ?: false
     }
 
     override suspend fun getStatusTimeline(taskId: String): List<StatusChange> = mutex.withLock {
@@ -316,7 +319,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 newStatus = status
             )
         )
-        allTags.addAll(tags)
+        tagsBySpace.getOrPut(spaceId) { mutableSetOf() }.addAll(tags)
 
         connections.forEach { connection ->
             addSymmetricConnectionUnsafe(task.id, connection)
@@ -345,7 +348,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         handleStatusChangeOnUpdate(finalTask, oldTask, automaticReason)
 
         tasks[task.id] = finalTask
-        allTags.addAll(finalTask.tags)
+        tagsBySpace.getOrPut(finalTask.spaceId) { mutableSetOf() }.addAll(finalTask.tags)
 
         handleStatusCascadeOnUpdate(finalTask.id, oldTask.status, finalTask.status)
 
@@ -659,7 +662,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 }
             }
 
-            allTags.addAll(exportData.tags)
+            tagsBySpace.getOrPut(newSpace.id) { mutableSetOf() }.addAll(exportData.tags)
 
             newSpace
         }
@@ -726,7 +729,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         spaces.clear()
         tasks.clear()
         statusTimelines.clear()
-        allTags.clear()
+        tagsBySpace.clear()
         nextIdBySpace.clear()
         filterStateBySpaceId.clear()
         viewModeBySpaceId.clear()

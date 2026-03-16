@@ -87,11 +87,15 @@ CREATE TABLE space_next_ids (
     FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
 );
 
--- Tags
+-- Tags (space-scoped)
 CREATE TABLE tags (
-    name TEXT NOT NULL PRIMARY KEY
+    spaceId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (spaceId, name),
+    FOREIGN KEY (spaceId) REFERENCES spaces(id) ON DELETE CASCADE
 );
 
+CREATE INDEX idx_tags_spaceId ON tags(spaceId);
 CREATE INDEX idx_tags_name ON tags(name);
 
 -- Filter states per space
@@ -247,20 +251,21 @@ INSERT OR REPLACE INTO space_next_ids(spaceId, nextId) VALUES (?, ?);
 
 -- Note: incrementNextId and deleteNextIdForSpace removed (unused, CASCADE handles deletion)
 
--- Tag queries
-getAllTags:
-SELECT name FROM tags;
+-- Tag queries (space-scoped)
+getAllTagsForSpace:
+SELECT name FROM tags WHERE spaceId = ?;
 
-filterTags:
+filterTagsForSpace:
 SELECT name FROM tags
-WHERE (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%')
+WHERE spaceId = :spaceId
+  AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%')
 ORDER BY name ASC;
 
-insertTag:
-INSERT OR IGNORE INTO tags(name) VALUES (?);
+insertTagForSpace:
+INSERT OR IGNORE INTO tags(spaceId, name) VALUES (?, ?);
 
-deleteTag:
-DELETE FROM tags WHERE name = ?;
+deleteTagForSpace:
+DELETE FROM tags WHERE spaceId = ? AND name = ?;
 
 -- Task tag queries (for normalized task_tags table)
 insertTaskTag:

@@ -1,16 +1,18 @@
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.Space
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import pro.respawn.flowmvi.api.Container
+import pro.respawn.flowmvi.api.MVIAction
+import pro.respawn.flowmvi.api.MVIIntent
+import pro.respawn.flowmvi.api.MVIState
+import pro.respawn.flowmvi.api.PipelineContext
+import pro.respawn.flowmvi.dsl.store
+import pro.respawn.flowmvi.plugins.reduce
+import pro.respawn.flowmvi.plugins.whileSubscribed
 
 // Search options for space list
 enum class SpaceSearchOption {
@@ -22,147 +24,158 @@ enum class SpaceSearchOption {
     }
 }
 
-class SpaceListViewModel(
+data class SpaceListState(
+    val hasSpaces: Boolean? = null,
+    val searchQuery: String = "",
+    val searchOptions: Set<SpaceSearchOption> = setOf(SpaceSearchOption.Name, SpaceSearchOption.Prefix),
+    val showSearchOptions: Boolean = false,
+    val filteredSpaces: List<Space>? = null
+) : MVIState
+
+sealed interface SpaceListIntent : MVIIntent {
+    data object LoadSpaces : SpaceListIntent
+    data object ClearAllData : SpaceListIntent
+    data class UpdateSearchQuery(val query: String) : SpaceListIntent
+    data object ClearSearchQuery : SpaceListIntent
+    data class ToggleSearchOption(val option: SpaceSearchOption) : SpaceListIntent
+    data object ToggleShowSearchOptions : SpaceListIntent
+    data class AddSpace(val name: String, val idPrefix: String) : SpaceListIntent
+    data class UpdateSpace(val spaceId: String, val newName: String) : SpaceListIntent
+    data class DeleteSpace(val spaceId: String) : SpaceListIntent
+    data class ExportSpaceToJson(val spaceId: String, val prettyPrint: Boolean) : SpaceListIntent
+    data class ImportSpaceFromJson(val jsonString: String) : SpaceListIntent
+}
+
+sealed interface SpaceListAction : MVIAction {
+    data class SpaceAdded(val space: Space?) : SpaceListAction
+    data class SpaceUpdated(val success: Boolean) : SpaceListAction
+    data class SpaceDeleted(val success: Boolean) : SpaceListAction
+    data class SpaceExported(val json: String?) : SpaceListAction
+    data class SpaceImported(val space: Space?) : SpaceListAction
+}
+
+class SpaceListContainer(
     private val repository: TaskRepository
-) : ViewModel() {
+) : Container<SpaceListState, SpaceListIntent, SpaceListAction> {
 
-    private val spaceUpdates = MutableStateFlow(Any())
+    // Direct repository access for operations that need return values
+    suspend fun exportSpaceToJson(spaceId: String, prettyPrint: Boolean): String? =
+        repository.exportSpaceToJson(spaceId, prettyPrint)
 
-    private val _hasSpaces = MutableStateFlow<Boolean?>(null)
-    val hasSpaces: StateFlow<Boolean?> = _hasSpaces.asStateFlow()
+    suspend fun importSpaceFromJson(jsonString: String): Space? {
+        val space = repository.importSpaceFromJson(jsonString)
+        if (space != null) {
+            store.intent(SpaceListIntent.LoadSpaces)
+        }
+        return space
+    }
 
-    private val _allTags = MutableStateFlow<Set<String>>(emptySet())
-    val allTags: StateFlow<Set<String>> = _allTags.asStateFlow()
+    // Tag management for specific spaces
+    suspend fun getTagsForSpace(spaceId: String): Set<String> =
+        repository.getAllTags(spaceId)
 
-    // Search state managed by ViewModel
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    suspend fun addTagToSpace(spaceId: String, tag: String): Boolean =
+        repository.addTag(spaceId, tag)
 
-    private val _searchOptions = MutableStateFlow(setOf(SpaceSearchOption.Name, SpaceSearchOption.Prefix))
-    val searchOptions: StateFlow<Set<SpaceSearchOption>> = _searchOptions.asStateFlow()
+    suspend fun deleteTagFromSpace(spaceId: String, tag: String): Boolean =
+        repository.deleteTag(spaceId, tag)
 
-    private val _showSearchOptions = MutableStateFlow(false)
-    val showSearchOptions: StateFlow<Boolean> = _showSearchOptions.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // Filtered spaces computed from search criteria using repository method
-    val filteredSpaces: StateFlow<List<Space>?> = combine(
-        spaceUpdates,
-        _searchQuery,
-        _searchOptions
-    ) { _, query, options ->
-        repository.filterSpaces(
-            query = query,
-            searchInName = SpaceSearchOption.Name in options,
-            searchInPrefix = SpaceSearchOption.Prefix in options
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    override val store = store(SpaceListState(), scope) {
+        configure {
+            name = "SpaceListStore"
+        }
 
-    init {
+        whileSubscribed {
+            loadSpaces()
+        }
+
+        reduce { intent ->
+            when (intent) {
+                is SpaceListIntent.LoadSpaces -> loadSpaces()
+                is SpaceListIntent.ClearAllData -> clearAllData()
+                is SpaceListIntent.UpdateSearchQuery -> updateState { copy(searchQuery = intent.query) }.also { filterSpaces() }
+                is SpaceListIntent.ClearSearchQuery -> updateState { copy(searchQuery = "") }.also { filterSpaces() }
+                is SpaceListIntent.ToggleSearchOption -> toggleSearchOption(intent.option)
+                is SpaceListIntent.ToggleShowSearchOptions -> updateState { copy(showSearchOptions = !showSearchOptions) }
+                is SpaceListIntent.AddSpace -> addSpace(intent.name, intent.idPrefix)
+                is SpaceListIntent.UpdateSpace -> updateSpace(intent.spaceId, intent.newName)
+                is SpaceListIntent.DeleteSpace -> deleteSpace(intent.spaceId)
+                is SpaceListIntent.ExportSpaceToJson -> exportSpaceToJson(intent.spaceId, intent.prettyPrint)
+                is SpaceListIntent.ImportSpaceFromJson -> importSpaceFromJson(intent.jsonString)
+            }
+        }
+    }
+
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.loadSpaces() {
+        val hasSpaces = repository.hasSpaces()
+        updateState { copy(hasSpaces = hasSpaces) }
+        filterSpaces()
+    }
+
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.clearAllData() {
+        repository.clearAllData()
         loadSpaces()
     }
 
-    fun loadSpaces() {
-        viewModelScope.launch {
-            _hasSpaces.value = repository.hasSpaces()
-            _allTags.value = repository.getAllTags()
-            spaceUpdates.emit(Any())
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.toggleSearchOption(option: SpaceSearchOption) {
+        updateState {
+            val newOptions = if (option in searchOptions && searchOptions.size > 1) {
+                searchOptions - option
+            } else {
+                searchOptions + option
+            }
+            copy(searchOptions = newOptions)
+        }
+        filterSpaces()
+    }
+
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.filterSpaces() {
+        withState {
+            val filteredSpaces = repository.filterSpaces(
+                query = searchQuery,
+                searchInName = SpaceSearchOption.Name in searchOptions,
+                searchInPrefix = SpaceSearchOption.Prefix in searchOptions
+            )
+            updateState { copy(filteredSpaces = filteredSpaces) }
         }
     }
 
-    fun loadTags() {
-        viewModelScope.launch {
-            _allTags.value = repository.getAllTags()
-        }
-    }
-
-    suspend fun addTag(tag: String): Boolean {
-        val result = repository.addTag(tag)
-        if (result) {
-            loadTags()
-        }
-        return result
-    }
-
-    suspend fun deleteTag(tag: String): Boolean {
-        val result = repository.deleteTag(tag)
-        if (result) {
-            loadTags()
-        }
-        return result
-    }
-
-    fun clearAllData() {
-        viewModelScope.launch {
-            repository.clearAllData()
-            loadSpaces()
-        }
-    }
-
-    fun updateSearchQuery(query: String) {
-        _searchQuery.value = query
-    }
-
-    fun clearSearchQuery() {
-        _searchQuery.value = ""
-    }
-
-    fun toggleSearchOption(option: SpaceSearchOption) {
-        val current = _searchOptions.value
-        _searchOptions.value = if (option in current && current.size > 1) {
-            current - option
-        } else {
-            current + option
-        }
-    }
-
-    fun toggleShowSearchOptions() {
-        _showSearchOptions.value = !_showSearchOptions.value
-    }
-
-    suspend fun addSpace(name: String, idPrefix: String): Space? {
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.addSpace(name: String, idPrefix: String) {
         val space = repository.createSpace(name, idPrefix)
         if (space != null) {
             loadSpaces()
         }
-        return space
+        action(SpaceListAction.SpaceAdded(space))
     }
 
-    suspend fun updateSpace(oldPrefix: String, newName: String): Boolean {
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.updateSpace(oldPrefix: String, newName: String) {
         val result = repository.updateSpaceName(oldPrefix, newName)
         if (result) {
             loadSpaces()
         }
-        return result
+        action(SpaceListAction.SpaceUpdated(result))
     }
 
-    suspend fun deleteSpace(prefix: String): Boolean {
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.deleteSpace(prefix: String) {
         val result = repository.deleteSpace(prefix)
         if (result) {
             loadSpaces()
         }
-        return result
+        action(SpaceListAction.SpaceDeleted(result))
     }
 
-    /**
-     * Export a space to JSON string
-     * @param spaceId The ID of the space to export
-     * @param prettyPrint Whether to format JSON with indentation (default: false)
-     * @return JSON string containing the space data, or null if space not found
-     */
-    suspend fun exportSpaceToJson(spaceId: String, prettyPrint: Boolean = false): String? {
-        return repository.exportSpaceToJson(spaceId, prettyPrint)
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.exportSpaceToJson(spaceId: String, prettyPrint: Boolean) {
+        val json = repository.exportSpaceToJson(spaceId, prettyPrint)
+        action(SpaceListAction.SpaceExported(json))
     }
 
-    /**
-     * Import a space from JSON string
-     * @param jsonString The JSON string containing the space data
-     * @return The imported space, or null if import failed
-     */
-    suspend fun importSpaceFromJson(jsonString: String): Space? {
+    private suspend fun PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>.importSpaceFromJson(jsonString: String) {
         val space = repository.importSpaceFromJson(jsonString)
         if (space != null) {
             loadSpaces()
         }
-        return space
+        action(SpaceListAction.SpaceImported(space))
     }
 }

@@ -33,8 +33,11 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
-import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListAction
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListIntent
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceSearchOption
+import pro.respawn.flowmvi.compose.dsl.subscribe
 import io.github.vinceglb.filekit.dialogs.compose.SaverResultLauncher
 import io.github.vinceglb.filekit.readString
 import kotlinx.coroutines.CoroutineScope
@@ -274,7 +277,7 @@ private fun SpaceListTopAppBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SpaceListScreen(
-    viewModel: SpaceListViewModel,
+    container: SpaceListContainer,
     refreshTrigger: Int,
     onSpaceClick: (String) -> Unit,
     onRefresh: () -> Unit,
@@ -285,15 +288,18 @@ fun SpaceListScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val hasSpaces by viewModel.hasSpaces.collectAsState()
-    val allTags by viewModel.allTags.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val searchOptions by viewModel.searchOptions.collectAsState()
-    val showSearchOptions by viewModel.showSearchOptions.collectAsState()
-    val filteredSpaces by viewModel.filteredSpaces.collectAsState()
+    val state by container.store.subscribe { action ->
+        // Handle actions if needed
+        when (action) {
+            is SpaceListAction.SpaceAdded,
+            is SpaceListAction.SpaceUpdated,
+            is SpaceListAction.SpaceDeleted -> onRefresh()
+            else -> Unit
+        }
+    }
 
     LaunchedEffect(refreshTrigger) {
-        viewModel.loadSpaces()
+        container.store.intent(SpaceListIntent.LoadSpaces)
     }
 
     val dialogState = rememberDialogState()
@@ -343,84 +349,124 @@ fun SpaceListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (hasSpaces == true) {
+            if (state.hasSpaces == true) {
                 SpaceSearchBar(
-                    searchQuery = searchQuery,
-                    searchOptions = searchOptions,
-                    showSearchOptions = showSearchOptions,
-                    onSearchQueryChange = viewModel::updateSearchQuery,
-                    onClearSearch = viewModel::clearSearchQuery,
-                    onToggleSearchOptions = viewModel::toggleShowSearchOptions,
-                    onToggleSearchOption = viewModel::toggleSearchOption
+                    searchQuery = state.searchQuery,
+                    searchOptions = state.searchOptions,
+                    showSearchOptions = state.showSearchOptions,
+                    onSearchQueryChange = { container.store.intent(SpaceListIntent.UpdateSearchQuery(it)) },
+                    onClearSearch = { container.store.intent(SpaceListIntent.ClearSearchQuery) },
+                    onToggleSearchOptions = { container.store.intent(SpaceListIntent.ToggleShowSearchOptions) },
+                    onToggleSearchOption = { container.store.intent(SpaceListIntent.ToggleSearchOption(it)) }
                 )
             }
 
             SpaceListContent(
-                hasSpaces = hasSpaces,
-                filteredSpaces = filteredSpaces,
+                hasSpaces = state.hasSpaces,
+                filteredSpaces = state.filteredSpaces,
                 onSpaceClick = onSpaceClick,
                 onSpaceExport = { dialogState.spaceToExport = it },
                 onSpaceEdit = { dialogState.spaceToEdit = it },
                 onSpaceDelete = { dialogState.spaceToDelete = it },
-                onClearSearch = viewModel::clearSearchQuery
+                onClearSearch = { container.store.intent(SpaceListIntent.ClearSearchQuery) }
             )
         }
     }
 
     SpaceListDialogs(
         dialogState = dialogState,
-        viewModel = viewModel,
-        allTags = allTags.toSet(),
         coroutineScope = coroutineScope,
         snackbarHostState = snackbarHostState,
-        onRefresh = onRefresh,
-        onImportedSpaceNameChange = { importedSpaceName = it }
+        onAddSpace = { name, idPrefix ->
+            container.store.intent(SpaceListIntent.AddSpace(name, idPrefix))
+        },
+        onUpdateSpace = { spaceId, newName ->
+            container.store.intent(SpaceListIntent.UpdateSpace(spaceId, newName))
+        },
+        onDeleteSpace = { spaceId ->
+            container.store.intent(SpaceListIntent.DeleteSpace(spaceId))
+        },
+        onGetTagsForSpace = { spaceId ->
+            container.getTagsForSpace(spaceId)
+        },
+        onAddTagToSpace = { spaceId, tag ->
+            container.addTagToSpace(spaceId, tag)
+        },
+        onDeleteTagFromSpace = { spaceId, tag ->
+            container.deleteTagFromSpace(spaceId, tag)
+        },
+        onExportSpace = { spaceId, prettyPrint ->
+            container.exportSpaceToJson(spaceId, prettyPrint)
+        },
+        onImportSpace = { jsonString ->
+            val result = container.importSpaceFromJson(jsonString)
+            if (result != null) {
+                importedSpaceName = result.name
+            }
+            result
+        },
+        onClearAllData = {
+            container.store.intent(SpaceListIntent.ClearAllData)
+        }
     )
 }
 
 @Composable
 private fun SpaceListDialogs(
     dialogState: DialogState,
-    viewModel: SpaceListViewModel,
-    allTags: Set<String>,
     coroutineScope: CoroutineScope,
     snackbarHostState: SnackbarHostState,
-    onRefresh: () -> Unit,
-    onImportedSpaceNameChange: (String?) -> Unit
+    onAddSpace: suspend (name: String, idPrefix: String) -> Unit,
+    onUpdateSpace: suspend (spaceId: String, newName: String) -> Unit,
+    onDeleteSpace: suspend (spaceId: String) -> Unit,
+    onGetTagsForSpace: suspend (spaceId: String) -> Set<String>,
+    onAddTagToSpace: suspend (spaceId: String, tag: String) -> Boolean,
+    onDeleteTagFromSpace: suspend (spaceId: String, tag: String) -> Boolean,
+    onExportSpace: suspend (spaceId: String, prettyPrint: Boolean) -> String?,
+    onImportSpace: suspend (jsonString: String) -> Space?,
+    onClearAllData: () -> Unit
 ) {
     if (dialogState.showNewSpace) {
         NewSpaceDialog(
             onDismiss = { dialogState.showNewSpace = false },
             onSpaceCreated = { name, prefix ->
                 coroutineScope.launch {
-                    viewModel.addSpace(name, prefix)
+                    onAddSpace(name, prefix)
                     dialogState.showNewSpace = false
-                    onRefresh()
                 }
             }
         )
     }
 
     dialogState.spaceToEdit?.let { space ->
+        var spaceTags by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+        LaunchedEffect(space.id) {
+            spaceTags = onGetTagsForSpace(space.id)
+        }
+
         EditSpaceDialog(
             space = space,
             onDismiss = { dialogState.spaceToEdit = null },
             onSpaceUpdated = { newName ->
                 coroutineScope.launch {
-                    viewModel.updateSpace(space.id, newName)
+                    onUpdateSpace(space.id, newName)
                     dialogState.spaceToEdit = null
-                    onRefresh()
                 }
             },
-            allTags = allTags,
+            allTags = spaceTags,
             onAddTag = { tag ->
                 coroutineScope.launch {
-                    viewModel.addTag(tag)
+                    if (onAddTagToSpace(space.id, tag)) {
+                        spaceTags = onGetTagsForSpace(space.id)
+                    }
                 }
             },
             onDeleteTag = { tag ->
                 coroutineScope.launch {
-                    viewModel.deleteTag(tag)
+                    if (onDeleteTagFromSpace(space.id, tag)) {
+                        spaceTags = onGetTagsForSpace(space.id)
+                    }
                 }
             }
         )
@@ -432,9 +478,8 @@ private fun SpaceListDialogs(
             message = "Are you sure you want to delete space \"${space.name}\"? All tasks in this space will be permanently deleted.",
             onConfirm = {
                 coroutineScope.launch {
-                    viewModel.deleteSpace(space.id)
+                    onDeleteSpace(space.id)
                     dialogState.spaceToDelete = null
-                    onRefresh()
                 }
             },
             onDismiss = { dialogState.spaceToDelete = null }
@@ -446,7 +491,7 @@ private fun SpaceListDialogs(
             coroutineScope = coroutineScope,
             space = space,
             onDismiss = { dialogState.spaceToExport = null },
-            exportSpaceToJson = viewModel::exportSpaceToJson,
+            exportSpaceToJson = onExportSpace,
             snackbarHostState = snackbarHostState
         )
     }
@@ -454,15 +499,7 @@ private fun SpaceListDialogs(
     if (dialogState.showImport) {
         ImportSpaceDialog(
             onDismiss = { dialogState.showImport = false },
-            onImport = { jsonData ->
-                val importedSpace = viewModel.importSpaceFromJson(jsonData)
-                dialogState.showImport = false
-                if (importedSpace != null) {
-                    onRefresh()
-                    onImportedSpaceNameChange(importedSpace.name)
-                }
-                importedSpace
-            },
+            onImport = onImportSpace,
             snackbarHostState = snackbarHostState
         )
     }
@@ -472,9 +509,8 @@ private fun SpaceListDialogs(
             title = "Erase All Data",
             message = "Are you sure you want to permanently erase ALL data? This will delete all spaces, tasks, and settings. This action cannot be undone!",
             onConfirm = {
-                viewModel.clearAllData()
+                onClearAllData()
                 dialogState.showEraseAllData = false
-                onRefresh()
             },
             onDismiss = { dialogState.showEraseAllData = false }
         )
