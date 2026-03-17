@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -46,7 +47,9 @@ private data class TaskDetailData(
     val allSpacePrefixes: List<String>,
     val statusTimeline: List<StatusChange>,
     val blockerTasks: Map<String, Task>,
-    val connectedTasks: Map<String, Task>
+    val connectedTasks: Map<String, Task>,
+    val loadedTasks: Map<String, Task>,
+    val loadTask: (String) -> Unit
 )
 
 @Composable
@@ -59,6 +62,18 @@ private fun rememberTaskDetailData(
     var statusTimeline by remember { mutableStateOf<List<StatusChange>>(emptyList()) }
     var blockerTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
     var connectedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
+    var loadedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
+
+    val scope = rememberCoroutineScope()
+    val loadTask: (String) -> Unit = { taskId: String ->
+        if (taskId !in loadedTasks) {
+            scope.launch {
+                viewModel.getTaskById(taskId)?.let { task ->
+                    loadedTasks = loadedTasks + (taskId to task)
+                }
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         currentSpaceIdPrefix = viewModel.getCurrentSpaceIdPrefix()
@@ -105,7 +120,9 @@ private fun rememberTaskDetailData(
         allSpacePrefixes = allSpacePrefixes,
         statusTimeline = statusTimeline,
         blockerTasks = blockerTasks,
-        connectedTasks = connectedTasks
+        connectedTasks = connectedTasks,
+        loadedTasks = loadedTasks,
+        loadTask = loadTask
     )
 }
 
@@ -181,6 +198,8 @@ private fun TaskReadOnlyView(
             taskWithTotals = taskWithTotals,
             statusTimeline = detailData.statusTimeline,
             blockerTasks = detailData.blockerTasks,
+            loadedTasks = detailData.loadedTasks,
+            loadTask = detailData.loadTask,
             onTaskClick = onTaskClick
         )
         TaskPrioritySection(task = task, taskWithTotals = taskWithTotals)
@@ -219,6 +238,8 @@ private fun TaskStatusSection(
     taskWithTotals: TaskWithTotals?,
     statusTimeline: List<StatusChange>,
     blockerTasks: Map<String, Task>,
+    loadedTasks: Map<String, Task>,
+    loadTask: (String) -> Unit,
     onTaskClick: (String) -> Unit
 ) {
     var isTimelineExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
@@ -274,6 +295,8 @@ private fun TaskStatusSection(
             StatusTimelineContent(
                 statusTimeline = statusTimeline,
                 blockerTasks = blockerTasks,
+                loadedTasks = loadedTasks,
+                loadTask = loadTask,
                 onTaskClick = onTaskClick
             )
         }
@@ -284,6 +307,8 @@ private fun TaskStatusSection(
 private fun StatusTimelineContent(
     statusTimeline: List<StatusChange>,
     blockerTasks: Map<String, Task>,
+    loadedTasks: Map<String, Task>,
+    loadTask: (String) -> Unit,
     onTaskClick: (String) -> Unit
 ) {
     Column(modifier = Modifier.padding(top = 8.dp)) {
@@ -321,7 +346,10 @@ private fun StatusTimelineContent(
                     TaskStatusChange(
                         change = change,
                         blockerTasks = blockerTasks,
-                        onBlockerTaskClick = onTaskClick
+                        onBlockerTaskClick = onTaskClick,
+                        loadedTasks = loadedTasks,
+                        loadTask = loadTask,
+                        onTaskClick = onTaskClick
                     )
                 }
             }

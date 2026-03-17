@@ -22,9 +22,13 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
+import io.github.vinceglb.filekit.dialogs.compose.SaverResultLauncher
 import io.github.vinceglb.filekit.dialogs.FileKitType
+import io.github.vinceglb.filekit.PlatformFile
+import io.github.vinceglb.filekit.name
 import kotlinx.coroutines.launch
 import com.zhelenskiy.zheduler.zheduler.Space
+import com.zhelenskiy.zheduler.zheduler.util.writeStringToFile
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptyState
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptySearchResults
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
@@ -33,12 +37,14 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ExportResult
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ImportResult
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListAction
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListIntent
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListState
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceSearchOption
 import pro.respawn.flowmvi.compose.dsl.subscribe
-import io.github.vinceglb.filekit.dialogs.compose.SaverResultLauncher
 import io.github.vinceglb.filekit.readString
 import kotlinx.coroutines.CoroutineScope
 import com.zhelenskiy.zheduler.zheduler.screens.calendar.AnimatedVisibility
@@ -377,6 +383,7 @@ fun SpaceListScreen(
         dialogState = dialogState,
         coroutineScope = coroutineScope,
         snackbarHostState = snackbarHostState,
+        state = state,
         onAddSpace = { name, idPrefix ->
             container.store.intent(SpaceListIntent.AddSpace(name, idPrefix))
         },
@@ -386,24 +393,20 @@ fun SpaceListScreen(
         onDeleteSpace = { spaceId ->
             container.store.intent(SpaceListIntent.DeleteSpace(spaceId))
         },
-        onGetTagsForSpace = { spaceId ->
-            container.getTagsForSpace(spaceId)
+        onLoadTagsForSpace = { spaceId ->
+            container.store.intent(SpaceListIntent.LoadTagsForSpace(spaceId))
         },
         onAddTagToSpace = { spaceId, tag ->
-            container.addTagToSpace(spaceId, tag)
+            container.store.intent(SpaceListIntent.AddTagToSpace(spaceId, tag))
         },
         onDeleteTagFromSpace = { spaceId, tag ->
-            container.deleteTagFromSpace(spaceId, tag)
+            container.store.intent(SpaceListIntent.DeleteTagFromSpace(spaceId, tag))
         },
         onExportSpace = { spaceId, prettyPrint ->
-            container.exportSpaceToJson(spaceId, prettyPrint)
+            container.store.intent(SpaceListIntent.ExportSpaceToJson(spaceId, prettyPrint))
         },
         onImportSpace = { jsonString ->
-            val result = container.importSpaceFromJson(jsonString)
-            if (result != null) {
-                importedSpaceName = result.name
-            }
-            result
+            container.store.intent(SpaceListIntent.ImportSpaceFromJson(jsonString))
         },
         onClearAllData = {
             container.store.intent(SpaceListIntent.ClearAllData)
@@ -416,58 +419,47 @@ private fun SpaceListDialogs(
     dialogState: DialogState,
     coroutineScope: CoroutineScope,
     snackbarHostState: SnackbarHostState,
-    onAddSpace: suspend (name: String, idPrefix: String) -> Unit,
-    onUpdateSpace: suspend (spaceId: String, newName: String) -> Unit,
-    onDeleteSpace: suspend (spaceId: String) -> Unit,
-    onGetTagsForSpace: suspend (spaceId: String) -> Set<String>,
-    onAddTagToSpace: suspend (spaceId: String, tag: String) -> Boolean,
-    onDeleteTagFromSpace: suspend (spaceId: String, tag: String) -> Boolean,
-    onExportSpace: suspend (spaceId: String, prettyPrint: Boolean) -> String?,
-    onImportSpace: suspend (jsonString: String) -> Space?,
+    state: SpaceListState,
+    onAddSpace: (name: String, idPrefix: String) -> Unit,
+    onUpdateSpace: (spaceId: String, newName: String) -> Unit,
+    onDeleteSpace: (spaceId: String) -> Unit,
+    onLoadTagsForSpace: (spaceId: String) -> Unit,
+    onAddTagToSpace: (spaceId: String, tag: String) -> Unit,
+    onDeleteTagFromSpace: (spaceId: String, tag: String) -> Unit,
+    onExportSpace: (spaceId: String, prettyPrint: Boolean) -> Unit,
+    onImportSpace: (jsonString: String) -> Unit,
     onClearAllData: () -> Unit
 ) {
     if (dialogState.showNewSpace) {
         NewSpaceDialog(
             onDismiss = { dialogState.showNewSpace = false },
             onSpaceCreated = { name, prefix ->
-                coroutineScope.launch {
-                    onAddSpace(name, prefix)
-                    dialogState.showNewSpace = false
-                }
+                onAddSpace(name, prefix)
+                dialogState.showNewSpace = false
             }
         )
     }
 
     dialogState.spaceToEdit?.let { space ->
-        var spaceTags by remember { mutableStateOf<Set<String>>(emptySet()) }
-
         LaunchedEffect(space.id) {
-            spaceTags = onGetTagsForSpace(space.id)
+            onLoadTagsForSpace(space.id)
         }
+
+        val spaceTags = state.tagsBySpace[space.id] ?: emptySet()
 
         EditSpaceDialog(
             space = space,
             onDismiss = { dialogState.spaceToEdit = null },
             onSpaceUpdated = { newName ->
-                coroutineScope.launch {
-                    onUpdateSpace(space.id, newName)
-                    dialogState.spaceToEdit = null
-                }
+                onUpdateSpace(space.id, newName)
+                dialogState.spaceToEdit = null
             },
             allTags = spaceTags,
             onAddTag = { tag ->
-                coroutineScope.launch {
-                    if (onAddTagToSpace(space.id, tag)) {
-                        spaceTags = onGetTagsForSpace(space.id)
-                    }
-                }
+                onAddTagToSpace(space.id, tag)
             },
             onDeleteTag = { tag ->
-                coroutineScope.launch {
-                    if (onDeleteTagFromSpace(space.id, tag)) {
-                        spaceTags = onGetTagsForSpace(space.id)
-                    }
-                }
+                onDeleteTagFromSpace(space.id, tag)
             }
         )
     }
@@ -477,10 +469,8 @@ private fun SpaceListDialogs(
             title = "Delete Space",
             message = "Are you sure you want to delete space \"${space.name}\"? All tasks in this space will be permanently deleted.",
             onConfirm = {
-                coroutineScope.launch {
-                    onDeleteSpace(space.id)
-                    dialogState.spaceToDelete = null
-                }
+                onDeleteSpace(space.id)
+                dialogState.spaceToDelete = null
             },
             onDismiss = { dialogState.spaceToDelete = null }
         )
@@ -488,19 +478,22 @@ private fun SpaceListDialogs(
 
     dialogState.spaceToExport?.let { space ->
         ExportSpaceDialog(
-            coroutineScope = coroutineScope,
             space = space,
+            exportResult = state.lastExportResult,
             onDismiss = { dialogState.spaceToExport = null },
-            exportSpaceToJson = onExportSpace,
-            snackbarHostState = snackbarHostState
+            onExportSpace = onExportSpace,
+            snackbarHostState = snackbarHostState,
+            parentScope = coroutineScope
         )
     }
 
     if (dialogState.showImport) {
         ImportSpaceDialog(
+            importResult = state.lastImportResult,
             onDismiss = { dialogState.showImport = false },
-            onImport = onImportSpace,
-            snackbarHostState = snackbarHostState
+            onImportSpace = onImportSpace,
+            snackbarHostState = snackbarHostState,
+            parentScope = coroutineScope
         )
     }
 
@@ -546,18 +539,81 @@ private class DialogState(
     var showEraseAllData by mutableStateOf(showEraseAllData)
 }
 
+private enum class ExportAction { Copy, Save, Download }
+
 @Composable
 private fun ExportSpaceDialog(
-    coroutineScope: CoroutineScope,
     space: Space,
+    exportResult: ExportResult?,
     onDismiss: () -> Unit,
-    exportSpaceToJson: suspend (spaceId: String, prettyPrint: Boolean) -> String?,
-    snackbarHostState: SnackbarHostState
+    onExportSpace: (spaceId: String, prettyPrint: Boolean) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    parentScope: CoroutineScope
 ) {
     var prettyPrint by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
 
-    val fileSaverLauncher = getFileSaverLauncher(coroutineScope, space, prettyPrint, snackbarHostState, onDismiss, exportSpaceToJson)
+    // Track which action to perform when export result arrives
+    var pendingAction by remember { mutableStateOf<ExportAction?>(null) }
+
+    // Track the selected file for save action
+    var pendingFile by remember { mutableStateOf<PlatformFile?>(null) }
+
+    val fileSaverLauncher = rememberFileSaverLauncher { pendingFile = it }
+
+    // Handle when export completes via state
+    LaunchedEffect(exportResult, pendingAction, pendingFile) {
+        if (exportResult == null || exportResult.spaceId != space.id) return@LaunchedEffect
+        val json = exportResult.json
+        val action = pendingAction ?: return@LaunchedEffect
+
+        when (action) {
+            ExportAction.Copy -> {
+                if (json != null) {
+                    clipboardManager.setText(AnnotatedString(json))
+                }
+                onDismiss()
+                parentScope.launch {
+                    if (json != null) {
+                        snackbarHostState.showSnackbar("Copied to clipboard")
+                    } else {
+                        snackbarHostState.showSnackbar("Failed to export space")
+                    }
+                }
+            }
+            ExportAction.Download -> {
+                if (json != null) {
+                    val fileName = space.name.replace(Regex("[^a-zA-Z0-9-_]"), "_")
+                    write(json, fileName)
+                }
+                onDismiss()
+                parentScope.launch {
+                    if (json == null) {
+                        snackbarHostState.showSnackbar("Failed to export space")
+                    }
+                }
+            }
+            ExportAction.Save -> {
+                val file = pendingFile ?: return@LaunchedEffect
+                val message = if (json != null) {
+                    try {
+                        file.writeStringToFile(json)
+                        "Space exported to ${file.name}"
+                    } catch (e: Exception) {
+                        "Error saving file: ${e.message}"
+                    }
+                } else {
+                    "Failed to export space"
+                }
+                onDismiss()
+                parentScope.launch {
+                    snackbarHostState.showSnackbar(message)
+                }
+            }
+        }
+        pendingAction = null
+        pendingFile = null
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -590,20 +646,8 @@ private fun ExportSpaceDialog(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            coroutineScope.launch {
-                                val jsonData = exportSpaceToJson(space.id, prettyPrint)
-                                if (jsonData != null) {
-                                    clipboardManager.setText(AnnotatedString(jsonData))
-                                }
-                                onDismiss()
-                                coroutineScope.launch {
-                                    if (jsonData != null) {
-                                        snackbarHostState.showSnackbar("Copied to clipboard")
-                                    } else {
-                                        snackbarHostState.showSnackbar("Failed to export space")
-                                    }
-                                }
-                            }
+                            pendingAction = ExportAction.Copy
+                            onExportSpace(space.id, prettyPrint)
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -616,6 +660,8 @@ private fun ExportSpaceDialog(
                     if (fileSaverLauncher != null) {
                         OutlinedButton(
                             onClick = {
+                                pendingAction = ExportAction.Save
+                                onExportSpace(space.id, prettyPrint)
                                 fileSaverLauncher.launch(
                                     suggestedName = fileName,
                                     extension = "json"
@@ -628,13 +674,11 @@ private fun ExportSpaceDialog(
                             Text("Save")
                         }
                     }
-                    if (supportsDownloading)  {
+                    if (supportsDownloading) {
                         OutlinedButton(
                             onClick = {
-                                coroutineScope.launch {
-                                    val content = exportSpaceToJson(space.id, prettyPrint) ?: return@launch
-                                    write(content, fileName)
-                                }
+                                pendingAction = ExportAction.Download
+                                onExportSpace(space.id, prettyPrint)
                             },
                             modifier = Modifier.weight(1f)
                         ) {
@@ -656,23 +700,32 @@ private fun ExportSpaceDialog(
 }
 
 @Composable
-internal expect fun getFileSaverLauncher(
-    coroutineScope: CoroutineScope,
-    space: Space,
-    prettyPrint: Boolean,
-    snackbarHostState: SnackbarHostState,
-    onDismiss: () -> Unit,
-    exportSpaceToJson: suspend (spaceId: String, prettyPrint: Boolean) -> String?
-): SaverResultLauncher?
-
-@Composable
 private fun ImportSpaceDialog(
+    importResult: ImportResult?,
     onDismiss: () -> Unit,
-    onImport: suspend (String) -> Space?,
-    snackbarHostState: SnackbarHostState
+    onImportSpace: (String) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    parentScope: CoroutineScope
 ) {
     val coroutineScope = rememberCoroutineScope()
     var jsonText by remember { mutableStateOf("") }
+    var awaitingResult by remember { mutableStateOf(false) }
+
+    // Handle import result from state
+    LaunchedEffect(importResult, awaitingResult) {
+        if (!awaitingResult || importResult == null) return@LaunchedEffect
+        val space = importResult.space
+        val message = if (space != null) {
+            "Space \"${space.name}\" imported successfully"
+        } else {
+            "Invalid JSON data"
+        }
+        onDismiss()
+        parentScope.launch {
+            snackbarHostState.showSnackbar(message)
+        }
+        awaitingResult = false
+    }
 
     val filePickerLauncher = rememberFilePickerLauncher(
         type = FileKitType.File(extensions = listOf("json"))
@@ -681,13 +734,8 @@ private fun ImportSpaceDialog(
             coroutineScope.launch {
                 try {
                     val jsonData = it.readString()
-                    val result = onImport(jsonData)
-                    if (result != null) {
-                        snackbarHostState.showSnackbar("Space \"${result.name}\" imported successfully")
-                        onDismiss()
-                    } else {
-                        snackbarHostState.showSnackbar("Invalid JSON data")
-                    }
+                    awaitingResult = true
+                    onImportSpace(jsonData)
                 } catch (e: Exception) {
                     snackbarHostState.showSnackbar("Error reading file: ${e.message}")
                 }
@@ -731,23 +779,14 @@ private fun ImportSpaceDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    coroutineScope.launch {
-                        try {
-                            if (jsonText.isBlank()) {
-                                snackbarHostState.showSnackbar("Please enter JSON data")
-                                return@launch
-                            }
-                            val result = onImport(jsonText.trim())
-                            if (result != null) {
-                                snackbarHostState.showSnackbar("Space \"${result.name}\" imported successfully")
-                                onDismiss()
-                            } else {
-                                snackbarHostState.showSnackbar("Invalid JSON data")
-                            }
-                        } catch (e: Exception) {
-                            snackbarHostState.showSnackbar("Error importing: ${e.message}")
+                    if (jsonText.isBlank()) {
+                        parentScope.launch {
+                            snackbarHostState.showSnackbar("Please enter JSON data")
                         }
+                        return@TextButton
                     }
+                    awaitingResult = true
+                    onImportSpace(jsonText.trim())
                 },
                 enabled = jsonText.isNotBlank()
             ) {
@@ -764,3 +803,6 @@ private fun ImportSpaceDialog(
 
 expect val supportsDownloading: Boolean
 expect suspend fun write(content: String, name: String)
+
+@Composable
+internal expect fun rememberFileSaverLauncher(onResult: (PlatformFile?) -> Unit): SaverResultLauncher?

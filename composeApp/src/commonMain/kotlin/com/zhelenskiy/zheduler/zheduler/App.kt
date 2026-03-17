@@ -270,11 +270,11 @@ private fun AppContent(
 
         composable<CalendarRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<CalendarRoute>()
-            val viewModel = remember(route.spaceId) {
-                appGraph.calendarViewModelFactory.create(route.spaceId)
+            val container = remember(route.spaceId) {
+                appGraph.calendarContainerFactory.create(route.spaceId)
             }
             CalendarScreen(
-                viewModel = viewModel,
+                container = container,
                 onNavigateBack = {
                     navController.popBackStack()
                 },
