@@ -19,19 +19,14 @@ import com.zhelenskiy.zheduler.zheduler.Task
 @Composable
 fun AutomaticChangeIndicator(
     reason: AutomaticChangeReason,
-    getTaskById: suspend (String) -> Task?,
+    loadedTasks: Map<String, Task>,
+    loadTask: (String) -> Unit,
     onTaskClick: (String) -> Unit
 ) {
-    var relatedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
+    val relatedTaskIds = (reason as? UpdatedFromSubtasks)?.relatedTaskIds ?: emptyList()
 
-    LaunchedEffect(reason) {
-        val tasks = mutableMapOf<String, Task>()
-        (reason as? UpdatedFromSubtasks)?.relatedTaskIds?.forEach { taskId ->
-            getTaskById(taskId)?.let { task ->
-                tasks[taskId] = task
-            }
-        }
-        relatedTasks = tasks
+    LaunchedEffect(relatedTaskIds) {
+        relatedTaskIds.forEach { loadTask(it) }
     }
 
     Icon(
@@ -47,8 +42,8 @@ fun AutomaticChangeIndicator(
         color = MaterialTheme.colorScheme.tertiary
     )
 
-    (reason as? UpdatedFromSubtasks)?.relatedTaskIds?.forEach { taskId ->
-        val relatedTask = relatedTasks[taskId]
+    relatedTaskIds.forEach { taskId ->
+        val relatedTask = loadedTasks[taskId]
         ConnectedTaskChip(
             task = relatedTask,
             taskId = taskId,

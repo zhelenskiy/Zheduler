@@ -612,9 +612,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
     @Test
     fun `tags are space-scoped`() = runTest {
-        val repo = createRepository()
-        val space1 = repo.createSpace("Space 1", "S1")!!
-        val space2 = repo.createSpace("Space 2", "S2")!!
+        val repo = createEmptyRepository()
+        val space1 = repo.createSpace("Space 1", "SA")!!
+        val space2 = repo.createSpace("Space 2", "SB")!!
 
         repo.addTag(space1.id, "tag1")
         repo.addTag(space1.id, "tag2")

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.StatusChange
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
+import com.zhelenskiy.zheduler.zheduler.components.common.AutomaticChangeIndicator
 import com.zhelenskiy.zheduler.zheduler.components.common.ConnectedTaskChip
 import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 
@@ -82,7 +83,10 @@ fun TaskStatusChange(
     modifier: Modifier =
         if (isRow) Modifier.horizontalScroll(rememberScrollState())
         else Modifier.verticalScroll(rememberScrollState()),
-    onBlockerTaskClick: ((String) -> Unit)?
+    onBlockerTaskClick: ((String) -> Unit)?,
+    loadedTasks: Map<String, Task> = emptyMap(),
+    loadTask: (String) -> Unit = {},
+    onTaskClick: (String) -> Unit = {}
 ) = Group(
     isRow = isRow,
     modifier = modifier,
@@ -106,6 +110,14 @@ fun TaskStatusChange(
         isRow = isRow,
         onBlockerTaskClick = onBlockerTaskClick
     )
+    change.automaticChangeReason?.let {
+        AutomaticChangeIndicator(
+            reason = it,
+            loadedTasks = loadedTasks,
+            loadTask = loadTask,
+            onTaskClick = onTaskClick
+        )
+    }
 }
 
 @Composable

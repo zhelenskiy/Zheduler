@@ -44,12 +44,14 @@ import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
-import com.zhelenskiy.zheduler.zheduler.components.common.AutomaticChangeIndicator
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
-import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarIntent
+import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarState
+import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlinx.datetime.*
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -129,7 +131,7 @@ private fun isDateInMonth(date: LocalDate?, yearMonth: YearMonth): Boolean =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarScreen(
-    viewModel: CalendarViewModel,
+    container: CalendarContainer,
     onNavigateBack: () -> Unit,
     onNavigateToSpaceList: () -> Unit,
     onTaskClick: (String) -> Unit,
@@ -140,6 +142,8 @@ fun CalendarScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
+    val state by container.store.subscribe()
+
     val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()) }
 
     var currentMonth by remember {
@@ -150,11 +154,9 @@ fun CalendarScreen(
     // Track navigation direction for slide animation
     var isNavigatingForward: Boolean? by remember { mutableStateOf(true) }
 
-    // Get status changes grouped by date via view model - reload when month changes
-    var statusChangesByDate by remember { mutableStateOf<Map<LocalDate, List<StatusChangeEvent>>>(emptyMap()) }
-
-    LaunchedEffect(viewModel, currentMonth) {
-        statusChangesByDate = viewModel.getStatusChangesByDate(currentMonth.year, currentMonth.month.number)
+    // Load status changes when month changes
+    LaunchedEffect(currentMonth) {
+        container.store.intent(CalendarIntent.LoadStatusChanges(currentMonth.year, currentMonth.month.number))
     }
 
     Scaffold(
@@ -225,7 +227,7 @@ fun CalendarScreen(
                     CalendarGrid(
                         yearMonth = targetMonth,
                         selectedDate = selectedDate,
-                        statusChangesByDate = statusChangesByDate,
+                        statusChangesByDate = state.statusChangesByDate,
                         onDateSelected = { selectedDate = it; isNavigatingForward = null },
                     )
                 }
@@ -241,12 +243,13 @@ fun CalendarScreen(
                     Column(Modifier.fillMaxWidth()) {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                        val events = statusChangesByDate[targetDate] ?: emptyList()
+                        val events = state.statusChangesByDate[targetDate] ?: emptyList()
                         SelectedDateEvents(
                             date = targetDate,
                             events = events,
                             onTaskClick = onTaskClick,
-                            getTaskById = viewModel::getTaskById,
+                            state = state,
+                            loadTask = { taskId -> container.store.intent(CalendarIntent.LoadTask(taskId)) },
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                         )
                     }
@@ -458,7 +461,8 @@ private fun SelectedDateEvents(
     date: LocalDate,
     events: List<StatusChangeEvent>,
     onTaskClick: (String) -> Unit,
-    getTaskById: suspend (String) -> Task?,
+    state: CalendarState,
+    loadTask: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -487,7 +491,8 @@ private fun SelectedDateEvents(
                         StatusChangeCard(
                             event = event,
                             onClick = { onTaskClick(event.task.id) },
-                            getTaskById = getTaskById,
+                            state = state,
+                            loadTask = loadTask,
                             onTaskClick = onTaskClick
                         )
                     }
@@ -507,15 +512,11 @@ private fun SelectedDateEvents(
     }
 }
 
-private suspend fun loadBlockerTasks(
-    event: StatusChangeEvent,
-    getTaskById: suspend (String) -> Task?
-): Map<String, Task> {
-    val tasks = mutableMapOf<String, Task>()
+private fun getBlockerTaskIds(event: StatusChangeEvent): Set<String> {
     val prevStatus = event.statusChange.previousStatus
     val newStatus = event.statusChange.newStatus
 
-    val blockerIds = buildSet {
+    return buildSet {
         if (prevStatus is TaskStatus.Blocked) {
             addAll(prevStatus.blockerTaskIds)
         }
@@ -523,28 +524,22 @@ private suspend fun loadBlockerTasks(
             addAll(newStatus.blockerTaskIds)
         }
     }
-
-    blockerIds.forEach { blockerId ->
-        getTaskById(blockerId)?.let { task ->
-            tasks[blockerId] = task
-        }
-    }
-    return tasks
 }
 
 @Composable
 private fun StatusChangeCard(
     event: StatusChangeEvent,
     onClick: () -> Unit,
-    getTaskById: suspend (String) -> Task?,
+    state: CalendarState,
+    loadTask: (String) -> Unit,
     onTaskClick: (String) -> Unit
 ) {
-    // Load blocker tasks asynchronously
-    var blockerTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
-
-    LaunchedEffect(event) {
-        blockerTasks = loadBlockerTasks(event, getTaskById)
+    // Load blocker tasks via intent
+    val blockerTaskIds = remember(event) { getBlockerTaskIds(event) }
+    LaunchedEffect(blockerTaskIds) {
+        blockerTaskIds.forEach { loadTask(it) }
     }
+    val blockerTasks = blockerTaskIds.mapNotNull { id -> state.loadedTasks[id]?.let { id to it } }.toMap()
 
     Surface(
         modifier = Modifier
@@ -559,7 +554,7 @@ private fun StatusChangeCard(
                 .padding(8.dp)
         ) {
             TaskInfoRow(event)
-            TaskStatusChangeRow(event, blockerTasks, onTaskClick, getTaskById)
+            TaskStatusChangeRow(event, blockerTasks, onTaskClick, state, loadTask)
         }
     }
 }
@@ -591,7 +586,8 @@ private fun TaskStatusChangeRow(
     event: StatusChangeEvent,
     blockerTasks: Map<String, Task>,
     onTaskClick: (String) -> Unit,
-    getTaskById: suspend (String) -> Task?
+    state: CalendarState,
+    loadTask: (String) -> Unit
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -610,16 +606,11 @@ private fun TaskStatusChangeRow(
         TaskStatusChange(
             change = event.statusChange,
             blockerTasks = blockerTasks,
-            onBlockerTaskClick = onTaskClick
+            onBlockerTaskClick = onTaskClick,
+            loadedTasks = state.loadedTasks,
+            loadTask = loadTask,
+            onTaskClick = onTaskClick
         )
-
-        event.statusChange.automaticChangeReason?.let {
-            AutomaticChangeIndicator(
-                reason = it,
-                getTaskById = getTaskById,
-                onTaskClick = onTaskClick
-            )
-        }
     }
 }
 

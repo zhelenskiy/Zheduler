@@ -9,7 +9,8 @@ import dev.zacsweers.metro.SingleIn
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
-import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailViewModel
@@ -20,12 +21,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/**
- * Factory interface for creating CalendarViewModel instances with runtime parameters.
- */
-fun interface CalendarViewModelFactory {
-    fun create(spaceId: String): CalendarViewModel
-}
 
 /**
  * Factory interface for creating TaskListViewModel instances with runtime parameters.
@@ -96,9 +91,9 @@ interface AppGraph {
     val taskListViewModelFactory: TaskListViewModelFactory
 
     /**
-     * Factory for creating CalendarViewModel instances with runtime parameters.
+     * Factory for creating CalendarContainer instances with runtime parameters.
      */
-    val calendarViewModelFactory: CalendarViewModelFactory
+    val calendarContainerFactory: CalendarContainerFactory
 
     /**
      * Factory for creating NewTaskViewModel instances with runtime parameters.
@@ -147,9 +142,9 @@ interface AppGraph {
             }
 
         @Provides
-        fun provideCalendarViewModelFactory(repository: SqlDelightTaskRepository): CalendarViewModelFactory =
-            CalendarViewModelFactory { spaceId ->
-                CalendarViewModel(repository, spaceId)
+        fun provideCalendarContainerFactory(repository: SqlDelightTaskRepository): CalendarContainerFactory =
+            CalendarContainerFactory { spaceId ->
+                CalendarContainer(repository, spaceId)
             }
 
         @Provides
