@@ -27,15 +27,15 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun TagSelectionDialog(
     selectedTags: Set<String>,
-    filterTags: suspend (String, Set<String>) -> List<String>,
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit,
     onDismiss: () -> Unit,
     onTagSelected: (String) -> Unit
 ) {
     var tagText by remember { mutableStateOf("") }
-    var filteredTags by remember { mutableStateOf<List<String>?>(null) }
 
     LaunchedEffect(tagText, selectedTags) {
-        filteredTags = filterTags(tagText, selectedTags)
+        onFilterTags(tagText, selectedTags)
     }
 
     AlertDialog(
@@ -73,10 +73,9 @@ fun TagSelectionDialog(
 private fun TagSelectionContent(
     tagText: String,
     onTagTextChange: (String) -> Unit,
-    filteredTags: List<String>?,
+    filteredTags: List<String>,
     onTagSelected: (String) -> Unit
 ) {
-    if (filteredTags == null) return
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)

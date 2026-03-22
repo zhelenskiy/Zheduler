@@ -33,8 +33,10 @@ import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 @Composable
 fun StatusSelectionDialog(
     currentStatus: TaskStatus,
-    filterTasks: suspend (String) -> List<Task>,
-    getTaskById: suspend (String) -> Task?,
+    filteredTasks: List<Task>,
+    loadedTasks: Map<String, Task>,
+    onFilterTasks: (String) -> Unit,
+    onLoadTask: (String) -> Unit,
     onDismiss: () -> Unit,
     onStatusSelected: (TaskStatus) -> Unit
 ) {
@@ -51,8 +53,10 @@ fun StatusSelectionDialog(
             StatusSelectionDialogContent(
                 selectedStatusType = selectedStatusType,
                 onStatusTypeSelected = { selectedStatusType = it },
-                filterTasks = filterTasks,
-                getTaskById = getTaskById,
+                filteredTasks = filteredTasks,
+                loadedTasks = loadedTasks,
+                onFilterTasks = onFilterTasks,
+                onLoadTask = onLoadTask,
                 lastSelectedForType = lastSelectedForType,
             )
         },
@@ -73,8 +77,10 @@ fun StatusSelectionDialog(
 private fun StatusSelectionDialogContent(
     selectedStatusType: TaskStatus,
     onStatusTypeSelected: (TaskStatus) -> Unit,
-    filterTasks: suspend (String) -> List<Task>,
-    getTaskById: suspend (String) -> Task?,
+    filteredTasks: List<Task>,
+    loadedTasks: Map<String, Task>,
+    onFilterTasks: (String) -> Unit,
+    onLoadTask: (String) -> Unit,
     lastSelectedForType: Map<String, TaskStatus>,
 ) {
     Column(
@@ -91,8 +97,10 @@ private fun StatusSelectionDialogContent(
         BlockedStatusOption(
             selectedStatusType = selectedStatusType,
             onStatusTypeSelected = onStatusTypeSelected,
-            filterTasks = filterTasks,
-            getTaskById = getTaskById,
+            filteredTasks = filteredTasks,
+            loadedTasks = loadedTasks,
+            onFilterTasks = onFilterTasks,
+            onLoadTask = onLoadTask,
             lastSelectedForType = lastSelectedForType,
         )
 
@@ -147,8 +155,10 @@ private fun StatusRadioOption(
 private fun ColumnScope.BlockedStatusOption(
     selectedStatusType: TaskStatus,
     onStatusTypeSelected: (TaskStatus) -> Unit,
-    filterTasks: suspend (String) -> List<Task>,
-    getTaskById: suspend (String) -> Task?,
+    filteredTasks: List<Task>,
+    loadedTasks: Map<String, Task>,
+    onFilterTasks: (String) -> Unit,
+    onLoadTask: (String) -> Unit,
     lastSelectedForType: Map<String, TaskStatus>,
 ) {
     var showBlockerSelection by remember { mutableStateOf(false) }
@@ -170,7 +180,8 @@ private fun ColumnScope.BlockedStatusOption(
             onBlockedCommentChange = {
                 onStatusTypeSelected(status.copy(comment = it))
             },
-            getTaskById = getTaskById,
+            loadedTasks = loadedTasks,
+            onLoadTask = onLoadTask,
             onShowBlockerSelection = { showBlockerSelection = true }
         )
     }
@@ -178,7 +189,8 @@ private fun ColumnScope.BlockedStatusOption(
     if (showBlockerSelection) {
         TaskSelectionDialog(
             title = "Select Blocking Tasks",
-            filterTasks = filterTasks,
+            filteredTasks = filteredTasks,
+            onFilterTasks = onFilterTasks,
             selectedTaskIds = status.blockerTaskIds,
             onDismiss = { showBlockerSelection = false },
             onTasksSelected = { taskIds ->
@@ -195,7 +207,8 @@ private fun BlockedStatusDetails(
     onBlockerTaskIdsChange: (Set<String>) -> Unit,
     blockedComment: String,
     onBlockedCommentChange: (String) -> Unit,
-    getTaskById: suspend (String) -> Task?,
+    loadedTasks: Map<String, Task>,
+    onLoadTask: (String) -> Unit,
     onShowBlockerSelection: () -> Unit
 ) {
     Column(modifier = Modifier.padding(start = 40.dp)) {
@@ -212,7 +225,8 @@ private fun BlockedStatusDetails(
             Spacer(modifier = Modifier.height(8.dp))
             BlockerTasksList(
                 blockerTaskIds = blockerTaskIds,
-                getTaskById = getTaskById,
+                loadedTasks = loadedTasks,
+                onLoadTask = onLoadTask,
                 onRemoveTask = { taskId ->
                     onBlockerTaskIdsChange(blockerTaskIds - taskId)
                 }
@@ -234,10 +248,21 @@ private fun BlockedStatusDetails(
 @Composable
 private fun BlockerTasksList(
     blockerTaskIds: Set<String>,
-    getTaskById: suspend (String) -> Task?,
+    loadedTasks: Map<String, Task>,
+    onLoadTask: (String) -> Unit,
     onRemoveTask: (String) -> Unit
 ) {
     val items = blockerTaskIds.toList()
+
+    // Load tasks that aren't already loaded
+    LaunchedEffect(blockerTaskIds) {
+        blockerTaskIds.forEach { taskId ->
+            if (taskId !in loadedTasks) {
+                onLoadTask(taskId)
+            }
+        }
+    }
+
     AnimatedContent(items, transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) {
         FlowRow(
             modifier = Modifier.heightIn(max = 200.dp),
@@ -246,12 +271,8 @@ private fun BlockerTasksList(
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             items.forEach { taskId ->
-                var task by remember(taskId) { mutableStateOf<Task?>(null) }
-                LaunchedEffect(taskId) {
-                    task = getTaskById(taskId)
-                }
                 ConnectedTaskChip(
-                    task = task,
+                    task = loadedTasks[taskId],
                     taskId = taskId,
                     onRemove = { onRemoveTask(taskId) },
                 )

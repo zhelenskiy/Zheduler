@@ -3,14 +3,19 @@
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
+import pro.respawn.flowmvi.api.Container
+import pro.respawn.flowmvi.api.MVIAction
+import pro.respawn.flowmvi.api.MVIIntent
+import pro.respawn.flowmvi.api.MVIState
+import pro.respawn.flowmvi.api.PipelineContext
+import pro.respawn.flowmvi.dsl.store
+import pro.respawn.flowmvi.plugins.reduce
+import pro.respawn.flowmvi.plugins.whileSubscribed
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -21,26 +26,89 @@ private const val KEY_FORM_ESTIMATED_TIME = "formEstimatedTime"
 private const val KEY_FORM_TAGS = "formTags"
 private const val KEY_FORM_DUE_DATE = "formDueDate"
 
-class TaskEditViewModel(
+data class TaskEditState(
+    val task: Task? = null,
+    val currentSpaceIdPrefix: String? = null,
+    val allSpacePrefixes: List<String> = emptyList(),
+    // Search results for form components
+    val filteredTags: List<String> = emptyList(),
+    val filteredTasksForSelection: List<Task> = emptyList(),
+    val searchedTasksForConnection: List<Task> = emptyList(),
+    val loadedTasks: Map<String, Task> = emptyMap()
+) : MVIState
+
+sealed interface TaskEditIntent : MVIIntent {
+    data object LoadInitialData : TaskEditIntent
+    data class SaveTask(val updatedTask: Task) : TaskEditIntent
+
+    // Search intents
+    data class LoadTaskById(val taskId: String) : TaskEditIntent
+    data class FilterTags(val searchQuery: String, val excludeTags: Set<String>) : TaskEditIntent
+    data class FilterTasksForSelection(val searchQuery: String) : TaskEditIntent
+    data class SearchTasksForConnection(
+        val searchQuery: String,
+        val excludeTaskIds: Set<String>,
+        val connectionType: ConnectionType,
+        val existingConnections: Set<TaskConnection>
+    ) : TaskEditIntent
+}
+
+sealed interface TaskEditAction : MVIAction {
+    data object TaskSaved : TaskEditAction
+}
+
+private typealias TaskEditPipelineContext = PipelineContext<TaskEditState, TaskEditIntent, TaskEditAction>
+
+class TaskEditContainer(
     private val repository: TaskRepository,
     private val spaceId: String,
     private val taskId: String,
     private val savedStateHandle: SavedStateHandle
-) : ViewModel(), TaskFormDataProvider {
+) : Container<TaskEditState, TaskEditIntent, TaskEditAction> {
 
-    private val _task = MutableStateFlow<Task?>(null)
-    val task: StateFlow<Task?> = _task.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    init {
-        loadTask()
-    }
+    override val store = store(TaskEditState(), scope) {
+        configure {
+            name = "TaskEditStore"
+        }
 
-    fun loadTask() {
-        viewModelScope.launch {
-            _task.value = repository.getTaskById(taskId)
+        whileSubscribed {
+            loadTask()
+        }
+
+        reduce { intent ->
+            when (intent) {
+                is TaskEditIntent.LoadInitialData -> loadTask()
+                is TaskEditIntent.SaveTask -> saveTask(intent.updatedTask)
+                is TaskEditIntent.LoadTaskById -> loadTaskById(intent.taskId)
+                is TaskEditIntent.FilterTags -> filterTags(intent.searchQuery, intent.excludeTags)
+                is TaskEditIntent.FilterTasksForSelection -> filterTasksForSelection(intent.searchQuery)
+                is TaskEditIntent.SearchTasksForConnection -> searchTasksForConnection(intent)
+            }
         }
     }
 
+    private suspend fun TaskEditPipelineContext.loadTask() {
+        val task = repository.getTaskById(taskId)
+        val currentSpaceIdPrefix = repository.getSpaceById(spaceId)?.idPrefix
+        val allSpacePrefixes = repository.getAllSpacePrefixes()
+        updateState {
+            copy(
+                task = task,
+                currentSpaceIdPrefix = currentSpaceIdPrefix,
+                allSpacePrefixes = allSpacePrefixes
+            )
+        }
+    }
+
+    private suspend fun TaskEditPipelineContext.saveTask(updatedTask: Task) {
+        repository.updateTask(updatedTask)
+        clearPersistedFormState()
+        action(TaskEditAction.TaskSaved)
+    }
+
+    // Form state persistence using SavedStateHandle (survives navigation)
     fun getPersistedFormState(): PersistedFormState {
         val tags = savedStateHandle.get<String>(KEY_FORM_TAGS)
             ?.let { tagsJson -> runCatching { Json.decodeFromString<Set<String>>(tagsJson) }.getOrNull() }
@@ -85,39 +153,39 @@ class TaskEditViewModel(
         savedStateHandle.remove<Long>(KEY_FORM_DUE_DATE)
     }
 
-    fun saveTask(updatedTask: Task) {
-        viewModelScope.launch {
-            repository.updateTask(updatedTask)
-            clearPersistedFormState()
+    private suspend fun TaskEditPipelineContext.loadTaskById(id: String) {
+        val task = repository.getTaskById(id)
+        if (task != null) {
+            updateState { copy(loadedTasks = loadedTasks + (id to task)) }
         }
     }
 
-    override suspend fun getTaskById(id: String): Task? = repository.getTaskById(id)
+    private suspend fun TaskEditPipelineContext.filterTags(searchQuery: String, excludeTags: Set<String>) {
+        val tags = repository.filterTags(spaceId, searchQuery, excludeTags)
+        updateState { copy(filteredTags = tags) }
+    }
 
-    override suspend fun filterTags(searchQuery: String, excludeTags: Set<String>): List<String> =
-        repository.filterTags(spaceId, searchQuery, excludeTags)
+    private suspend fun TaskEditPipelineContext.filterTasksForSelection(searchQuery: String) {
+        val tasks = repository.filterTasksForSelection(spaceId, taskId, searchQuery)
+        updateState { copy(filteredTasksForSelection = tasks) }
+    }
 
-    override suspend fun filterTasksForSelection(searchQuery: String): List<Task> =
-        repository.filterTasksForSelection(spaceId, taskId, searchQuery)
+    private suspend fun TaskEditPipelineContext.searchTasksForConnection(intent: TaskEditIntent.SearchTasksForConnection) {
+        val tasks = repository.searchTasksForConnection(
+            spaceId = spaceId,
+            excludeTaskId = taskId,
+            searchQuery = intent.searchQuery,
+            excludeTaskIds = intent.excludeTaskIds,
+            connectionType = intent.connectionType,
+            existingConnections = intent.existingConnections
+        )
+        updateState { copy(searchedTasksForConnection = tasks) }
+    }
+}
 
-    override suspend fun searchTasksForConnection(
-        searchQuery: String,
-        excludeTaskIds: Set<String>,
-        connectionType: ConnectionType,
-        existingConnections: Set<TaskConnection>
-    ): List<Task> = repository.searchTasksForConnection(
-        spaceId = spaceId,
-        excludeTaskId = taskId,
-        searchQuery = searchQuery,
-        excludeTaskIds = excludeTaskIds,
-        connectionType = connectionType,
-        existingConnections = existingConnections
-    )
-
-    override suspend fun getCalculatedStatusFromSubtasks(id: String): TaskStatus? =
-        repository.getCalculatedStatusFromSubtasks(id)
-
-    override suspend fun getCurrentSpaceIdPrefix(): String? = repository.getSpaceById(spaceId)?.idPrefix
-
-    override suspend fun getAllSpacePrefixes(): List<String> = repository.getAllSpacePrefixes()
+/**
+ * Factory interface for creating TaskEditContainer instances with runtime parameters.
+ */
+fun interface TaskEditContainerFactory {
+    fun create(spaceId: String, taskId: String, savedStateHandle: SavedStateHandle): TaskEditContainer
 }

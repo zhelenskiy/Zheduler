@@ -13,33 +13,15 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
 import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
-import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditAction
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditIntent
+import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.ExperimentalTime
-
-private data class TaskEditData(
-    val currentSpaceIdPrefix: String?,
-    val allSpacePrefixes: List<String>
-)
-
-@Composable
-private fun rememberTaskEditData(viewModel: TaskEditViewModel): TaskEditData {
-    var currentSpaceIdPrefix by remember { mutableStateOf<String?>(null) }
-    var allSpacePrefixes by remember { mutableStateOf<List<String>>(emptyList()) }
-
-    LaunchedEffect(Unit) {
-        currentSpaceIdPrefix = viewModel.getCurrentSpaceIdPrefix()
-        allSpacePrefixes = viewModel.getAllSpacePrefixes()
-    }
-
-    return TaskEditData(
-        currentSpaceIdPrefix = currentSpaceIdPrefix,
-        allSpacePrefixes = allSpacePrefixes
-    )
-}
 
 @Composable
 fun TaskEditScreen(
-    viewModel: TaskEditViewModel,
+    container: TaskEditContainer,
     onNavigateBack: () -> Unit,
     onAddNewTaskWithConnection: (String, ConnectionType) -> Unit,
     onTaskClick: (String) -> Unit,
@@ -50,14 +32,19 @@ fun TaskEditScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val task by viewModel.task.collectAsState()
+    val state by container.store.subscribe { action ->
+        when (action) {
+            is TaskEditAction.TaskSaved -> onNavigateBack()
+        }
+    }
 
-    val currentTask = task ?: return
+    val currentTask = state.task ?: return
 
     val formState = rememberTaskFormState(currentTask)
 
+    // Apply persisted form state on initial load (from SavedStateHandle)
     LaunchedEffect(Unit) {
-        val persistedState = viewModel.getPersistedFormState()
+        val persistedState = container.getPersistedFormState()
         persistedState.title?.let { formState.title = it }
         persistedState.description?.let { formState.description = it }
         persistedState.priority?.let { formState.priority = it }
@@ -68,6 +55,7 @@ fun TaskEditScreen(
         persistedState.dueDate?.let { formState.dueDate = it }
     }
 
+    // Persist form state changes to SavedStateHandle
     LaunchedEffect(
         formState.title,
         formState.description,
@@ -76,7 +64,7 @@ fun TaskEditScreen(
         formState.tags,
         formState.dueDate
     ) {
-        viewModel.persistFormState(
+        container.persistFormState(
             title = formState.title,
             description = formState.description,
             priority = formState.priority,
@@ -86,14 +74,13 @@ fun TaskEditScreen(
         )
     }
 
-    LaunchedEffect(task) {
-        val freshTask = task
+    // Update connections when task changes
+    LaunchedEffect(state.task) {
+        val freshTask = state.task
         if (freshTask != null) {
             formState.connections = freshTask.connections
         }
     }
-
-    val editData = rememberTaskEditData(viewModel)
 
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
 
@@ -112,15 +99,14 @@ fun TaskEditScreen(
             recurrenceRules = parsed.recurrenceRules,
             autoUpdateStatusFromSubtasks = parsed.autoUpdateStatusFromSubtasks
         )
-        viewModel.saveTask(updatedTask)
-        onNavigateBack()
+        container.store.intent(TaskEditIntent.SaveTask(updatedTask))
     }
 
     fun handleBackPress() {
         if (formState.hasUnsavedChanges(currentTask)) {
             showDiscardChangesDialog = true
         } else {
-            viewModel.clearPersistedFormState()
+            container.clearPersistedFormState()
             onNavigateBack()
         }
     }
@@ -133,7 +119,7 @@ fun TaskEditScreen(
             dismissText = "Keep editing",
             onConfirm = {
                 showDiscardChangesDialog = false
-                viewModel.clearPersistedFormState()
+                container.clearPersistedFormState()
                 onNavigateBack()
             },
             onDismiss = { showDiscardChangesDialog = false }
@@ -166,12 +152,18 @@ fun TaskEditScreen(
                 onCreateNewTaskWithConnection = { connectionType ->
                     onAddNewTaskWithConnection(currentTask.id, connectionType.symmetric)
                 },
-                getTaskById = viewModel::getTaskById,
-                filterTags = viewModel::filterTags,
-                filterTasksForSelection = viewModel::filterTasksForSelection,
-                searchTasksForConnection = viewModel::searchTasksForConnection,
-                currentSpaceIdPrefix = editData.currentSpaceIdPrefix,
-                allSpacePrefixes = editData.allSpacePrefixes
+                loadedTasks = state.loadedTasks,
+                filteredTags = state.filteredTags,
+                filteredTasksForSelection = state.filteredTasksForSelection,
+                searchedTasksForConnection = state.searchedTasksForConnection,
+                onLoadTask = { taskId -> container.store.intent(TaskEditIntent.LoadTaskById(taskId)) },
+                onFilterTags = { query, excludeTags -> container.store.intent(TaskEditIntent.FilterTags(query, excludeTags)) },
+                onFilterTasksForSelection = { query -> container.store.intent(TaskEditIntent.FilterTasksForSelection(query)) },
+                onSearchTasksForConnection = { query, excludeIds, type, existing ->
+                    container.store.intent(TaskEditIntent.SearchTasksForConnection(query, excludeIds, type, existing))
+                },
+                currentSpaceIdPrefix = state.currentSpaceIdPrefix,
+                allSpacePrefixes = state.allSpacePrefixes
             )
         }
     }

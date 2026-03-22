@@ -9,45 +9,20 @@ import androidx.compose.ui.Modifier
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
-import kotlinx.coroutines.launch
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
 import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
-import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskAction
+import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskIntent
+import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.ExperimentalTime
 
 @Composable
-private fun rememberNewTaskData(viewModel: NewTaskViewModel): NewTaskData {
-    var taskToCopy by remember { mutableStateOf<Task?>(null) }
-    var nextId by remember { mutableStateOf<String?>(null) }
-    var prefilledTask by remember { mutableStateOf<Task?>(null) }
-    var currentSpaceIdPrefix by remember { mutableStateOf<String?>(null) }
-    var allSpacePrefixes by remember { mutableStateOf<List<String>>(emptyList()) }
-
-    LaunchedEffect(Unit) {
-        taskToCopy = viewModel.getTaskToCopy()
-        nextId = viewModel.getNextId()
-        prefilledTask = viewModel.getPrefilledTask()
-        currentSpaceIdPrefix = viewModel.getCurrentSpaceIdPrefix()
-        allSpacePrefixes = viewModel.getAllSpacePrefixes()
-    }
-
-    return NewTaskData(
-        taskToCopy = taskToCopy,
-        nextId = nextId,
-        prefilledTask = prefilledTask,
-        currentSpaceIdPrefix = currentSpaceIdPrefix,
-        allSpacePrefixes = allSpacePrefixes
-    )
-}
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 fun NewTaskScreen(
-    viewModel: NewTaskViewModel,
+    container: NewTaskContainer,
     onNavigateBack: () -> Unit,
     onTaskCreated: (String) -> Unit,
     onTaskClick: (String) -> Unit,
@@ -58,9 +33,14 @@ fun NewTaskScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val taskData = rememberNewTaskData(viewModel)
-    val initialConnections = viewModel.getInitialConnections()
-    val formState = rememberFormStateFromData(taskData.taskToCopy, initialConnections)
+    val state by container.store.subscribe { action ->
+        when (action) {
+            is NewTaskAction.TaskCreated -> onTaskCreated(action.task.id)
+        }
+    }
+
+    val initialConnections = state.initialConnections
+    val formState = rememberFormStateFromData(state.taskToCopy, initialConnections)
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
 
     fun handleBackPress() {
@@ -85,13 +65,10 @@ fun NewTaskScreen(
         )
     }
 
-    val coroutineScope = rememberCoroutineScope()
-
     fun saveTask() {
         val parsed = formState.toParsedValues() ?: return
-
-        coroutineScope.launch {
-            val task = viewModel.createTask(
+        container.store.intent(
+            NewTaskIntent.CreateTask(
                 title = parsed.title,
                 description = parsed.description,
                 status = parsed.status,
@@ -104,10 +81,7 @@ fun NewTaskScreen(
                 recurrenceRules = parsed.recurrenceRules,
                 autoUpdateStatusFromSubtasks = parsed.autoUpdateStatusFromSubtasks
             )
-            if (task != null) {
-                onTaskCreated(task.id)
-            }
-        }
+        )
     }
 
     Scaffold(
@@ -115,7 +89,7 @@ fun NewTaskScreen(
         topBar = {
             TaskFormTopAppBar(
                 title = "New Task",
-                taskId = taskData.nextId?.let { "ID: $it" },
+                taskId = state.nextId?.let { "ID: $it" },
                 isFormValid = formState.isFormValid,
                 onBackPress = { handleBackPress() },
                 onSave = { saveTask() },
@@ -129,20 +103,26 @@ fun NewTaskScreen(
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
-            if (taskData.nextId != null) {
+            if (state.nextId != null) {
                 TaskFormContent(
                     formState = formState,
                     isNewTask = true,
-                    prefilledTask = taskData.prefilledTask,
+                    prefilledTask = state.prefilledTask,
                     prefilledConnection = initialConnections.firstOrNull(),
                     onTaskClick = onTaskClick,
                     onCreateNewTaskWithConnection = null,
-                    getTaskById = viewModel::getTaskById,
-                    filterTags = viewModel::filterTags,
-                    filterTasksForSelection = viewModel::filterTasksForSelection,
-                    searchTasksForConnection = viewModel::searchTasksForConnection,
-                    currentSpaceIdPrefix = taskData.currentSpaceIdPrefix,
-                    allSpacePrefixes = taskData.allSpacePrefixes
+                    loadedTasks = state.loadedTasks,
+                    filteredTags = state.filteredTags,
+                    filteredTasksForSelection = state.filteredTasksForSelection,
+                    searchedTasksForConnection = state.searchedTasksForConnection,
+                    onLoadTask = { taskId -> container.store.intent(NewTaskIntent.LoadTask(taskId)) },
+                    onFilterTags = { query, excludeTags -> container.store.intent(NewTaskIntent.FilterTags(query, excludeTags)) },
+                    onFilterTasksForSelection = { query -> container.store.intent(NewTaskIntent.FilterTasksForSelection(query)) },
+                    onSearchTasksForConnection = { query, excludeIds, type, existing ->
+                        container.store.intent(NewTaskIntent.SearchTasksForConnection(query, excludeIds, type, existing))
+                    },
+                    currentSpaceIdPrefix = state.currentSpaceIdPrefix,
+                    allSpacePrefixes = state.allSpacePrefixes
                 )
             }
         }
@@ -158,11 +138,3 @@ private fun rememberFormStateFromData(taskToCopy: Task?, initialConnections: Set
     } else {
         rememberTaskFormState(initialConnections = initialConnections)
     }
-
-private data class NewTaskData(
-    val taskToCopy: Task?,
-    val nextId: String?,
-    val prefilledTask: Task?,
-    val currentSpaceIdPrefix: String?,
-    val allSpacePrefixes: List<String>,
-)

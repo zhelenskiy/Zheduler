@@ -2,47 +2,26 @@
 
 package com.zhelenskiy.zheduler.zheduler.di
 
-import androidx.lifecycle.SavedStateHandle
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
-import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
-import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainerFactory
-import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainerFactory
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
-
-
-
-/**
- * Factory interface for creating NewTaskViewModel instances with runtime parameters.
- */
-fun interface NewTaskViewModelFactory {
-    fun create(spaceId: String, prefilledConnection: TaskConnection?, taskIdToCopy: String?): NewTaskViewModel
-}
-
-
-/**
- * Factory interface for creating TaskEditViewModel instances with runtime parameters.
- */
-fun interface TaskEditViewModelFactory {
-    fun create(
-        spaceId: String,
-        taskId: String,
-        savedStateHandle: SavedStateHandle
-    ): TaskEditViewModel
-}
 
 /**
  * Main dependency graph for the application.
@@ -83,9 +62,9 @@ interface AppGraph {
     val calendarContainerFactory: CalendarContainerFactory
 
     /**
-     * Factory for creating NewTaskViewModel instances with runtime parameters.
+     * Factory for creating NewTaskContainer instances with runtime parameters.
      */
-    val newTaskViewModelFactory: NewTaskViewModelFactory
+    val newTaskContainerFactory: NewTaskContainerFactory
 
     /**
      * Factory for creating TaskDetailContainer instances with runtime parameters.
@@ -93,9 +72,9 @@ interface AppGraph {
     val taskDetailContainerFactory: TaskDetailContainerFactory
 
     /**
-     * Factory for creating TaskEditViewModel instances with runtime parameters.
+     * Factory for creating TaskEditContainer instances with runtime parameters.
      */
-    val taskEditViewModelFactory: TaskEditViewModelFactory
+    val taskEditContainerFactory: TaskEditContainerFactory
 
     companion object {
         @Provides
@@ -135,9 +114,9 @@ interface AppGraph {
             }
 
         @Provides
-        fun provideNewTaskViewModelFactory(repository: SqlDelightTaskRepository): NewTaskViewModelFactory =
-            NewTaskViewModelFactory { spaceId, prefilledConnection, taskIdToCopy ->
-                NewTaskViewModel(repository, spaceId, prefilledConnection, taskIdToCopy)
+        fun provideNewTaskContainerFactory(repository: SqlDelightTaskRepository): NewTaskContainerFactory =
+            NewTaskContainerFactory { spaceId, prefilledConnection, taskIdToCopy ->
+                NewTaskContainer(repository, spaceId, prefilledConnection, taskIdToCopy)
             }
 
         @Provides
@@ -147,9 +126,9 @@ interface AppGraph {
             }
 
         @Provides
-        fun provideTaskEditViewModelFactory(repository: SqlDelightTaskRepository): TaskEditViewModelFactory =
-            TaskEditViewModelFactory { spaceId, taskId, savedStateHandle ->
-                TaskEditViewModel(repository, spaceId, taskId, savedStateHandle)
+        fun provideTaskEditContainerFactory(repository: SqlDelightTaskRepository): TaskEditContainerFactory =
+            TaskEditContainerFactory { spaceId, taskId, savedStateHandle ->
+                TaskEditContainer(repository, spaceId, taskId, savedStateHandle)
             }
     }
 }

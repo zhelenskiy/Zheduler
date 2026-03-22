@@ -80,8 +80,10 @@ private fun TitleField(formState: TaskFormState) {
 @Composable
 private fun StatusSection(
     formState: TaskFormState,
-    filterTasksForSelection: suspend (String) -> List<Task>,
-    getTaskById: suspend (String) -> Task?
+    filteredTasksForSelection: List<Task>,
+    loadedTasks: Map<String, Task>,
+    onFilterTasksForSelection: (String) -> Unit,
+    onLoadTask: (String) -> Unit
 ) {
     var showStatusDialog by remember { mutableStateOf(false) }
 
@@ -115,8 +117,10 @@ private fun StatusSection(
     if (showStatusDialog) {
         StatusSelectionDialog(
             currentStatus = formState.status,
-            filterTasks = filterTasksForSelection,
-            getTaskById = getTaskById,
+            filteredTasks = filteredTasksForSelection,
+            loadedTasks = loadedTasks,
+            onFilterTasks = onFilterTasksForSelection,
+            onLoadTask = onLoadTask,
             onDismiss = { showStatusDialog = false },
             onStatusSelected = { status ->
                 formState.status = status
@@ -210,8 +214,10 @@ private fun DueDatePicker(formState: TaskFormState) {
 @Composable
 private fun RecurrenceSection(
     formState: TaskFormState,
-    filterTasksForSelection: suspend (String) -> List<Task>,
-    getTaskById: suspend (String) -> Task?
+    filteredTasksForSelection: List<Task>,
+    loadedTasks: Map<String, Task>,
+    onFilterTasksForSelection: (String) -> Unit,
+    onLoadTask: (String) -> Unit
 ) {
     var editingRuleIndex by remember { mutableStateOf<Int?>(null) }
 
@@ -280,8 +286,10 @@ private fun RecurrenceSection(
         val index = editingRuleIndex!!
         SingleRecurrenceRuleDialog(
             currentRule = formState.recurrenceRules.getOrNull(index)?.first,
-            filterTasks = filterTasksForSelection,
-            getTaskById = getTaskById,
+            filteredTasks = filteredTasksForSelection,
+            loadedTasks = loadedTasks,
+            onFilterTasks = onFilterTasksForSelection,
+            onLoadTask = onLoadTask,
             onDismiss = { editingRuleIndex = null },
             onRecurrenceSelected = { rule ->
                 if (rule != null) {
@@ -527,7 +535,8 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
 @Composable
 private fun TagsSection(
     formState: TaskFormState,
-    filterTags: suspend (String, Set<String>) -> List<String>
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit
 ) {
     var showTagDialog by remember { mutableStateOf(false) }
 
@@ -579,7 +588,8 @@ private fun TagsSection(
     if (showTagDialog) {
         TagSelectionDialog(
             selectedTags = formState.tags,
-            filterTags = filterTags,
+            filteredTags = filteredTags,
+            onFilterTags = onFilterTags,
             onDismiss = { showTagDialog = false },
             onTagSelected = { tag ->
                 formState.tags += tag
@@ -592,8 +602,9 @@ private fun TagsSection(
 @Composable
 private fun ConnectionsSection(
     formState: TaskFormState,
-    connectedTasks: Map<String, Task>,
-    searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
+    loadedTasks: Map<String, Task>,
+    searchedTasksForConnection: List<Task>,
+    onSearchTasksForConnection: (String, Set<String>, ConnectionType, Set<TaskConnection>) -> Unit,
     onCreateNewTaskWithConnection: ((ConnectionType) -> Unit)?
 ) {
     var showConnectionDialog by remember { mutableStateOf(false) }
@@ -641,7 +652,7 @@ private fun ConnectionsSection(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 connectionsForType.forEach { connection ->
-                                    val connectedTask = connectedTasks[connection.targetTaskId]
+                                    val connectedTask = loadedTasks[connection.targetTaskId]
                                     ConnectedTaskChip(
                                         task = connectedTask,
                                         taskId = connection.targetTaskId,
@@ -689,12 +700,18 @@ private fun ConnectionsSection(
     if (showConnectionDialog) {
         ConnectionDialog(
             existingConnections = formState.connections,
-            searchTasksForConnection = searchTasksForConnection,
+            searchedTasks = searchedTasksForConnection,
+            onSearchTasks = onSearchTasksForConnection,
             onDismiss = { showConnectionDialog = false },
             onConnectionAdded = { connection ->
                 formState.connections += connection
             },
-            onCreateNewTask = onCreateNewTaskWithConnection
+            onCreateNewTask = onCreateNewTaskWithConnection?.let { callback ->
+                { connectionType ->
+                    showConnectionDialog = false
+                    callback(connectionType)
+                }
+            }
         )
     }
 }
@@ -726,7 +743,7 @@ private fun ColumnScope.DescriptionSection(
     AnimatedVisibility(
         visible = formState.description.isNotBlank(),
         modifier = Modifier.onGloballyPositioned { coordinates ->
-            scrollToPosition = coordinates.positionInParent().y // Get the y position
+            scrollToPosition = coordinates.positionInParent().y
         }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -759,24 +776,26 @@ fun TaskFormContent(
     prefilledConnection: TaskConnection? = null,
     onTaskClick: (String) -> Unit,
     onCreateNewTaskWithConnection: ((ConnectionType) -> Unit)?,
-    getTaskById: suspend (String) -> Task?,
-    filterTags: suspend (String, Set<String>) -> List<String>,
-    filterTasksForSelection: suspend (String) -> List<Task>,
-    searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
+    // State-based data from container
+    loadedTasks: Map<String, Task>,
+    filteredTags: List<String>,
+    filteredTasksForSelection: List<Task>,
+    searchedTasksForConnection: List<Task>,
+    // Callbacks to trigger intents
+    onLoadTask: (String) -> Unit,
+    onFilterTags: (String, Set<String>) -> Unit,
+    onFilterTasksForSelection: (String) -> Unit,
+    onSearchTasksForConnection: (String, Set<String>, ConnectionType, Set<TaskConnection>) -> Unit,
     currentSpaceIdPrefix: String?,
     allSpacePrefixes: List<String>
 ) {
-    // Load connected tasks asynchronously
-    var connectedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
-
+    // Load connected tasks when connections change
     LaunchedEffect(formState.connections) {
-        val tasks = mutableMapOf<String, Task>()
         formState.connections.forEach { connection ->
-            getTaskById(connection.targetTaskId)?.let { task ->
-                tasks[connection.targetTaskId] = task
+            if (connection.targetTaskId !in loadedTasks) {
+                onLoadTask(connection.targetTaskId)
             }
         }
-        connectedTasks = tasks
     }
 
     val scrollState = rememberScrollState()
@@ -792,19 +811,32 @@ fun TaskFormContent(
         }
 
         TitleField(formState)
-        StatusSection(formState, filterTasksForSelection, getTaskById)
+        StatusSection(
+            formState,
+            filteredTasksForSelection,
+            loadedTasks,
+            onFilterTasksForSelection,
+            onLoadTask
+        )
         PriorityField(formState)
         EstimatedTimeField(formState)
-        RecurrenceSection(formState, filterTasksForSelection, getTaskById)
+        RecurrenceSection(
+            formState,
+            filteredTasksForSelection,
+            loadedTasks,
+            onFilterTasksForSelection,
+            onLoadTask
+        )
         DueDatePicker(formState)
         NotificationsSection(formState)
-        TagsSection(formState, filterTags)
+        TagsSection(formState, filteredTags, onFilterTags)
         ConnectionsSection(
             formState,
-            connectedTasks,
-            searchTasksForConnection,
+            loadedTasks,
+            searchedTasksForConnection,
+            onSearchTasksForConnection,
             onCreateNewTaskWithConnection
         )
-        DescriptionSection(formState, currentSpaceIdPrefix, allSpacePrefixes, connectedTasks, onTaskClick, scrollState)
+        DescriptionSection(formState, currentSpaceIdPrefix, allSpacePrefixes, loadedTasks, onTaskClick, scrollState)
     }
 }
