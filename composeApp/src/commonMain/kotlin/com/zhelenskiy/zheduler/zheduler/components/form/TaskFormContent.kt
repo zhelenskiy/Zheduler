@@ -785,11 +785,15 @@ private fun ColumnScope.DescriptionSection(
     )
 
     var scrollToPosition by remember { mutableStateOf<Float?>(null) }
+    val animate = formState.animateVisibilityChanges
+
     AnimatedVisibility(
         visible = formState.description.isNotBlank(),
         modifier = Modifier.onGloballyPositioned { coordinates ->
             scrollToPosition = coordinates.positionInParent().y
-        }
+        },
+        enter = if (animate) fadeIn() + expandVertically() else EnterTransition.None,
+        exit = if (animate) fadeOut() + shrinkVertically() else ExitTransition.None,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -804,7 +808,10 @@ private fun ColumnScope.DescriptionSection(
                 onTaskClick = onTaskClick,
             )
             LaunchedEffect(Unit) {
-                scrollToPosition?.let { scrollState.animateScrollTo(it.roundToInt()) }
+                if (formState.animateVisibilityChanges) {
+                    scrollToPosition?.let { scrollState.animateScrollTo(it.roundToInt()) }
+                }
+                formState.animateVisibilityChanges = true
             }
         }
     }
