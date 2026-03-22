@@ -223,15 +223,15 @@ private fun AppContent(
         composable<TaskListRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<TaskListRoute>()
             val savedStateHandle = backStackEntry.savedStateHandle
-            val viewModel = remember(route.spaceId) {
-                appGraph.taskListViewModelFactory.create(route.spaceId)
+            val container = remember(route.spaceId) {
+                appGraph.taskListContainerFactory.create(route.spaceId)
             }
 
             // Observe loaded filter from SavedFilterManagementScreen
             val loadedFilterId by savedStateHandle.getStateFlow<String?>("loadedFilterId", null).collectAsState()
 
             TaskListScreen(
-                viewModel = viewModel,
+                container = container,
                 refreshTrigger = refreshTrigger,
                 loadedFilterId = loadedFilterId,
                 onFilterLoaded = {
