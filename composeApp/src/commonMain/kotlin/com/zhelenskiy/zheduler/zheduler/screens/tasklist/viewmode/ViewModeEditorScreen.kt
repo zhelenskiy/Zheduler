@@ -472,89 +472,15 @@ private fun GroupingLevelEditorDialog(
                 }
 
                 item(key = "show_empty") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = level.showEmptyGroups,
-                            onCheckedChange = { level.showEmptyGroups = it }
-                        )
-                        Text("Show empty groups")
-                    }
+                    ShowEmptyGroupsCheckbox(level)
                 }
 
-                // Show validation errors in the dialog
                 item(key = "validation_errors") {
-                    AnimatedVisibility(
-                        visible = validationErrors.isNotEmpty(),
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut()
-                    ) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                validationErrors.forEach { error ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(vertical = 2.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Error,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            text = when (error) {
-                                                is GroupingValidationError.EmptyGroup ->
-                                                    "Group '${error.groupLabel.ifBlank { "(unnamed)" }}' has no values"
-                                                is GroupingValidationError.EmptyGroupLabel ->
-                                                    "A group has no name"
-                                                is GroupingValidationError.InvalidRange ->
-                                                    "Group '${error.groupLabel.ifBlank { "(unnamed)" }}' has invalid range"
-                                            },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    LevelValidationErrorsCard(validationErrors)
                 }
 
                 item(key = "groups_header") {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Groups", style = MaterialTheme.typography.labelLarge)
-                            IconButton(
-                                onClick = { level.addGroup() },
-                                enabled = level.canAddGroup()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Add group")
-                            }
-                        }
-
-                        if (level.field.requiresExhaustiveCoverage()) {
-                            val allValues = level.field.getAllPossibleValues()
-                            val usedValues = level.groups.flatMap { it.values }.toSet()
-                            val availableValues = allValues - usedValues
-                            if (availableValues.isNotEmpty()) {
-                                Text(
-                                    "Available values: ${availableValues.joinToString(", ")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
+                    GroupsHeader(level)
                 }
 
                 items(level.groups.size, key = { level.groups[it].id }) { groupIndex ->
@@ -590,6 +516,99 @@ private fun GroupingLevelEditorDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ShowEmptyGroupsCheckbox(level: GroupingLevelState) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = level.showEmptyGroups,
+            onCheckedChange = { level.showEmptyGroups = it }
+        )
+        Text("Show empty groups")
+    }
+}
+
+@Composable
+private fun LevelValidationErrorsCard(validationErrors: List<GroupingValidationError>) {
+    AnimatedVisibility(
+        visible = validationErrors.isNotEmpty(),
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut()
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                validationErrors.forEach { error ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Error,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = when (error) {
+                                is GroupingValidationError.EmptyGroup ->
+                                    "Group '${error.groupLabel.ifBlank { "(unnamed)" }}' has no values"
+                                is GroupingValidationError.EmptyGroupLabel ->
+                                    "A group has no name"
+                                is GroupingValidationError.InvalidRange ->
+                                    "Group '${error.groupLabel.ifBlank { "(unnamed)" }}' has invalid range"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupsHeader(level: GroupingLevelState) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Groups", style = MaterialTheme.typography.labelLarge)
+            IconButton(
+                onClick = { level.addGroup() },
+                enabled = level.canAddGroup()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add group")
+            }
+        }
+
+        AvailableValuesHint(level)
+    }
+}
+
+@Composable
+private fun AvailableValuesHint(level: GroupingLevelState) {
+    if (level.field.requiresExhaustiveCoverage()) {
+        val allValues = level.field.getAllPossibleValues()
+        val usedValues = level.groups.flatMap { it.values }.toSet()
+        val availableValues = allValues - usedValues
+        if (availableValues.isNotEmpty()) {
+            Text(
+                "Available values: ${availableValues.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable
@@ -647,284 +666,344 @@ private fun GroupDefinitionCard(
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.DragHandle,
-                    contentDescription = "Drag to reorder",
-                    modifier = dragModifier
-                )
-                OutlinedTextField(
-                    value = group.label,
-                    onValueChange = { group.label = it },
-                    label = { Text("Group label") },
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    singleLine = true,
-                    isError = group.label.isBlank(),
-                    supportingText = if (group.label.isBlank()) {{ Text("Label is required") }} else null
-                )
-                IconButton(onClick = onRemove) {
-                    Icon(Icons.Default.Delete, contentDescription = "Remove")
-                }
-            }
+            GroupDefinitionCardHeader(
+                group = group,
+                onRemove = onRemove,
+                dragModifier = dragModifier
+            )
 
             Spacer(Modifier.height(8.dp))
 
-            // Show custom range inputs for numeric fields, predefined values for others
-            when (field) {
-                GroupableField.Priority -> {
-                    // Priority range UI (0-100)
-                    val priorityError = group.validatePriorityRange()
-                    Column(modifier = Modifier.padding(top = 8.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = group.priorityMinText,
-                                onValueChange = { group.priorityMinText = it },
-                                label = { Text("Min") },
-                                modifier = Modifier.width(80.dp),
-                                singleLine = true,
-                                isError = priorityError != null
-                            )
-                            Text("to")
-                            OutlinedTextField(
-                                value = group.priorityMaxText,
-                                onValueChange = { group.priorityMaxText = it },
-                                label = { Text("Max") },
-                                modifier = Modifier.width(80.dp),
-                                singleLine = true,
-                                isError = priorityError != null
-                            )
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = group.includeNoPriority,
-                                onCheckedChange = { group.includeNoPriority = it }
-                            )
-                            Text("Include tasks without priority", style = MaterialTheme.typography.bodySmall)
-                        }
-                        AnimatedVisibility(
-                            visible = priorityError != null,
-                            enter = expandVertically(),
-                            exit = shrinkVertically()
-                        ) {
-                            Text(
-                                priorityError ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-                GroupableField.EstimatedTime -> {
-                    // Estimated time range UI
-                    val timeError = group.validateEstimatedTimeRange()
-                    Column(modifier = Modifier.padding(top = 8.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = group.estimatedTimeMinText,
-                                onValueChange = { group.estimatedTimeMinText = it },
-                                label = { Text("Min") },
-                                modifier = Modifier.width(100.dp),
-                                singleLine = true,
-                                isError = timeError != null
-                            )
-                            Text("to")
-                            OutlinedTextField(
-                                value = group.estimatedTimeMaxText,
-                                onValueChange = { group.estimatedTimeMaxText = it },
-                                label = { Text("Max") },
-                                modifier = Modifier.width(100.dp),
-                                singleLine = true,
-                                isError = timeError != null
-                            )
-                        }
-                        Text(
-                            "Format: 2h 30m, 1d, 1w 2d",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = group.includeNoEstimatedTime,
-                                onCheckedChange = { group.includeNoEstimatedTime = it }
-                            )
-                            Text("Include tasks without estimate", style = MaterialTheme.typography.bodySmall)
-                        }
-                        AnimatedVisibility(
-                            visible = timeError != null,
-                            enter = expandVertically(),
-                            exit = shrinkVertically()
-                        ) {
-                            Text(
-                                timeError ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-                GroupableField.DueDate -> {
-                    // Due date range UI (days from today)
-                    val dueDateError = group.validateDueDateRange()
-                    Column(modifier = Modifier.padding(top = 8.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = group.dueDateMinDaysText,
-                                onValueChange = { group.dueDateMinDaysText = it },
-                                label = { Text("From") },
-                                modifier = Modifier.width(80.dp),
-                                singleLine = true,
-                                isError = dueDateError != null
-                            )
-                            Text("to")
-                            OutlinedTextField(
-                                value = group.dueDateMaxDaysText,
-                                onValueChange = { group.dueDateMaxDaysText = it },
-                                label = { Text("To") },
-                                modifier = Modifier.width(80.dp),
-                                singleLine = true,
-                                isError = dueDateError != null
-                            )
-                            Text("days")
-                        }
-                        Text(
-                            "Negative = past, 0 = today, positive = future",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = group.includeNoDueDate,
-                                onCheckedChange = { group.includeNoDueDate = it }
-                            )
-                            Text("Include tasks without due date", style = MaterialTheme.typography.bodySmall)
-                        }
-                        AnimatedVisibility(
-                            visible = dueDateError != null,
-                            enter = expandVertically(),
-                            exit = shrinkVertically()
-                        ) {
-                            Text(
-                                dueDateError ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-                else -> {
-                    // Predefined values UI
-                    Text("Values:", style = MaterialTheme.typography.labelMedium)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        group.values.forEach { value ->
-                            InputChip(
-                                selected = true,
-                                onClick = { group.removeValue(value) },
-                                label = { Text(value) },
-                                trailingIcon = {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", Modifier.size(16.dp))
-                                }
-                            )
-                        }
+            GroupDefinitionCardFieldEditor(
+                group = group,
+                field = field,
+                filteredTags = filteredTags,
+                onFilterTags = onFilterTags
+            )
 
-                        // Add value button/dropdown for fields with predefined values
-                        if (field.requiresExhaustiveCoverage()) {
-                            val availableValues = field.getAllPossibleValues() - group.values.toSet()
-                            if (availableValues.isNotEmpty()) {
-                                var showMenu by remember { mutableStateOf(false) }
-                                Box {
-                                    AssistChip(
-                                        onClick = { showMenu = true },
-                                        label = { Text("+") }
-                                    )
-                                    DropdownMenu(
-                                        expanded = showMenu,
-                                        onDismissRequest = { showMenu = false }
-                                    ) {
-                                        availableValues.forEach { value ->
-                                            DropdownMenuItem(
-                                                text = { Text(value) },
-                                                onClick = {
-                                                    group.addValue(value)
-                                                    showMenu = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
+            GroupDefinitionCardOrderingSection(
+                group = group,
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupDefinitionCardHeader(
+    group: GroupDefinitionState,
+    onRemove: () -> Unit,
+    dragModifier: Modifier
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.DragHandle,
+            contentDescription = "Drag to reorder",
+            modifier = dragModifier
+        )
+        OutlinedTextField(
+            value = group.label,
+            onValueChange = { group.label = it },
+            label = { Text("Group label") },
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            singleLine = true,
+            isError = group.label.isBlank(),
+            supportingText = if (group.label.isBlank()) {{ Text("Label is required") }} else null
+        )
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Default.Delete, contentDescription = "Remove")
+        }
+    }
+}
+
+@Composable
+private fun GroupDefinitionCardFieldEditor(
+    group: GroupDefinitionState,
+    field: GroupableField,
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit
+) {
+    when (field) {
+        GroupableField.Priority -> PriorityRangeEditor(group)
+        GroupableField.EstimatedTime -> EstimatedTimeRangeEditor(group)
+        GroupableField.DueDate -> DueDateRangeEditor(group)
+        else -> PredefinedValuesEditor(group, field, filteredTags, onFilterTags)
+    }
+}
+
+@Composable
+private fun PriorityRangeEditor(group: GroupDefinitionState) {
+    val priorityError = group.validatePriorityRange()
+    Column(modifier = Modifier.padding(top = 8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = group.priorityMinText,
+                onValueChange = { group.priorityMinText = it },
+                label = { Text("Min") },
+                modifier = Modifier.width(80.dp),
+                singleLine = true,
+                isError = priorityError != null
+            )
+            Text("to")
+            OutlinedTextField(
+                value = group.priorityMaxText,
+                onValueChange = { group.priorityMaxText = it },
+                label = { Text("Max") },
+                modifier = Modifier.width(80.dp),
+                singleLine = true,
+                isError = priorityError != null
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = group.includeNoPriority,
+                onCheckedChange = { group.includeNoPriority = it }
+            )
+            Text("Include tasks without priority", style = MaterialTheme.typography.bodySmall)
+        }
+        AnimatedVisibility(
+            visible = priorityError != null,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Text(
+                priorityError ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun EstimatedTimeRangeEditor(group: GroupDefinitionState) {
+    val timeError = group.validateEstimatedTimeRange()
+    Column(modifier = Modifier.padding(top = 8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = group.estimatedTimeMinText,
+                onValueChange = { group.estimatedTimeMinText = it },
+                label = { Text("Min") },
+                modifier = Modifier.width(100.dp),
+                singleLine = true,
+                isError = timeError != null
+            )
+            Text("to")
+            OutlinedTextField(
+                value = group.estimatedTimeMaxText,
+                onValueChange = { group.estimatedTimeMaxText = it },
+                label = { Text("Max") },
+                modifier = Modifier.width(100.dp),
+                singleLine = true,
+                isError = timeError != null
+            )
+        }
+        Text(
+            "Format: 2h 30m, 1d, 1w 2d",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = group.includeNoEstimatedTime,
+                onCheckedChange = { group.includeNoEstimatedTime = it }
+            )
+            Text("Include tasks without estimate", style = MaterialTheme.typography.bodySmall)
+        }
+        AnimatedVisibility(
+            visible = timeError != null,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Text(
+                timeError ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun DueDateRangeEditor(group: GroupDefinitionState) {
+    val dueDateError = group.validateDueDateRange()
+    Column(modifier = Modifier.padding(top = 8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = group.dueDateMinDaysText,
+                onValueChange = { group.dueDateMinDaysText = it },
+                label = { Text("From") },
+                modifier = Modifier.width(80.dp),
+                singleLine = true,
+                isError = dueDateError != null
+            )
+            Text("to")
+            OutlinedTextField(
+                value = group.dueDateMaxDaysText,
+                onValueChange = { group.dueDateMaxDaysText = it },
+                label = { Text("To") },
+                modifier = Modifier.width(80.dp),
+                singleLine = true,
+                isError = dueDateError != null
+            )
+            Text("days")
+        }
+        Text(
+            "Negative = past, 0 = today, positive = future",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = group.includeNoDueDate,
+                onCheckedChange = { group.includeNoDueDate = it }
+            )
+            Text("Include tasks without due date", style = MaterialTheme.typography.bodySmall)
+        }
+        AnimatedVisibility(
+            visible = dueDateError != null,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Text(
+                dueDateError ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun PredefinedValuesEditor(
+    group: GroupDefinitionState,
+    field: GroupableField,
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit
+) {
+    Text("Values:", style = MaterialTheme.typography.labelMedium)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        group.values.forEach { value ->
+            InputChip(
+                selected = true,
+                onClick = { group.removeValue(value) },
+                label = { Text(value) },
+                trailingIcon = {
+                    Icon(Icons.Default.Close, contentDescription = "Remove", Modifier.size(16.dp))
+                }
+            )
+        }
+
+        AddValueButton(group, field, filteredTags, onFilterTags)
+    }
+}
+
+@Composable
+private fun AddValueButton(
+    group: GroupDefinitionState,
+    field: GroupableField,
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit
+) {
+    if (field.requiresExhaustiveCoverage()) {
+        val availableValues = field.getAllPossibleValues() - group.values.toSet()
+        if (availableValues.isNotEmpty()) {
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
+                AssistChip(
+                    onClick = { showMenu = true },
+                    label = { Text("+") }
+                )
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    availableValues.forEach { value ->
+                        DropdownMenuItem(
+                            text = { Text(value) },
+                            onClick = {
+                                group.addValue(value)
+                                showMenu = false
                             }
-                        } else if (field == GroupableField.Tags) {
-                            // For tags, use the TagSelectionDialog
-                            var showTagDialog by remember { mutableStateOf(false) }
-
-                            AssistChip(
-                                onClick = { showTagDialog = true },
-                                label = { Text("Add tag") },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Add, contentDescription = null, Modifier.size(16.dp))
-                                }
-                            )
-                            if (showTagDialog) {
-                                TagSelectionDialog(
-                                    selectedTags = group.values.toSet(),
-                                    filteredTags = filteredTags,
-                                    onFilterTags = onFilterTags,
-                                    onDismiss = { showTagDialog = false },
-                                    onTagSelected = { tag ->
-                                        group.addValue(tag)
-                                        showTagDialog = false
-                                    }
-                                )
-                            }
-                        }
+                        )
                     }
                 }
-            }
-
-            // Group-specific ordering (collapsible)
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        if (group.orderingRules.isEmpty()) "Order (uses default)"
-                        else "Order (${group.orderingRules.size} rules)"
-                    )
-                }
-            }
-
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                GroupOrderingRulesSection(group)
             }
         }
+    } else if (field == GroupableField.Tags) {
+        var showTagDialog by remember { mutableStateOf(false) }
+
+        AssistChip(
+            onClick = { showTagDialog = true },
+            label = { Text("Add tag") },
+            leadingIcon = {
+                Icon(Icons.Default.Add, contentDescription = null, Modifier.size(16.dp))
+            }
+        )
+        if (showTagDialog) {
+            TagSelectionDialog(
+                selectedTags = group.values.toSet(),
+                filteredTags = filteredTags,
+                onFilterTags = onFilterTags,
+                onDismiss = { showTagDialog = false },
+                onTagSelected = { tag ->
+                    group.addValue(tag)
+                    showTagDialog = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupDefinitionCardOrderingSection(
+    group: GroupDefinitionState,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit
+) {
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(onClick = { onExpandedChange(!expanded) }) {
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                if (group.orderingRules.isEmpty()) "Order (uses default)"
+                else "Order (${group.orderingRules.size} rules)"
+            )
+        }
+    }
+
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandVertically(),
+        exit = shrinkVertically()
+    ) {
+        GroupOrderingRulesSection(group)
     }
 }
 
