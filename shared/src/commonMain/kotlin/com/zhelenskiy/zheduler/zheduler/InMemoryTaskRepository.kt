@@ -128,6 +128,10 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         // No additional action needed
     }
 
+    override suspend fun hasAnyTasks(spaceId: String): Boolean = mutex.withLock {
+        tasks.values.any { it.spaceId == spaceId }
+    }
+
     override suspend fun getAllTasks(spaceId: String): List<Task> = mutex.withLock {
         tasks.values.filter { it.spaceId == spaceId }.toList()
     }

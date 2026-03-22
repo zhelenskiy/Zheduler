@@ -98,6 +98,9 @@ class SqlDelightTaskRepository(
         }
     }
 
+    override suspend fun hasAnyTasks(spaceId: String): Boolean =
+        queries.hasAnyTasks(spaceId).awaitAsOne()
+
     override suspend fun getAllTasks(spaceId: String): List<Task> =
         queries.getTasksBySpace(spaceId).awaitAsList().map { loadTaskWithConnections(it) }
 
