@@ -2,13 +2,18 @@
 
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import pro.respawn.flowmvi.api.Container
+import pro.respawn.flowmvi.api.MVIAction
+import pro.respawn.flowmvi.api.MVIIntent
+import pro.respawn.flowmvi.api.MVIState
+import pro.respawn.flowmvi.api.PipelineContext
+import pro.respawn.flowmvi.dsl.store
+import pro.respawn.flowmvi.plugins.reduce
+import pro.respawn.flowmvi.plugins.whileSubscribed
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -24,34 +29,87 @@ data class PersistedFormState(
     val dueDate: Instant?
 )
 
-class TaskDetailViewModel(
+data class TaskDetailState(
+    val taskWithTotals: TaskWithTotals? = null,
+    val connectionsByType: Map<ConnectionType, List<Task>> = emptyMap(),
+    val currentSpaceIdPrefix: String? = null,
+    val allSpacePrefixes: List<String> = emptyList(),
+    val statusTimeline: List<StatusChange> = emptyList(),
+    val loadedTasks: Map<String, Task> = emptyMap()
+) : MVIState
+
+sealed interface TaskDetailIntent : MVIIntent {
+    data object LoadTask : TaskDetailIntent
+    data object LoadSpaceInfo : TaskDetailIntent
+    data class LoadTaskById(val taskId: String) : TaskDetailIntent
+}
+
+sealed interface TaskDetailAction : MVIAction
+
+private typealias TaskDetailPipelineContext = PipelineContext<TaskDetailState, TaskDetailIntent, TaskDetailAction>
+
+class TaskDetailContainer(
     private val repository: TaskRepository,
     private val spaceId: String,
     private val taskId: String
-) : ViewModel() {
+) : Container<TaskDetailState, TaskDetailIntent, TaskDetailAction> {
 
-    private val _taskWithTotals = MutableStateFlow<TaskWithTotals?>(null)
-    val taskWithTotals: StateFlow<TaskWithTotals?> = _taskWithTotals.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private val _connectionsByType = MutableStateFlow<Map<ConnectionType, List<Task>>>(emptyMap())
-    val connectionsByType: StateFlow<Map<ConnectionType, List<Task>>> = _connectionsByType.asStateFlow()
+    override val store = store(TaskDetailState(), scope) {
+        configure {
+            name = "TaskDetailStore"
+        }
 
-    init {
-        loadTask()
-    }
+        whileSubscribed {
+            loadTask()
+            loadSpaceInfo()
+        }
 
-    fun loadTask() {
-        viewModelScope.launch {
-            _taskWithTotals.value = repository.getTasksByIdWithTotals(taskId)
-            _connectionsByType.value = repository.getConnectionsByType(taskId)
+        reduce { intent ->
+            when (intent) {
+                is TaskDetailIntent.LoadTask -> loadTask()
+                is TaskDetailIntent.LoadSpaceInfo -> loadSpaceInfo()
+                is TaskDetailIntent.LoadTaskById -> loadTaskById(intent.taskId)
+            }
         }
     }
 
-    suspend fun getTaskById(id: String): Task? = repository.getTaskById(id)
+    private suspend fun TaskDetailPipelineContext.loadTask() {
+        val taskWithTotals = repository.getTasksByIdWithTotals(taskId)
+        val connectionsByType = repository.getConnectionsByType(taskId)
+        val statusTimeline = repository.getStatusTimeline(taskId)
+        updateState {
+            copy(
+                taskWithTotals = taskWithTotals,
+                connectionsByType = connectionsByType,
+                statusTimeline = statusTimeline
+            )
+        }
+    }
 
-    suspend fun getCurrentSpaceIdPrefix(): String? = repository.getSpaceById(spaceId)?.idPrefix
+    private suspend fun TaskDetailPipelineContext.loadSpaceInfo() {
+        val prefix = repository.getSpaceById(spaceId)?.idPrefix
+        val allPrefixes = repository.getAllSpacePrefixes()
+        updateState {
+            copy(
+                currentSpaceIdPrefix = prefix,
+                allSpacePrefixes = allPrefixes
+            )
+        }
+    }
 
-    suspend fun getAllSpacePrefixes(): List<String> = repository.getAllSpacePrefixes()
+    private suspend fun TaskDetailPipelineContext.loadTaskById(taskId: String) {
+        val task = repository.getTaskById(taskId) ?: return
+        updateState {
+            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks + (taskId to task))
+        }
+    }
+}
 
-    suspend fun getStatusTimeline(taskId: String): List<StatusChange> = repository.getStatusTimeline(taskId)
+/**
+ * Factory interface for creating TaskDetailContainer instances with runtime parameters.
+ */
+fun interface TaskDetailContainerFactory {
+    fun create(spaceId: String, taskId: String): TaskDetailContainer
 }

@@ -13,7 +13,8 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
-import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditViewModel
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
 import kotlinx.coroutines.Deferred
@@ -36,15 +37,6 @@ fun interface NewTaskViewModelFactory {
     fun create(spaceId: String, prefilledConnection: TaskConnection?, taskIdToCopy: String?): NewTaskViewModel
 }
 
-/**
- * Factory interface for creating TaskDetailViewModel instances with runtime parameters.
- */
-fun interface TaskDetailViewModelFactory {
-    fun create(
-        spaceId: String,
-        taskId: String
-    ): TaskDetailViewModel
-}
 
 /**
  * Factory interface for creating TaskEditViewModel instances with runtime parameters.
@@ -101,9 +93,9 @@ interface AppGraph {
     val newTaskViewModelFactory: NewTaskViewModelFactory
 
     /**
-     * Factory for creating TaskDetailViewModel instances with runtime parameters.
+     * Factory for creating TaskDetailContainer instances with runtime parameters.
      */
-    val taskDetailViewModelFactory: TaskDetailViewModelFactory
+    val taskDetailContainerFactory: TaskDetailContainerFactory
 
     /**
      * Factory for creating TaskEditViewModel instances with runtime parameters.
@@ -154,9 +146,9 @@ interface AppGraph {
             }
 
         @Provides
-        fun provideTaskDetailViewModelFactory(repository: SqlDelightTaskRepository): TaskDetailViewModelFactory =
-            TaskDetailViewModelFactory { spaceId, taskId ->
-                TaskDetailViewModel(repository, spaceId, taskId)
+        fun provideTaskDetailContainerFactory(repository: SqlDelightTaskRepository): TaskDetailContainerFactory =
+            TaskDetailContainerFactory { spaceId, taskId ->
+                TaskDetailContainer(repository, spaceId, taskId)
             }
 
         @Provides
