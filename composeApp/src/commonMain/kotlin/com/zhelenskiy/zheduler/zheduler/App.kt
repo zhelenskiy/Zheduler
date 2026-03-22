@@ -313,14 +313,14 @@ private fun AppContent(
             }
         ) { backStackEntry ->
             val route = backStackEntry.toRoute<TaskDetailRoute>()
-            val viewModel = remember(route.spaceId, route.taskId) {
-                appGraph.taskDetailViewModelFactory.create(
+            val container = remember(route.spaceId, route.taskId) {
+                appGraph.taskDetailContainerFactory.create(
                     spaceId = route.spaceId,
                     taskId = route.taskId
                 )
             }
             TaskDetailScreen(
-                viewModel = viewModel,
+                container = container,
                 externalRefreshTrigger = refreshTrigger,
                 onNavigateBack = {
                     refreshTrigger++

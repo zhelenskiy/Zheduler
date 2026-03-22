@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -38,93 +37,12 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
 import com.zhelenskiy.zheduler.zheduler.util.formatCompactDateTime
-import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailIntent
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailState
+import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
-
-private data class TaskDetailData(
-    val currentSpaceIdPrefix: String?,
-    val allSpacePrefixes: List<String>,
-    val statusTimeline: List<StatusChange>,
-    val blockerTasks: Map<String, Task>,
-    val connectedTasks: Map<String, Task>,
-    val loadedTasks: Map<String, Task>,
-    val loadTask: (String) -> Unit
-)
-
-@Composable
-private fun rememberTaskDetailData(
-    task: Task,
-    viewModel: TaskDetailViewModel
-): TaskDetailData {
-    var currentSpaceIdPrefix by remember { mutableStateOf<String?>(null) }
-    var allSpacePrefixes by remember { mutableStateOf<List<String>>(emptyList()) }
-    var statusTimeline by remember { mutableStateOf<List<StatusChange>>(emptyList()) }
-    var blockerTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
-    var connectedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
-    var loadedTasks by remember { mutableStateOf<Map<String, Task>>(emptyMap()) }
-
-    val scope = rememberCoroutineScope()
-    val loadTask: (String) -> Unit = { taskId: String ->
-        if (taskId !in loadedTasks) {
-            scope.launch {
-                viewModel.getTaskById(taskId)?.let { task ->
-                    loadedTasks = loadedTasks + (taskId to task)
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        currentSpaceIdPrefix = viewModel.getCurrentSpaceIdPrefix()
-        allSpacePrefixes = viewModel.getAllSpacePrefixes()
-    }
-
-    LaunchedEffect(task) {
-        val timeline = viewModel.getStatusTimeline(task.id)
-        statusTimeline = timeline
-
-        val blockerIds = buildSet {
-            val status = task.status
-            if (status is TaskStatus.Blocked) {
-                addAll(status.blockerTaskIds)
-            }
-            timeline.forEach { change ->
-                val prevStatus = change.previousStatus
-                if (prevStatus is TaskStatus.Blocked) {
-                    addAll(prevStatus.blockerTaskIds)
-                }
-                val newStatus = change.newStatus
-                if (newStatus is TaskStatus.Blocked) {
-                    addAll(newStatus.blockerTaskIds)
-                }
-            }
-        }
-        blockerTasks = buildMap {
-            blockerIds.forEach { blockerId ->
-                viewModel.getTaskById(blockerId)?.let { put(blockerId, it) }
-            }
-        }
-
-        connectedTasks = buildMap {
-            task.connections.forEach { connection ->
-                viewModel.getTaskById(connection.targetTaskId)?.let {
-                    put(connection.targetTaskId, it)
-                }
-            }
-        }
-    }
-
-    return TaskDetailData(
-        currentSpaceIdPrefix = currentSpaceIdPrefix,
-        allSpacePrefixes = allSpacePrefixes,
-        statusTimeline = statusTimeline,
-        blockerTasks = blockerTasks,
-        connectedTasks = connectedTasks,
-        loadedTasks = loadedTasks,
-        loadTask = loadTask
-    )
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -176,15 +94,53 @@ private fun TaskDetailTopAppBar(
     )
 }
 
+private fun collectBlockerIds(task: Task, statusTimeline: List<StatusChange>): Set<String> = buildSet {
+    val status = task.status
+    if (status is TaskStatus.Blocked) {
+        addAll(status.blockerTaskIds)
+    }
+    statusTimeline.forEach { change ->
+        val prevStatus = change.previousStatus
+        if (prevStatus is TaskStatus.Blocked) {
+            addAll(prevStatus.blockerTaskIds)
+        }
+        val newStatus = change.newStatus
+        if (newStatus is TaskStatus.Blocked) {
+            addAll(newStatus.blockerTaskIds)
+        }
+    }
+}
+
 @Composable
 private fun TaskReadOnlyView(
     task: Task,
-    taskWithTotals: TaskWithTotals?,
-    detailData: TaskDetailData,
-    connectionsByType: Map<ConnectionType, List<Task>>,
+    state: TaskDetailState,
+    loadTask: (String) -> Unit,
     onTaskClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val blockerIds = remember(state.statusTimeline, task) {
+        collectBlockerIds(task, state.statusTimeline)
+    }
+
+    val blockerTasks = remember(blockerIds, state.loadedTasks) {
+        blockerIds.mapNotNull { id -> state.loadedTasks[id]?.let { id to it } }.toMap()
+    }
+
+    val connectedTasks = remember(task.connections, state.loadedTasks) {
+        task.connections.mapNotNull { conn ->
+            state.loadedTasks[conn.targetTaskId]?.let { conn.targetTaskId to it }
+        }.toMap()
+    }
+
+    LaunchedEffect(blockerIds) {
+        blockerIds.forEach { loadTask(it) }
+    }
+
+    LaunchedEffect(task.connections) {
+        task.connections.forEach { loadTask(it.targetTaskId) }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -195,27 +151,27 @@ private fun TaskReadOnlyView(
         TaskTitleSection(task = task)
         TaskStatusSection(
             task = task,
-            taskWithTotals = taskWithTotals,
-            statusTimeline = detailData.statusTimeline,
-            blockerTasks = detailData.blockerTasks,
-            loadedTasks = detailData.loadedTasks,
-            loadTask = detailData.loadTask,
+            taskWithTotals = state.taskWithTotals,
+            statusTimeline = state.statusTimeline,
+            blockerTasks = blockerTasks,
+            loadedTasks = state.loadedTasks,
+            loadTask = loadTask,
             onTaskClick = onTaskClick
         )
-        TaskPrioritySection(task = task, taskWithTotals = taskWithTotals)
+        TaskPrioritySection(task = task, taskWithTotals = state.taskWithTotals)
         TaskEstimatedTimeSection(task = task)
-        TaskDueDateSection(task = task, taskWithTotals = taskWithTotals)
+        TaskDueDateSection(task = task, taskWithTotals = state.taskWithTotals)
         TaskRecurrenceSection(task = task, onTaskClick = onTaskClick)
         TaskNotificationsSection(task = task)
         TaskTagsSection(task = task)
         TaskConnectionsSection(
-            connectionsByType = connectionsByType,
+            connectionsByType = state.connectionsByType,
             onTaskClick = onTaskClick
         )
         TaskDescriptionSection(
             task = task,
-            allSpacePrefixes = detailData.allSpacePrefixes,
-            connectedTasks = detailData.connectedTasks,
+            allSpacePrefixes = state.allSpacePrefixes,
+            connectedTasks = connectedTasks,
             onTaskClick = onTaskClick
         )
     }
@@ -642,7 +598,7 @@ private fun TaskDescriptionSection(
 
 @Composable
 fun TaskDetailScreen(
-    viewModel: TaskDetailViewModel,
+    container: TaskDetailContainer,
     externalRefreshTrigger: Int,
     onNavigateBack: () -> Unit,
     onNavigateToEdit: () -> Unit,
@@ -655,17 +611,18 @@ fun TaskDetailScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val taskWithTotals by viewModel.taskWithTotals.collectAsState()
-    val connectionsByType by viewModel.connectionsByType.collectAsState()
+    val state by container.store.subscribe { }
 
     LaunchedEffect(externalRefreshTrigger) {
-        viewModel.loadTask()
+        container.store.intent(TaskDetailIntent.LoadTask)
     }
 
-    val currentTaskWithTotals = taskWithTotals ?: return
+    val currentTaskWithTotals = state.taskWithTotals ?: return
     val task = currentTaskWithTotals.task
 
-    val detailData = rememberTaskDetailData(task, viewModel)
+    val loadTask: (String) -> Unit = { taskId ->
+        container.store.intent(TaskDetailIntent.LoadTaskById(taskId))
+    }
 
     Scaffold(
         topBar = {
@@ -685,12 +642,10 @@ fun TaskDetailScreen(
     ) { padding ->
         TaskReadOnlyView(
             task = task,
-            taskWithTotals = taskWithTotals,
-            detailData = detailData,
-            connectionsByType = connectionsByType,
+            state = state,
+            loadTask = loadTask,
             onTaskClick = onTaskClick,
             modifier = Modifier.padding(padding)
         )
     }
 }
-
