@@ -87,25 +87,37 @@ private fun StatusSection(
 ) {
     var showStatusDialog by remember { mutableStateOf(false) }
 
-    AnimatedVisibility(visible = !formState.autoUpdateStatusFromSubtasks) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.clickable { showStatusDialog = true }.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = "Status:",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        TaskStatus(status = formState.status, blockerTasks = null, onBlockerTaskClick = null)
-                    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .then(
+                    if (formState.autoUpdateStatusFromSubtasks) Modifier
+                    else Modifier.clickable { showStatusDialog = true }
+                )
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "Status:",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    TaskStatus(status = formState.status, blockerTasks = null, onBlockerTaskClick = null)
                 }
-                Spacer(modifier = Modifier.weight(1f))
+                AnimatedVisibility(visible = formState.autoUpdateStatusFromSubtasks) {
+                    Text(
+                        text = "Automatically chosen based on subtasks",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            if (!formState.autoUpdateStatusFromSubtasks) {
                 Icon(
                     Icons.Default.Edit, contentDescription = "Change status",
                     modifier = Modifier.size(16.dp)
@@ -220,61 +232,94 @@ private fun RecurrenceSection(
     onLoadTask: (String) -> Unit
 ) {
     var editingRuleIndex by remember { mutableStateOf<Int?>(null) }
+    val showWarning = formState.autoUpdateStatusFromSubtasks && formState.recurrenceRules.isNotEmpty()
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Default.Refresh,
-                    contentDescription = null,
-                    tint = if (formState.recurrenceRules.isNotEmpty()) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-                Text(
-                    text = "Recurrence rules:",
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { editingRuleIndex = formState.recurrenceRules.size }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add recurrence rule")
-                }
-            }
-
-            AnimatedContent(
-                targetState = formState.recurrenceRules.size,
-                transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }
-            ) {
-                if (it > 0) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 400.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+    Column {
+        // Warning message when auto-update status is enabled and recurrence rules exist
+        AnimatedVisibility(visible = showWarning) {
+            Column {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        itemsIndexed(formState.recurrenceRules) { index, (rule, _) ->
-                            RecurrenceRuleItem(
-                                rule = rule,
-                                onEdit = { editingRuleIndex = index },
-                                onDelete = {
-                                    val mutableRules = formState.recurrenceRules.toMutableList()
-                                    mutableRules.removeAt(index)
-                                    formState.recurrenceRules = mutableRules
-                                },
-                                index = index,
-                                onTaskClick = null,
-                                modifier = Modifier.animateItem(),
-                            )
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = "Recurrence rules will not work because auto-update status from subtasks is enabled",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = if (formState.recurrenceRules.isNotEmpty()) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Text(
+                        text = "Recurrence rules:",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { editingRuleIndex = formState.recurrenceRules.size }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add recurrence rule")
+                    }
+                }
+
+                AnimatedContent(
+                    targetState = formState.recurrenceRules.size,
+                    transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }
+                ) {
+                    if (it > 0) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            itemsIndexed(formState.recurrenceRules) { index, (rule, _) ->
+                                RecurrenceRuleItem(
+                                    rule = rule,
+                                    onEdit = { editingRuleIndex = index },
+                                    onDelete = {
+                                        val mutableRules = formState.recurrenceRules.toMutableList()
+                                        mutableRules.removeAt(index)
+                                        formState.recurrenceRules = mutableRules
+                                    },
+                                    index = index,
+                                    onTaskClick = null,
+                                    modifier = Modifier.animateItem(),
+                                )
+                            }
                         }
                     }
                 }
