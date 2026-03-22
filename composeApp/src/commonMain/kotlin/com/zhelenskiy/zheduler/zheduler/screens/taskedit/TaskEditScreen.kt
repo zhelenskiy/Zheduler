@@ -45,6 +45,10 @@ fun TaskEditScreen(
     // Apply persisted form state on initial load (from SavedStateHandle)
     LaunchedEffect(Unit) {
         val persistedState = container.getPersistedFormState()
+        val hasPersistedState = persistedState.description != null
+        if (hasPersistedState) {
+            formState.animateVisibilityChanges = false
+        }
         persistedState.title?.let { formState.title = it }
         persistedState.description?.let { formState.description = it }
         persistedState.priority?.let { formState.priority = it }
