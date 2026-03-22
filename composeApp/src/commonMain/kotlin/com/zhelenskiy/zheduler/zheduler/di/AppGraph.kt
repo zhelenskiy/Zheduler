@@ -16,19 +16,14 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditViewModel
-import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainerFactory
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 
-/**
- * Factory interface for creating TaskListViewModel instances with runtime parameters.
- */
-fun interface TaskListViewModelFactory {
-    fun create(spaceId: String): TaskListViewModel
-}
 
 /**
  * Factory interface for creating NewTaskViewModel instances with runtime parameters.
@@ -78,9 +73,9 @@ interface AppGraph {
     val spaceListContainer: SpaceListContainer
 
     /**
-     * Factory for creating TaskListViewModel instances with runtime parameters.
+     * Factory for creating TaskListContainer instances with runtime parameters.
      */
-    val taskListViewModelFactory: TaskListViewModelFactory
+    val taskListContainerFactory: TaskListContainerFactory
 
     /**
      * Factory for creating CalendarContainer instances with runtime parameters.
@@ -128,9 +123,9 @@ interface AppGraph {
             SpaceListContainer(repository)
 
         @Provides
-        fun provideTaskListViewModelFactory(repository: SqlDelightTaskRepository): TaskListViewModelFactory =
-            TaskListViewModelFactory { spaceId ->
-                TaskListViewModel(repository, spaceId)
+        fun provideTaskListContainerFactory(repository: SqlDelightTaskRepository): TaskListContainerFactory =
+            TaskListContainerFactory { spaceId ->
+                TaskListContainer(repository, spaceId)
             }
 
         @Provides

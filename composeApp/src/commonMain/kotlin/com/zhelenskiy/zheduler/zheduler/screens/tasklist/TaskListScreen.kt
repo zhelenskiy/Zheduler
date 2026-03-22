@@ -44,7 +44,9 @@ import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
-import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListIntent
+import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.ExperimentalTime
 
 private data class TaskListUiData(
@@ -56,14 +58,15 @@ private data class TaskListUiData(
 
 @Composable
 private fun rememberPersistedFilterState(
-    onLoadFilterState: suspend () -> TaskFilterCriteria,
-    onSaveFilterState: suspend (TaskFilterCriteria) -> Unit
+    onLoadFilterState: () -> TaskFilterCriteria,
+    onSaveFilterState: (TaskFilterCriteria) -> Unit
 ): TaskFilterState {
     val filterState = rememberTaskFilterState()
 
-    LaunchedEffect(Unit) {
-        val criteria = onLoadFilterState()
-        filterState.loadFromCriteria(criteria)
+    // Load filter state when it becomes available
+    val loadedCriteria = onLoadFilterState()
+    LaunchedEffect(loadedCriteria) {
+        filterState.loadFromCriteria(loadedCriteria)
     }
 
     LaunchedEffect(
@@ -86,17 +89,20 @@ private fun rememberPersistedFilterState(
 @Composable
 private fun rememberTaskListUiState(
     tasksWithTotals: List<TaskWithTotals>,
-    onLoadInitialData: suspend () -> TaskListUiData,
-    onSaveActiveViewMode: suspend (String) -> Unit,
-    onSaveFilterPanelOpen: suspend (Boolean) -> Unit,
-    onGetFilteredTasks: suspend (TaskFilterCriteria) -> List<TaskWithTotals>,
+    onLoadInitialData: () -> TaskListUiData?,
+    onSaveActiveViewMode: (String) -> Unit,
+    onSaveFilterPanelOpen: (Boolean) -> Unit,
+    onGetFilteredTasks: (TaskFilterCriteria) -> List<TaskWithTotals>,
     filterState: TaskFilterState
 ): MutableState<ScreenState<TaskListUiData>> {
     val uiState = remember { mutableStateOf<ScreenState<TaskListUiData>>(ScreenState.Loading) }
 
-    LaunchedEffect(Unit) {
-        val data = onLoadInitialData()
-        uiState.value = ScreenState.InitiallyLoaded(data)
+    // Try to load initial data when state becomes available
+    val initialData = onLoadInitialData()
+    LaunchedEffect(initialData) {
+        if (initialData != null && uiState.value is ScreenState.Loading) {
+            uiState.value = ScreenState.InitiallyLoaded(initialData)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -682,7 +688,7 @@ private fun TaskListContent(
 
 @Composable
 fun TaskListScreen(
-    viewModel: TaskListViewModel,
+    container: TaskListContainer,
     refreshTrigger: Int,
     loadedFilterId: String?,
     onFilterLoaded: () -> Unit,
@@ -701,39 +707,60 @@ fun TaskListScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val tasksWithTotals by viewModel.tasksWithTotals.collectAsState()
-    val currentSpace by viewModel.currentSpace.collectAsState()
-    val allTags by viewModel.allTags.collectAsState()
+    val state by container.store.subscribe { }
+    val tasksWithTotals = state.tasksWithTotals
+    val currentSpace = state.currentSpace
+    val allTags = state.allTags
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
     var showSaveFilterDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshTrigger) {
-        viewModel.loadTasks()
+        container.store.intent(TaskListIntent.LoadTasks)
     }
 
     val filterState = rememberPersistedFilterState(
-        onLoadFilterState = viewModel::getFilterState,
-        onSaveFilterState = viewModel::saveFilterState
+        onLoadFilterState = { state.filterState ?: TaskFilterCriteria() },
+        onSaveFilterState = { criteria ->
+            container.store.intent(TaskListIntent.SaveFilterState(criteria))
+        }
     )
 
     val uiState = rememberTaskListUiState(
         tasksWithTotals = tasksWithTotals,
         onLoadInitialData = {
             TaskListUiData(
-                activeViewMode = viewModel.getActiveViewMode(),
-                viewModes = viewModel.getAllViewModes(),
-                isFilterPanelOpen = viewModel.getFilterPanelOpen(),
+                activeViewMode = state.activeViewMode ?: return@rememberTaskListUiState null,
+                viewModes = state.viewModes.takeIf { it.isNotEmpty() } ?: return@rememberTaskListUiState null,
+                isFilterPanelOpen = state.filterPanelOpen ?: return@rememberTaskListUiState null,
                 filteredTasks = emptyList(),
             )
         },
-        onSaveActiveViewMode = viewModel::setActiveViewMode,
-        onSaveFilterPanelOpen = viewModel::saveFilterPanelOpen,
-        onGetFilteredTasks = viewModel::getFilteredTasks,
+        onSaveActiveViewMode = { viewModeId ->
+            container.store.intent(TaskListIntent.SetActiveViewMode(viewModeId))
+        },
+        onSaveFilterPanelOpen = { isOpen ->
+            container.store.intent(TaskListIntent.SaveFilterPanelOpen(isOpen))
+        },
+        onGetFilteredTasks = { criteria ->
+            state.filteredTasks[criteria] ?: run {
+                container.store.intent(TaskListIntent.GetFilteredTasks(criteria))
+                emptyList()
+            }
+        },
         filterState = filterState
     )
 
     val currentUiState = uiState.value
     val uiData = currentUiState.dataOrNull
+
+    // Sync filtered tasks from state
+    LaunchedEffect(state.filteredTasks, filterState.toCriteria()) {
+        val criteria = filterState.toCriteria()
+        val filtered = state.filteredTasks[criteria]
+        if (filtered != null) {
+            uiState.value = uiState.value.mapData { it.copy(filteredTasks = filtered) }
+        }
+    }
 
     // Handle loading saved filter - wait for UI state to be ready
     var filterApplied by remember { mutableStateOf(false) }
@@ -742,7 +769,7 @@ fun TaskListScreen(
             filterApplied = true
             applySavedFilter(
                 loadedFilterId = loadedFilterId,
-                viewModel = viewModel,
+                container = container,
                 filterState = filterState,
                 uiState = uiState
             )
@@ -784,19 +811,19 @@ fun TaskListScreen(
                     filteredTasks = uiData.filteredTasks,
                     filterState = filterState,
                     allTags = allTags,
-                    spaceIdPrefix = currentSpace?.idPrefix,
+                    spaceIdPrefix = currentSpace.idPrefix,
                     isFilterPanelOpen = uiData.isFilterPanelOpen,
                     onToggleFilterPanel = {
-                        uiState.value = when (val state = uiState.value) {
-                            is ScreenState.Loading -> state
-                            is ScreenState.InitiallyLoaded -> ScreenState.InitiallyLoaded(state.data.copy(isFilterPanelOpen = !state.data.isFilterPanelOpen))
-                            is ScreenState.Ready -> ScreenState.Ready(state.data.copy(isFilterPanelOpen = !state.data.isFilterPanelOpen))
+                        uiState.value = when (val s = uiState.value) {
+                            is ScreenState.Loading -> s
+                            is ScreenState.InitiallyLoaded -> ScreenState.InitiallyLoaded(s.data.copy(isFilterPanelOpen = !s.data.isFilterPanelOpen))
+                            is ScreenState.Ready -> ScreenState.Ready(s.data.copy(isFilterPanelOpen = !s.data.isFilterPanelOpen))
                         }
                     },
                     onSaveFilter = { showSaveFilterDialog = true },
                     shouldAnimate = currentUiState.shouldAnimate,
-                    onGetTaskGroups = viewModel::getTaskGroups,
-                    onGetTasksForGroup = viewModel::getTasksForGroup,
+                    onGetTaskGroups = container::getTaskGroups,
+                    onGetTasksForGroup = container::getTasksForGroup,
                     onTaskClick = onTaskClick,
                     onDelete = { taskToDelete = it },
                     onCopy = onCopyTask
@@ -810,7 +837,7 @@ fun TaskListScreen(
             title = "Delete Task",
             message = "Are you sure you want to delete \"${task.task.title}\"?",
             onConfirm = {
-                viewModel.deleteTask(task.task.id)
+                container.store.intent(TaskListIntent.DeleteTask(task.task.id))
                 taskToDelete = null
                 onRefresh()
             },
@@ -828,9 +855,9 @@ fun TaskListScreen(
             spaceId = space.id,
             allTags = allTags,
             spaceIdPrefix = space.idPrefix,
-            generateId = viewModel::generateId,
+            generateId = container::generateId,
             onSave = { filter ->
-                viewModel.saveSavedFilter(filter)
+                container.store.intent(TaskListIntent.SaveSavedFilter(filter))
                 showSaveFilterDialog = false
             },
             onDismiss = { showSaveFilterDialog = false }
@@ -840,15 +867,15 @@ fun TaskListScreen(
 
 private suspend fun applySavedFilter(
     loadedFilterId: String,
-    viewModel: TaskListViewModel,
+    container: TaskListContainer,
     filterState: TaskFilterState,
     uiState: MutableState<ScreenState<TaskListUiData>>
 ) {
-    val savedFilter = viewModel.getSavedFilterById(loadedFilterId) ?: return
+    val savedFilter = container.getSavedFilterById(loadedFilterId) ?: return
     filterState.loadFromCriteria(savedFilter.criteria)
 
     val attachedViewModeId = savedFilter.viewModeId ?: return
-    val viewMode = viewModel.getViewModeById(attachedViewModeId) ?: return
+    val viewMode = container.getViewModeById(attachedViewModeId) ?: return
     uiState.value = uiState.value.mapData { it.copy(activeViewMode = viewMode) }
-    viewModel.setActiveViewMode(viewMode.id)
+    container.store.intent(TaskListIntent.SetActiveViewMode(viewMode.id))
 }
