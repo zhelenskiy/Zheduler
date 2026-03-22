@@ -34,7 +34,9 @@ import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
-import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterIntent
+import pro.respawn.flowmvi.compose.dsl.subscribe
 
 /**
  * A screen for managing saved filters.
@@ -42,7 +44,8 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterViewModel
  */
 @Composable
 fun SavedFilterManagementScreen(
-    viewModel: SavedFilterViewModel,
+    container: SavedFilterContainer,
+    spaceId: String,
     onLoad: (SavedFilter) -> Unit,
     onBack: () -> Unit,
     onNavigateToSpaceList: () -> Unit,
@@ -53,10 +56,8 @@ fun SavedFilterManagementScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val savedFilters by viewModel.savedFilters.collectAsState()
-    val viewModes by viewModel.viewModes.collectAsState()
-    val allTags by viewModel.allTags.collectAsState()
-    val spaceIdPrefix by viewModel.spaceIdPrefix.collectAsState()
+    val state by container.store.subscribe()
+
     var filterToDelete by remember { mutableStateOf<SavedFilter?>(null) }
     var filterToEdit by remember { mutableStateOf<SavedFilter?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -81,7 +82,7 @@ fun SavedFilterManagementScreen(
         }
     ) { padding ->
         SavedFilterList(
-            savedFilters = savedFilters,
+            savedFilters = state.savedFilters,
             padding = padding,
             onLoad = onLoad,
             onEdit = { filterToEdit = it },
@@ -92,7 +93,7 @@ fun SavedFilterManagementScreen(
     DeleteFilterDialog(
         filter = filterToDelete,
         onConfirm = {
-            filterToDelete?.let { viewModel.deleteFilter(it.id) }
+            filterToDelete?.let { container.store.intent(SavedFilterIntent.DeleteFilter(it.id)) }
             filterToDelete = null
         },
         onDismiss = { filterToDelete = null }
@@ -100,13 +101,13 @@ fun SavedFilterManagementScreen(
 
     EditFilterDialog(
         filter = filterToEdit,
-        viewModes = viewModes,
-        spaceId = viewModel.spaceId,
-        allTags = allTags,
-        spaceIdPrefix = spaceIdPrefix,
-        generateId = viewModel::generateId,
+        viewModes = state.viewModes,
+        spaceId = spaceId,
+        allTags = state.allTags,
+        spaceIdPrefix = state.spaceIdPrefix,
+        generateId = container::generateId,
         onSave = { updatedFilter ->
-            viewModel.saveSavedFilter(updatedFilter)
+            container.store.intent(SavedFilterIntent.SaveFilter(updatedFilter))
             filterToEdit = null
         },
         onDismiss = { filterToEdit = null }
@@ -114,13 +115,13 @@ fun SavedFilterManagementScreen(
 
     CreateFilterDialog(
         showDialog = showCreateDialog,
-        viewModes = viewModes,
-        spaceId = viewModel.spaceId,
-        allTags = allTags,
-        spaceIdPrefix = spaceIdPrefix,
-        generateId = viewModel::generateId,
+        viewModes = state.viewModes,
+        spaceId = spaceId,
+        allTags = state.allTags,
+        spaceIdPrefix = state.spaceIdPrefix,
+        generateId = container::generateId,
         onSave = { newFilter ->
-            viewModel.saveSavedFilter(newFilter)
+            container.store.intent(SavedFilterIntent.SaveFilter(newFilter))
             showCreateDialog = false
         },
         onDismiss = { showCreateDialog = false }
