@@ -128,7 +128,7 @@ private fun TaskStatusAndInfoRow(
             NotificationIndicator(task)
         }
 
-        if (task.isRecurring) {
+        if (task.isRecurring && !task.autoUpdateStatusFromSubtasks) {
             RecurringIndicator(task)
         }
     }
