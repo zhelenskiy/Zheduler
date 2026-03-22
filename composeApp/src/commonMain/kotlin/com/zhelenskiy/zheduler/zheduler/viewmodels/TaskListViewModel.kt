@@ -20,7 +20,7 @@ import kotlin.time.ExperimentalTime
 data class TaskListState(
     val hasAnyTasks: Boolean = false,
     val currentSpace: Space? = null,
-    val allTags: Set<String> = emptySet(),
+    val allTags: Set<String>? = null, // null = not loaded yet
     val filteredTasks: Map<TaskFilterCriteria, List<TaskWithTotals>> = emptyMap(),
     val viewModes: List<ViewMode> = emptyList(),
     val activeViewMode: ViewMode? = null,
@@ -30,6 +30,7 @@ data class TaskListState(
 
 sealed interface TaskListIntent : MVIIntent {
     data object LoadTasks : TaskListIntent
+    data object LoadAllTags : TaskListIntent
     data class DeleteTask(val taskId: String) : TaskListIntent
     data class GetFilteredTasks(val criteria: TaskFilterCriteria) : TaskListIntent
     data object LoadViewModes : TaskListIntent
@@ -71,6 +72,7 @@ class TaskListContainer(
         reduce { intent ->
             when (intent) {
                 is TaskListIntent.LoadTasks -> loadTasks()
+                is TaskListIntent.LoadAllTags -> loadAllTags()
                 is TaskListIntent.DeleteTask -> deleteTask(intent.taskId)
                 is TaskListIntent.GetFilteredTasks -> getFilteredTasks(intent.criteria)
                 is TaskListIntent.LoadViewModes -> loadViewModes()
@@ -88,14 +90,17 @@ class TaskListContainer(
     private suspend fun TaskListPipelineContext.loadTasks() {
         val hasAny = repository.hasAnyTasks(spaceId)
         val space = repository.getSpaceById(spaceId)
-        val tags = repository.getAllTags(spaceId)
         updateState {
             copy(
                 hasAnyTasks = hasAny,
-                currentSpace = space,
-                allTags = tags
+                currentSpace = space
             )
         }
+    }
+
+    private suspend fun TaskListPipelineContext.loadAllTags() {
+        val tags = repository.getAllTags(spaceId)
+        updateState { copy(allTags = tags) }
     }
 
     private suspend fun TaskListPipelineContext.deleteTask(taskId: String) {
