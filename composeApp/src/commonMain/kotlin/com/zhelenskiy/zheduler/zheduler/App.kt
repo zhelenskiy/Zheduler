@@ -347,15 +347,15 @@ private fun AppContent(
         composable<TaskEditRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<TaskEditRoute>()
             val savedStateHandle = backStackEntry.savedStateHandle
-            val viewModel = remember(route.spaceId, route.taskId) {
-                appGraph.taskEditViewModelFactory.create(
+            val container = remember(route.spaceId, route.taskId) {
+                appGraph.taskEditContainerFactory.create(
                     spaceId = route.spaceId,
                     taskId = route.taskId,
                     savedStateHandle = savedStateHandle
                 )
             }
             TaskEditScreen(
-                viewModel = viewModel,
+                container = container,
                 onNavigateBack = {
                     refreshTrigger++
                     navController.popBackStack()
@@ -409,15 +409,15 @@ private fun AppContent(
                         ConnectionType.valueOf(route.prefilledConnectionType)
                     )
                 } else null
-            val viewModel = remember(route.spaceId, prefilledConnection, route.taskIdToCopy) {
-                appGraph.newTaskViewModelFactory.create(
+            val container = remember(route.spaceId, prefilledConnection, route.taskIdToCopy) {
+                appGraph.newTaskContainerFactory.create(
                     spaceId = route.spaceId,
                     prefilledConnection = prefilledConnection,
                     taskIdToCopy = route.taskIdToCopy
                 )
             }
             NewTaskScreen(
-                viewModel = viewModel,
+                container = container,
                 onNavigateBack = {
                     refreshTrigger++
                     navController.popBackStack()

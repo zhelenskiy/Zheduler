@@ -23,7 +23,8 @@ import com.zhelenskiy.zheduler.zheduler.TaskConnection
 @Composable
 fun ConnectionDialog(
     existingConnections: Set<TaskConnection>,
-    searchTasksForConnection: suspend (String, Set<String>, ConnectionType, Set<TaskConnection>) -> List<Task>,
+    searchedTasks: List<Task>,
+    onSearchTasks: (String, Set<String>, ConnectionType, Set<TaskConnection>) -> Unit,
     onDismiss: () -> Unit,
     onConnectionAdded: (TaskConnection) -> Unit,
     onCreateNewTask: ((ConnectionType) -> Unit)?
@@ -36,10 +37,8 @@ fun ConnectionDialog(
         .map { it.targetTaskId }
         .toSet()
 
-    var filteredTasks by remember { mutableStateOf<List<Task>>(emptyList()) }
-
     LaunchedEffect(searchQuery, existingTargetIds, selectedConnectionType, existingConnections) {
-        filteredTasks = searchTasksForConnection(
+        onSearchTasks(
             searchQuery,
             existingTargetIds,
             selectedConnectionType,
@@ -57,7 +56,7 @@ fun ConnectionDialog(
                 onCreateNewTask = onCreateNewTask,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
-                filteredTasks = filteredTasks,
+                filteredTasks = searchedTasks,
                 onTaskSelected = { task ->
                     onConnectionAdded(TaskConnection(task.id, selectedConnectionType))
                 }

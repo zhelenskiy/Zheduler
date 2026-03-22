@@ -24,6 +24,9 @@ class ViewModeViewModel(
     private val _allTags = MutableStateFlow<Set<String>>(emptySet())
     val allTags: StateFlow<Set<String>> = _allTags.asStateFlow()
 
+    private val _filteredTags = MutableStateFlow<List<String>>(emptyList())
+    val filteredTags: StateFlow<List<String>> = _filteredTags.asStateFlow()
+
     init {
         loadViewModes()
         loadTags()
@@ -73,5 +76,11 @@ class ViewModeViewModel(
 
     suspend fun getViewModeById(viewModeId: String): ViewMode? {
         return repository.getViewModeById(spaceId, viewModeId)
+    }
+
+    fun filterTags(searchQuery: String, excludeTags: Set<String>) {
+        viewModelScope.launch {
+            _filteredTags.value = repository.filterTags(spaceId, searchQuery, excludeTags)
+        }
     }
 }

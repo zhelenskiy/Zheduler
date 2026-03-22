@@ -55,6 +55,7 @@ fun ViewModeEditorScreen(
     modifier: Modifier = Modifier
 ) {
     val allTags by viewModel.allTags.collectAsState()
+    val filteredTags by viewModel.filteredTags.collectAsState()
     val isCopy = copyFromViewModeId != null
 
     var viewMode by remember { mutableStateOf<ViewMode?>(null) }
@@ -159,7 +160,11 @@ fun ViewModeEditorScreen(
             }
 
             item {
-                GroupingLevelsSection(state, allTags)
+                GroupingLevelsSection(
+                    state = state,
+                    filteredTags = filteredTags,
+                    onFilterTags = viewModel::filterTags
+                )
             }
 
             item {
@@ -254,7 +259,11 @@ private sealed class LevelEditorMode {
 }
 
 @Composable
-private fun GroupingLevelsSection(state: ViewModeEditorState, allTags: Set<String>) {
+private fun GroupingLevelsSection(
+    state: ViewModeEditorState,
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit
+) {
     val lazyListState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
         state.moveGroupingLevel(from.index, to.index)
@@ -321,7 +330,8 @@ private fun GroupingLevelsSection(state: ViewModeEditorState, allTags: Set<Strin
                 GroupingLevelEditorDialog(
                     level = workingCopy,
                     levelIndex = index,
-                    allTags = allTags,
+                    filteredTags = filteredTags,
+                    onFilterTags = onFilterTags,
                     onDone = {
                         // Apply changes from working copy to actual state
                         state.groupingLevels[index].restoreFromSnapshot(workingCopy.createSnapshot())
@@ -341,7 +351,8 @@ private fun GroupingLevelsSection(state: ViewModeEditorState, allTags: Set<Strin
             GroupingLevelEditorDialog(
                 level = workingCopy,
                 levelIndex = state.groupingLevels.size,
-                allTags = allTags,
+                filteredTags = filteredTags,
+                onFilterTags = onFilterTags,
                 onDone = {
                     // Add the new level from working copy
                     state.groupingLevels.add(
@@ -424,7 +435,8 @@ private fun GroupingLevelSummaryCard(
 private fun GroupingLevelEditorDialog(
     level: GroupingLevelState,
     levelIndex: Int,
-    allTags: Set<String>,
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit,
     onDone: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -552,7 +564,8 @@ private fun GroupingLevelEditorDialog(
                         GroupDefinitionCard(
                             group = level.groups[groupIndex],
                             field = level.field,
-                            allTags = allTags,
+                            filteredTags = filteredTags,
+                            onFilterTags = onFilterTags,
                             onRemove = { level.removeGroup(groupIndex) },
                             dragModifier = Modifier.draggableHandle(),
                             modifier = Modifier
@@ -619,7 +632,8 @@ private fun GroupableFieldSelector(
 private fun GroupDefinitionCard(
     group: GroupDefinitionState,
     field: GroupableField,
-    allTags: Set<String> = emptySet(),
+    filteredTags: List<String>,
+    onFilterTags: (String, Set<String>) -> Unit,
     onRemove: () -> Unit,
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
@@ -857,6 +871,7 @@ private fun GroupDefinitionCard(
                         } else if (field == GroupableField.Tags) {
                             // For tags, use the TagSelectionDialog
                             var showTagDialog by remember { mutableStateOf(false) }
+
                             AssistChip(
                                 onClick = { showTagDialog = true },
                                 label = { Text("Add tag") },
@@ -867,12 +882,8 @@ private fun GroupDefinitionCard(
                             if (showTagDialog) {
                                 TagSelectionDialog(
                                     selectedTags = group.values.toSet(),
-                                    filterTags = { query, excludeTags ->
-                                        allTags
-                                            .filter { it !in excludeTags }
-                                            .filter { query.isBlank() || it.contains(query, ignoreCase = true) }
-                                            .sorted()
-                                    },
+                                    filteredTags = filteredTags,
+                                    onFilterTags = onFilterTags,
                                     onDismiss = { showTagDialog = false },
                                     onTagSelected = { tag ->
                                         group.addValue(tag)

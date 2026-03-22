@@ -163,8 +163,10 @@ private fun TimeBasedTypeSelector(
 @Composable
 fun SingleRecurrenceRuleDialog(
     currentRule: RecurrenceRule?,
-    filterTasks: suspend (String) -> List<Task>,
-    getTaskById: suspend (String) -> Task?,
+    filteredTasks: List<Task>,
+    loadedTasks: Map<String, Task>,
+    onFilterTasks: (String) -> Unit,
+    onLoadTask: (String) -> Unit,
     onDismiss: () -> Unit,
     onRecurrenceSelected: (RecurrenceRule?) -> Unit
 ) {
@@ -218,8 +220,10 @@ fun SingleRecurrenceRuleDialog(
 
                         ResetToStatusButton(
                             selectedStatus = resetToStatus,
-                            filterTasks = filterTasks,
-                            getTaskById = getTaskById,
+                            filteredTasks = filteredTasks,
+                            loadedTasks = loadedTasks,
+                            onFilterTasks = onFilterTasks,
+                            onLoadTask = onLoadTask,
                             onStatusSelected = { resetToStatus = it },
                         )
 
@@ -912,8 +916,10 @@ val allStatusDefaultValues = listOf(
 @Composable
 private fun ResetToStatusButton(
     selectedStatus: TaskStatus,
-    filterTasks: suspend (String) -> List<Task>,
-    getTaskById: suspend (String) -> Task?,
+    filteredTasks: List<Task>,
+    loadedTasks: Map<String, Task>,
+    onFilterTasks: (String) -> Unit,
+    onLoadTask: (String) -> Unit,
     onStatusSelected: (TaskStatus) -> Unit,
 ) {
     var showResetStatusDialog by remember { mutableStateOf(false) }
@@ -921,8 +927,10 @@ private fun ResetToStatusButton(
     if (showResetStatusDialog) {
         StatusSelectionDialog(
             currentStatus = selectedStatus,
-            filterTasks = filterTasks,
-            getTaskById = getTaskById,
+            filteredTasks = filteredTasks,
+            loadedTasks = loadedTasks,
+            onFilterTasks = onFilterTasks,
+            onLoadTask = onLoadTask,
             onDismiss = { showResetStatusDialog = false },
             onStatusSelected = { status ->
                 onStatusSelected(status)

@@ -19,17 +19,17 @@ import com.zhelenskiy.zheduler.zheduler.Task
 @Composable
 fun TaskSelectionDialog(
     title: String,
-    filterTasks: suspend (String) -> List<Task>,
+    filteredTasks: List<Task>,
+    onFilterTasks: (String) -> Unit,
     selectedTaskIds: Set<String>,
     onDismiss: () -> Unit,
     onTasksSelected: (Set<String>) -> Unit
 ) {
     var currentSelection by remember { mutableStateOf(selectedTaskIds) }
     var searchQuery by remember { mutableStateOf("") }
-    var filteredTasks by remember { mutableStateOf<List<Task>>(emptyList()) }
 
     LaunchedEffect(searchQuery) {
-        filteredTasks = filterTasks(searchQuery)
+        onFilterTasks(searchQuery)
     }
 
     AlertDialog(
