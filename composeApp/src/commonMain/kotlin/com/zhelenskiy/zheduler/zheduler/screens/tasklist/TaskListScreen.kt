@@ -710,7 +710,7 @@ fun TaskListScreen(
     val state by container.store.subscribe { }
     val hasAnyTasks = state.hasAnyTasks
     val currentSpace = state.currentSpace
-    val allTags = state.allTags
+    val allTags = state.allTags ?: emptySet()
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
     var showSaveFilterDialog by remember { mutableStateOf(false) }
 
@@ -752,6 +752,14 @@ fun TaskListScreen(
 
     val currentUiState = uiState.value
     val uiData = currentUiState.dataOrNull
+
+    // Load tags lazily when filter panel opens or save dialog is shown
+    val needsTags = (uiData?.isFilterPanelOpen == true) || showSaveFilterDialog
+    LaunchedEffect(needsTags) {
+        if (needsTags && state.allTags == null) {
+            container.store.intent(TaskListIntent.LoadAllTags)
+        }
+    }
 
     // Sync filtered tasks from state
     LaunchedEffect(state.filteredTasks, filterState.toCriteria()) {
