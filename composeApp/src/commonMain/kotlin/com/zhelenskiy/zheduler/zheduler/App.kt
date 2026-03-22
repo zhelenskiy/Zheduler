@@ -46,7 +46,7 @@ import com.zhelenskiy.zheduler.zheduler.screens.tasklist.TaskListScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeEditorScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeManagementScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SavedFilterManagementScreen
-import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
 import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
 import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
@@ -447,12 +447,12 @@ private fun AppContent(
 
         composable<ViewModeManagementRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<ViewModeManagementRoute>()
-            val viewModel = remember(route.spaceId) {
-                ViewModeViewModel(appGraph.taskRepository, route.spaceId)
+            val container = remember(route.spaceId) {
+                ViewModeContainer(appGraph.taskRepository, route.spaceId)
             }
 
             ViewModeManagementScreen(
-                viewModel = viewModel,
+                container = container,
                 onCreateNew = {
                     navController.navigate(ViewModeEditorRoute(route.spaceId))
                 },
@@ -480,12 +480,12 @@ private fun AppContent(
 
         composable<ViewModeEditorRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<ViewModeEditorRoute>()
-            val viewModel = remember(route.spaceId) {
-                ViewModeViewModel(appGraph.taskRepository, route.spaceId)
+            val container = remember(route.spaceId) {
+                ViewModeContainer(appGraph.taskRepository, route.spaceId)
             }
 
             ViewModeEditorScreen(
-                viewModel = viewModel,
+                container = container,
                 viewModeId = route.viewModeId,
                 copyFromViewModeId = route.copyFromViewModeId,
                 spaceId = route.spaceId,

@@ -29,7 +29,9 @@ import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
-import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeIntent
+import pro.respawn.flowmvi.compose.dsl.subscribe
 
 /**
  * A screen for selecting and managing view modes.
@@ -37,7 +39,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
  */
 @Composable
 fun ViewModeManagementScreen(
-    viewModel: ViewModeViewModel,
+    container: ViewModeContainer,
     onCreateNew: () -> Unit,
     onEdit: (ViewMode) -> Unit,
     onCopy: (ViewMode) -> Unit,
@@ -50,9 +52,8 @@ fun ViewModeManagementScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val viewModes by viewModel.viewModes.collectAsState()
-    val activeViewMode by viewModel.activeViewMode.collectAsState()
-    val activeViewModeId = activeViewMode?.id ?: "priority"
+    val state by container.store.subscribe()
+    val activeViewModeId = state.activeViewMode?.id ?: "priority"
     var viewModeToDelete by remember { mutableStateOf<ViewMode?>(null) }
 
     Scaffold(
@@ -87,7 +88,7 @@ fun ViewModeManagementScreen(
         }
     ) { padding ->
         AnimatedContent(
-            targetState = viewModes,
+            targetState = state.viewModes,
             transitionSpec = {
                 EnterTransition.None togetherWith ExitTransition.None
             },
@@ -105,7 +106,7 @@ fun ViewModeManagementScreen(
                     ViewModeCard(
                         viewMode = viewMode,
                         isActive = viewMode.id == activeViewModeId,
-                        onSelect = { viewModel.setActiveViewMode(viewMode.id) },
+                        onSelect = { container.store.intent(ViewModeIntent.SetActiveViewMode(viewMode.id)) },
                         onEdit = { onEdit(viewMode) },
                         onCopy = { onCopy(viewMode) },
                         onDelete = { viewModeToDelete = viewMode },
@@ -121,7 +122,7 @@ fun ViewModeManagementScreen(
             title = "Delete View Mode",
             message = "Are you sure you want to delete \"${viewMode.name}\"?",
             onConfirm = {
-                viewModel.deleteViewMode(viewMode.id)
+                container.store.intent(ViewModeIntent.DeleteViewMode(viewMode.id))
                 viewModeToDelete = null
             },
             onDismiss = { viewModeToDelete = null }

@@ -1,62 +1,111 @@
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import com.zhelenskiy.zheduler.zheduler.ViewMode
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import pro.respawn.flowmvi.api.Container
+import pro.respawn.flowmvi.api.MVIAction
+import pro.respawn.flowmvi.api.MVIIntent
+import pro.respawn.flowmvi.api.MVIState
+import pro.respawn.flowmvi.api.PipelineContext
+import pro.respawn.flowmvi.dsl.store
+import pro.respawn.flowmvi.plugins.reduce
+import pro.respawn.flowmvi.plugins.whileSubscribed
 
-class ViewModeViewModel(
+data class ViewModeState(
+    val viewModes: List<ViewMode> = emptyList(),
+    val activeViewMode: ViewMode? = null,
+    val allTags: Set<String> = emptySet(),
+    val filteredTags: List<String> = emptyList(),
+    val loadedViewMode: ViewMode? = null
+) : MVIState
+
+sealed interface ViewModeIntent : MVIIntent {
+    data object LoadInitialData : ViewModeIntent
+    data class SetActiveViewMode(val viewModeId: String) : ViewModeIntent
+    data class SaveViewMode(val viewMode: ViewMode) : ViewModeIntent
+    data class DeleteViewMode(val viewModeId: String) : ViewModeIntent
+    data class LoadViewModeById(val viewModeId: String) : ViewModeIntent
+    data class FilterTags(val searchQuery: String, val excludeTags: Set<String>) : ViewModeIntent
+}
+
+sealed interface ViewModeAction : MVIAction
+
+private typealias ViewModePipelineContext = PipelineContext<ViewModeState, ViewModeIntent, ViewModeAction>
+
+class ViewModeContainer(
     private val repository: TaskRepository,
     private val spaceId: String
-) : ViewModel() {
+) : Container<ViewModeState, ViewModeIntent, ViewModeAction> {
 
-    private val _viewModes = MutableStateFlow<List<ViewMode>>(emptyList())
-    val viewModes: StateFlow<List<ViewMode>> = _viewModes.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private val _activeViewMode = MutableStateFlow<ViewMode?>(null)
-    val activeViewMode: StateFlow<ViewMode?> = _activeViewMode.asStateFlow()
+    override val store = store(ViewModeState(), scope) {
+        configure {
+            name = "ViewModeStore"
+        }
 
-    private val _allTags = MutableStateFlow<Set<String>>(emptySet())
-    val allTags: StateFlow<Set<String>> = _allTags.asStateFlow()
+        whileSubscribed {
+            loadInitialData()
+        }
 
-    private val _filteredTags = MutableStateFlow<List<String>>(emptyList())
-    val filteredTags: StateFlow<List<String>> = _filteredTags.asStateFlow()
-
-    init {
-        loadViewModes()
-        loadTags()
-    }
-
-    fun loadViewModes() {
-        viewModelScope.launch {
-            _viewModes.value = repository.getAllViewModes(spaceId)
-            _activeViewMode.value = repository.getActiveViewMode(spaceId)
+        reduce { intent ->
+            when (intent) {
+                is ViewModeIntent.LoadInitialData -> loadInitialData()
+                is ViewModeIntent.SetActiveViewMode -> setActiveViewMode(intent.viewModeId)
+                is ViewModeIntent.SaveViewMode -> saveViewMode(intent.viewMode)
+                is ViewModeIntent.DeleteViewMode -> deleteViewMode(intent.viewModeId)
+                is ViewModeIntent.LoadViewModeById -> loadViewModeById(intent.viewModeId)
+                is ViewModeIntent.FilterTags -> filterTags(intent.searchQuery, intent.excludeTags)
+            }
         }
     }
 
-    private fun loadTags() {
-        viewModelScope.launch {
-            _allTags.value = repository.getAllTags(spaceId)
+    private suspend fun ViewModePipelineContext.loadInitialData() {
+        val viewModes = repository.getAllViewModes(spaceId)
+        val activeViewMode = repository.getActiveViewMode(spaceId)
+        val allTags = repository.getAllTags(spaceId)
+
+        updateState {
+            copy(
+                viewModes = viewModes,
+                activeViewMode = activeViewMode,
+                allTags = allTags
+            )
         }
     }
 
-    fun setActiveViewMode(viewModeId: String) {
-        viewModelScope.launch {
-            repository.setActiveViewMode(spaceId, viewModeId)
-            _activeViewMode.value = repository.getActiveViewMode(spaceId)
-        }
+    private suspend fun ViewModePipelineContext.setActiveViewMode(viewModeId: String) {
+        repository.setActiveViewMode(spaceId, viewModeId)
+        val activeViewMode = repository.getActiveViewMode(spaceId)
+        updateState { copy(activeViewMode = activeViewMode) }
     }
 
-    fun saveViewMode(viewMode: ViewMode) {
-        viewModelScope.launch {
-            repository.saveViewMode(viewMode)
-            loadViewModes()
-        }
+    private suspend fun ViewModePipelineContext.saveViewMode(viewMode: ViewMode) {
+        repository.saveViewMode(viewMode)
+        val viewModes = repository.getAllViewModes(spaceId)
+        val activeViewMode = repository.getActiveViewMode(spaceId)
+        updateState { copy(viewModes = viewModes, activeViewMode = activeViewMode) }
+    }
+
+    private suspend fun ViewModePipelineContext.deleteViewMode(viewModeId: String) {
+        repository.deleteViewMode(spaceId, viewModeId)
+        val viewModes = repository.getAllViewModes(spaceId)
+        val activeViewMode = repository.getActiveViewMode(spaceId)
+        updateState { copy(viewModes = viewModes, activeViewMode = activeViewMode) }
+    }
+
+    private suspend fun ViewModePipelineContext.loadViewModeById(viewModeId: String) {
+        val viewMode = repository.getViewModeById(spaceId, viewModeId)
+        updateState { copy(loadedViewMode = viewMode) }
+    }
+
+    private suspend fun ViewModePipelineContext.filterTags(searchQuery: String, excludeTags: Set<String>) {
+        val filteredTags = repository.filterTags(spaceId, searchQuery, excludeTags)
+        updateState { copy(filteredTags = filteredTags) }
     }
 
     fun copyViewMode(viewMode: ViewMode): ViewMode {
@@ -67,20 +116,7 @@ class ViewModeViewModel(
         )
     }
 
-    fun deleteViewMode(viewModeId: String) {
-        viewModelScope.launch {
-            repository.deleteViewMode(spaceId, viewModeId)
-            loadViewModes()
-        }
-    }
-
     suspend fun getViewModeById(viewModeId: String): ViewMode? {
         return repository.getViewModeById(spaceId, viewModeId)
-    }
-
-    fun filterTags(searchQuery: String, excludeTags: Set<String>) {
-        viewModelScope.launch {
-            _filteredTags.value = repository.filterTags(spaceId, searchQuery, excludeTags)
-        }
     }
 }
