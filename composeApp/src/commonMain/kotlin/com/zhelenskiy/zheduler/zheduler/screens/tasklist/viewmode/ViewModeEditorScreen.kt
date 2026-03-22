@@ -30,8 +30,10 @@ import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.TagSelectionDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
-import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeIntent
 import org.jetbrains.compose.resources.painterResource
+import pro.respawn.flowmvi.compose.dsl.subscribe
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import zheduler.composeapp.generated.resources.Res
@@ -40,7 +42,7 @@ import zheduler.composeapp.generated.resources.ic_align_start
 
 @Composable
 fun ViewModeEditorScreen(
-    viewModel: ViewModeViewModel,
+    container: ViewModeContainer,
     viewModeId: String?,
     copyFromViewModeId: String?,
     spaceId: String,
@@ -54,23 +56,22 @@ fun ViewModeEditorScreen(
     onColorSettingsChange: (ColorSettings) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val allTags by viewModel.allTags.collectAsState()
-    val filteredTags by viewModel.filteredTags.collectAsState()
+    val state by container.store.subscribe()
     val isCopy = copyFromViewModeId != null
 
     var viewMode by remember { mutableStateOf<ViewMode?>(null) }
     LaunchedEffect(viewModeId, copyFromViewModeId) {
         viewMode = when {
-            viewModeId != null -> viewModel.getViewModeById(viewModeId)
-            copyFromViewModeId != null -> viewModel.getViewModeById(copyFromViewModeId)?.let {
-                viewModel.copyViewMode(it)
+            viewModeId != null -> container.getViewModeById(viewModeId)
+            copyFromViewModeId != null -> container.getViewModeById(copyFromViewModeId)?.let {
+                container.copyViewMode(it)
             }
             else -> null
         }
     }
-    val state = rememberViewModeEditorState(viewMode, spaceId, isCopy)
+    val editorState = rememberViewModeEditorState(viewMode, spaceId, isCopy)
     val validationResult by remember {
-        derivedStateOf { state.validate() }
+        derivedStateOf { editorState.validate() }
     }
     val isValid = validationResult is GroupingValidationResult.Valid
     val isNewMode = viewMode == null
@@ -104,7 +105,7 @@ fun ViewModeEditorScreen(
                 title = { Text(if (isNewMode) "New View Mode" else "Edit View Mode") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (state.hasChanges()) {
+                        if (editorState.hasChanges()) {
                             showDiscardDialog = true
                         } else {
                             onCancel()
@@ -116,10 +117,10 @@ fun ViewModeEditorScreen(
                 actions = {
                     IconButton(
                         onClick = {
-                            viewModel.saveViewMode(state.toViewMode())
+                            container.store.intent(ViewModeIntent.SaveViewMode(editorState.toViewMode()))
                             onSave()
                         },
-                        enabled = isValid && state.name.isNotBlank()
+                        enabled = isValid && editorState.name.isNotBlank()
                     ) {
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
@@ -146,29 +147,31 @@ fun ViewModeEditorScreen(
             // Name field
             item {
                 OutlinedTextField(
-                    value = state.name,
-                    onValueChange = { state.name = it },
+                    value = editorState.name,
+                    onValueChange = { editorState.name = it },
                     label = { Text("View Mode Name") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    isError = state.name.isBlank()
+                    isError = editorState.name.isBlank()
                 )
             }
 
             item {
-                ValidationStatusCard(validationResult, state.name.isBlank())
+                ValidationStatusCard(validationResult, editorState.name.isBlank())
             }
 
             item {
                 GroupingLevelsSection(
-                    state = state,
-                    filteredTags = filteredTags,
-                    onFilterTags = viewModel::filterTags
+                    state = editorState,
+                    filteredTags = state.filteredTags,
+                    onFilterTags = { query, excludeTags ->
+                        container.store.intent(ViewModeIntent.FilterTags(query, excludeTags))
+                    }
                 )
             }
 
             item {
-                DefaultOrderingRulesSection(state)
+                DefaultOrderingRulesSection(editorState)
             }
         }
     }
