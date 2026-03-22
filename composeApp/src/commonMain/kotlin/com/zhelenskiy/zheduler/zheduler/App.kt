@@ -47,7 +47,7 @@ import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeEditor
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeManagementScreen
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SavedFilterManagementScreen
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeViewModel
-import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterViewModel
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
 import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
 import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
@@ -506,12 +506,13 @@ private fun AppContent(
 
         composable<SavedFilterManagementRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<SavedFilterManagementRoute>()
-            val viewModel = remember(route.spaceId) {
-                SavedFilterViewModel(appGraph.taskRepository, route.spaceId)
+            val container = remember(route.spaceId) {
+                SavedFilterContainer(appGraph.taskRepository, route.spaceId)
             }
 
             SavedFilterManagementScreen(
-                viewModel = viewModel,
+                container = container,
+                spaceId = route.spaceId,
                 onLoad = { filter ->
                     // Navigate back with the filter to apply
                     navController.previousBackStackEntry?.savedStateHandle?.set("loadedFilterId", filter.id)
