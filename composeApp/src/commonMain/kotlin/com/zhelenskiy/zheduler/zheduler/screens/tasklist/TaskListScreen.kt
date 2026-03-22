@@ -88,7 +88,7 @@ private fun rememberPersistedFilterState(
 
 @Composable
 private fun rememberTaskListUiState(
-    tasksWithTotals: List<TaskWithTotals>,
+    hasAnyTasks: Boolean,
     onLoadInitialData: () -> TaskListUiData?,
     onSaveActiveViewMode: (String) -> Unit,
     onSaveFilterPanelOpen: (Boolean) -> Unit,
@@ -128,7 +128,7 @@ private fun rememberTaskListUiState(
         }
     }
 
-    LaunchedEffect(filterState.toCriteria(), tasksWithTotals, uiState.value) {
+    LaunchedEffect(filterState.toCriteria(), hasAnyTasks, uiState.value) {
         if (uiState.value.dataOrNull == null) return@LaunchedEffect
         val criteria = filterState.toCriteria()
         val filtered = onGetFilteredTasks(criteria)
@@ -256,13 +256,13 @@ private fun TaskListSearchAndFilter(
 
 @Composable
 private fun TaskListEmptyStates(
-    tasksWithTotals: List<TaskWithTotals>,
+    hasAnyTasks: Boolean,
     filteredTasks: List<TaskWithTotals>,
     shouldAnimate: Boolean,
     onClearFilters: () -> Unit,
 ) {
     AnimatedVisibility(
-        visible = tasksWithTotals.isEmpty(),
+        visible = !hasAnyTasks,
         enter = if (shouldAnimate) fadeIn() else EnterTransition.None,
         exit = if (shouldAnimate) fadeOut() else ExitTransition.None
     ) {
@@ -270,7 +270,7 @@ private fun TaskListEmptyStates(
     }
 
     AnimatedVisibility(
-        visible = tasksWithTotals.isNotEmpty() && filteredTasks.isEmpty(),
+        visible = hasAnyTasks && filteredTasks.isEmpty(),
         enter = if (shouldAnimate) fadeIn() else EnterTransition.None,
         exit = if (shouldAnimate) fadeOut() else ExitTransition.None
     ) {
@@ -635,7 +635,7 @@ private fun LazyListScope.TaskGroupItems(
 @Composable
 private fun TaskListContent(
     viewMode: ViewMode,
-    tasksWithTotals: List<TaskWithTotals>,
+    hasAnyTasks: Boolean,
     filteredTasks: List<TaskWithTotals>,
     filterState: TaskFilterState,
     allTags: Set<String>,
@@ -651,7 +651,7 @@ private fun TaskListContent(
     onCopy: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        if (tasksWithTotals.isNotEmpty()) {
+        if (hasAnyTasks) {
             TaskListSearchAndFilter(
                 filterState = filterState,
                 allTags = allTags,
@@ -665,7 +665,7 @@ private fun TaskListContent(
 
         Box(modifier = Modifier.fillMaxSize()) {
             TaskListEmptyStates(
-                tasksWithTotals = tasksWithTotals,
+                hasAnyTasks = hasAnyTasks,
                 filteredTasks = filteredTasks,
                 shouldAnimate = shouldAnimate,
                 onClearFilters = { filterState.clearAll() }
@@ -708,7 +708,7 @@ fun TaskListScreen(
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val state by container.store.subscribe { }
-    val tasksWithTotals = state.tasksWithTotals
+    val hasAnyTasks = state.hasAnyTasks
     val currentSpace = state.currentSpace
     val allTags = state.allTags
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
@@ -726,7 +726,7 @@ fun TaskListScreen(
     )
 
     val uiState = rememberTaskListUiState(
-        tasksWithTotals = tasksWithTotals,
+        hasAnyTasks = hasAnyTasks,
         onLoadInitialData = {
             TaskListUiData(
                 activeViewMode = state.activeViewMode ?: return@rememberTaskListUiState null,
@@ -807,7 +807,7 @@ fun TaskListScreen(
             } else {
                 TaskListContent(
                     viewMode = uiData.activeViewMode,
-                    tasksWithTotals = tasksWithTotals,
+                    hasAnyTasks = hasAnyTasks,
                     filteredTasks = uiData.filteredTasks,
                     filterState = filterState,
                     allTags = allTags,

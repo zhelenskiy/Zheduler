@@ -69,6 +69,13 @@ interface TaskRepository {
     // ============ Task CRUD operations ============
 
     /**
+     * Check if a space has any tasks.
+     * @param spaceId The space ID
+     * @return true if the space has at least one task
+     */
+    suspend fun hasAnyTasks(spaceId: String): Boolean
+
+    /**
      * Get all tasks in a space.
      * @param spaceId The space ID
      * @return List of all tasks in the space

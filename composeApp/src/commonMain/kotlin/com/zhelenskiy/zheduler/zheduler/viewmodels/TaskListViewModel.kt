@@ -18,7 +18,7 @@ import pro.respawn.flowmvi.plugins.whileSubscribed
 import kotlin.time.ExperimentalTime
 
 data class TaskListState(
-    val tasksWithTotals: List<TaskWithTotals> = emptyList(),
+    val hasAnyTasks: Boolean = false,
     val currentSpace: Space? = null,
     val allTags: Set<String> = emptySet(),
     val filteredTasks: Map<TaskFilterCriteria, List<TaskWithTotals>> = emptyMap(),
@@ -86,12 +86,12 @@ class TaskListContainer(
     }
 
     private suspend fun TaskListPipelineContext.loadTasks() {
-        val tasks = repository.getAllTasksWithTotals(spaceId)
+        val hasAny = repository.hasAnyTasks(spaceId)
         val space = repository.getSpaceById(spaceId)
         val tags = repository.getAllTags(spaceId)
         updateState {
             copy(
-                tasksWithTotals = tasks,
+                hasAnyTasks = hasAny,
                 currentSpace = space,
                 allTags = tags
             )
