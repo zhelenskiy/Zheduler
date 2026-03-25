@@ -48,7 +48,7 @@ import kotlin.time.ExperimentalTime
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TaskDetailTopAppBar(
-    taskId: String,
+    taskId: String?,
     onNavigateBack: () -> Unit,
     onStartEditing: () -> Unit,
     onNavigateToSpaceList: () -> Unit,
@@ -63,11 +63,13 @@ private fun TaskDetailTopAppBar(
         title = {
             Column {
                 Text("Task Details")
-                Text(
-                    text = taskId,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace
-                )
+                if (taskId != null) {
+                    Text(
+                        text = taskId,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
         },
         navigationIcon = {
@@ -76,8 +78,10 @@ private fun TaskDetailTopAppBar(
             }
         },
         actions = {
-            IconButton(onClick = onStartEditing) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit")
+            if (taskId != null) {
+                IconButton(onClick = onStartEditing) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit")
+                }
             }
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
@@ -646,8 +650,8 @@ fun TaskDetailScreen(
         container.store.intent(TaskDetailIntent.LoadTask)
     }
 
-    val currentTaskWithTotals = state.taskWithTotals ?: return
-    val task = currentTaskWithTotals.task
+    val currentTaskWithTotals = state.taskWithTotals
+    val task = currentTaskWithTotals?.task
 
     val loadTask: (String) -> Unit = { taskId ->
         container.store.intent(TaskDetailIntent.LoadTaskById(taskId))
@@ -656,7 +660,7 @@ fun TaskDetailScreen(
     Scaffold(
         topBar = {
             TaskDetailTopAppBar(
-                taskId = task.id,
+                taskId = task?.id,
                 onNavigateBack = onNavigateBack,
                 onStartEditing = onNavigateToEdit,
                 onNavigateToSpaceList = onNavigateToSpaceList,
@@ -669,12 +673,21 @@ fun TaskDetailScreen(
             )
         }
     ) { padding ->
-        TaskReadOnlyView(
-            task = task,
-            state = state,
-            loadTask = loadTask,
-            onTaskClick = onTaskClick,
-            modifier = Modifier.padding(padding)
-        )
+        if (task != null) {
+            TaskReadOnlyView(
+                task = task,
+                state = state,
+                loadTask = loadTask,
+                onTaskClick = onTaskClick,
+                modifier = Modifier.padding(padding)
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
     }
 }
