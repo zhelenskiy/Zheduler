@@ -2,6 +2,12 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentList
+import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalDate
@@ -209,8 +215,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
     }
 
-    override suspend fun getAllTags(spaceId: String): Set<String> = mutex.withLock {
-        tagsBySpace[spaceId]?.toSet() ?: emptySet()
+    override suspend fun getAllTags(spaceId: String): PersistentSet<String> = mutex.withLock {
+        tagsBySpace[spaceId]?.toPersistentSet() ?: persistentSetOf()
     }
 
     override suspend fun filterTags(spaceId: String, searchQuery: String, excludeTags: Set<String>): List<String> = mutex.withLock {
@@ -281,11 +287,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         dueDate: Instant?,
         priority: Priority?,
         estimatedTime: RecurrencePeriod?,
-        tags: Set<String>,
-        connections: Set<TaskConnection>,
-        notifications: List<TaskNotification>,
+        tags: PersistentSet<String>,
+        connections: PersistentSet<TaskConnection>,
+        notifications: PersistentList<TaskNotification>,
         customId: String?,
-        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
+        recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
         if (!spaces.containsKey(spaceId)) return@withLock null
@@ -335,12 +341,12 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     override suspend fun updateTask(task: Task): Task? = mutex.withLock {
         val oldTask = tasks[task.id] ?: return@withLock null
 
-        val removedConnections = oldTask.connections - task.connections
+        val removedConnections = oldTask.connections.removeAll(task.connections)
         removedConnections.forEach { connection ->
             removeSymmetricConnectionUnsafe(task.id, connection)
         }
 
-        val addedConnections = task.connections - oldTask.connections
+        val addedConnections = task.connections.removeAll(oldTask.connections)
         addedConnections.forEach { connection ->
             addSymmetricConnectionUnsafe(task.id, connection)
         }
@@ -370,7 +376,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             return@withLock false
         }
 
-        val updatedTask = fromTask.copy(connections = fromTask.connections + connection)
+        val updatedTask = fromTask.copy(connections = fromTask.connections.add(connection))
         tasks[fromTaskId] = updatedTask
 
         addSymmetricConnectionUnsafe(fromTaskId, connection)
@@ -384,7 +390,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         val connection = TaskConnection(toTaskId, type)
         if (connection !in fromTask.connections) return@withLock true
 
-        val updatedTask = fromTask.copy(connections = fromTask.connections - connection)
+        val updatedTask = fromTask.copy(connections = fromTask.connections.remove(connection))
         tasks[fromTaskId] = updatedTask
 
         removeSymmetricConnectionUnsafe(fromTaskId, connection)
@@ -398,7 +404,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         if (symmetricConnection !in targetTask.connections) {
             val updatedTask = targetTask.copy(
-                connections = targetTask.connections + symmetricConnection
+                connections = targetTask.connections.add(symmetricConnection)
             )
             tasks[connection.targetTaskId] = updatedTask
 
@@ -415,7 +421,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         if (symmetricConnection in targetTask.connections) {
             val updatedTask = targetTask.copy(
-                connections = targetTask.connections - symmetricConnection
+                connections = targetTask.connections.remove(symmetricConnection)
             )
             tasks[connection.targetTaskId] = updatedTask
 
@@ -444,7 +450,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             .mapNotNull { tasks[it.targetTaskId] }
     }
 
-    override suspend fun getConnectionsForTaskSync(taskId: String): Set<TaskConnection>? =
+    override suspend fun getConnectionsForTaskSync(taskId: String): PersistentSet<TaskConnection>? =
         tasks[taskId]?.connections
 
     // Note: recordStatusChange does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
@@ -455,12 +461,15 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         newStatus: TaskStatus,
         automaticChangeReason: AutomaticChangeReason?
     ) {
-        statusTimelines[taskId] = (statusTimelines[taskId] ?: emptyList()) + StatusChange(
-            timestamp = clock.now(),
-            previousStatus = previousStatus,
-            newStatus = newStatus,
-            automaticChangeReason = automaticChangeReason
-        )
+        statusTimelines[taskId] = (statusTimelines[taskId]?.toPersistentList() ?: persistentListOf())
+            .add(
+                StatusChange(
+                    timestamp = clock.now(),
+                    previousStatus = previousStatus,
+                    newStatus = newStatus,
+                    automaticChangeReason = automaticChangeReason
+                )
+            )
     }
 
     // Note: persistTaskUpdate does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
@@ -552,7 +561,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     override suspend fun getAllViewModes(spaceId: String): List<ViewMode> = mutex.withLock {
         val builtIn = ViewMode.getBuiltInModes(spaceId)
         val custom = customViewModes[spaceId]?.values?.toList() ?: emptyList()
-        builtIn + custom
+        builtIn.toPersistentList().addAll(custom)
     }
 
     override suspend fun getViewModeById(spaceId: String, viewModeId: String): ViewMode? = mutex.withLock {
@@ -641,14 +650,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
             exportData.tasks.forEach { task ->
                 val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
-                val remappedConnections = task.connections.mapNotNull { connection ->
-                    val newTargetId = oldToNewTaskId[connection.targetTaskId]
-                    if (newTargetId != null) {
+                val remappedConnections = task.connections.mapNotNullToPersistentSet { connection ->
+                    oldToNewTaskId[connection.targetTaskId]?.let { newTargetId ->
                         connection.copy(targetTaskId = newTargetId)
-                    } else {
-                        null
                     }
-                }.toSet()
+                }
 
                 val remappedStatus = remapBlockedStatus(task.status, oldToNewTaskId)
 
@@ -687,14 +693,14 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 val connectionsToRemove = task.connections.filter { it.targetTaskId in taskIdsInDeletedSpace }
                 if (connectionsToRemove.isNotEmpty()) {
                     updatedTask = updatedTask.copy(
-                        connections = updatedTask.connections - connectionsToRemove.toSet()
+                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.remove(conn) }
                     )
                     modified = true
                 }
 
                 val status = task.status
                 if (status is TaskStatus.Blocked) {
-                    val remainingBlockers = status.blockerTaskIds - taskIdsInDeletedSpace
+                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.remove(id) }
                     if (remainingBlockers != status.blockerTaskIds) {
                         val newStatus = if (remainingBlockers.isEmpty()) {
                             TaskStatus.InProgress
@@ -749,7 +755,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         spaceId: String,
         viewMode: ViewMode,
         levelIndex: Int,
-        parentFilters: List<GroupFilter>,
+        parentFilters: PersistentList<GroupFilter>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskGroupInfo> = mutex.withLock {
         if (levelIndex >= viewMode.groupingLevels.size) {
@@ -794,7 +800,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         val uncategorizedTasks = filteredTasks.filter { it.task.id !in matchedTaskIds }
         if (uncategorizedTasks.isNotEmpty()) {
             // Create a negation filter for uncategorized
-            val allGroupFilters = level.groups.map { it.toFilter(level.field) }
+            val allGroupFilters = level.groups.mapToPersistentList { it.toFilter(level.field) }
             val uncategorizedFilter = GroupFilter.Not(
                 field = level.field,
                 filters = allGroupFilters
@@ -816,8 +822,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun getTasksForGroup(
         spaceId: String,
-        filters: List<GroupFilter>,
-        orderingRules: List<OrderingRule>,
+        filters: PersistentList<GroupFilter>,
+        orderingRules: PersistentList<OrderingRule>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskWithTotals> = mutex.withLock {
         // Note: use internal method without mutex since we already hold it

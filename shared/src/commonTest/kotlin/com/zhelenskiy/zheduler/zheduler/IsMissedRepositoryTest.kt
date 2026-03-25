@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentSetOf
+
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import kotlin.time.Duration.Companion.days
@@ -159,7 +161,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             spaceId,
             title = "Blocked task",
-            status = TaskStatus.Blocked(setOf(blockerTask.id)),
+            status = TaskStatus.Blocked(persistentSetOf(blockerTask.id)),
             dueDate = pastDue
         )!!
 
@@ -281,7 +283,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val task = repo.addTask(
             spaceId,
             title = "Blocked overdue task",
-            status = TaskStatus.Blocked(setOf(blocker.id)),
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id)),
             dueDate = pastDue
         )!!
 
@@ -299,7 +301,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val task = repo.addTask(
             spaceId,
             title = "Blocked overdue task",
-            status = TaskStatus.Blocked(emptySet(), "Waiting for external input"),
+            status = TaskStatus.Blocked(persistentSetOf(), "Waiting for external input"),
             dueDate = pastDue
         )!!
 
@@ -520,7 +522,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             spaceId,
             title = "Blocked task",
-            status = TaskStatus.Blocked(setOf(blocker.id)),
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id)),
             dueDate = pastDue
         )!!
         
@@ -769,7 +771,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             spaceId,
             title = "Blocked task",
-            status = TaskStatus.Blocked(setOf(blocker.id)),
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id)),
             dueDate = pastDue
         )!!
 
@@ -797,7 +799,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         assertFalse(blockerWithTotals.isMissed(now))
 
         // Change task status to Blocked
-        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
 
         // Now blocker should have totalDueDate from blocked task
         blockerWithTotals = repo.getAllTasksWithTotals(spaceId).find { it.task.id == blocker.id }!!
@@ -816,7 +818,7 @@ abstract class IsMissedRepositoryTest : AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             spaceId,
             title = "Blocked task",
-            status = TaskStatus.Blocked(setOf(blocker.id)),
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id)),
             dueDate = pastDue
         )!!
 

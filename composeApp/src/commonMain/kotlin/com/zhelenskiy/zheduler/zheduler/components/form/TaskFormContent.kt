@@ -311,9 +311,7 @@ private fun RecurrenceSection(
                                     rule = rule,
                                     onEdit = { editingRuleIndex = index },
                                     onDelete = {
-                                        val mutableRules = formState.recurrenceRules.toMutableList()
-                                        mutableRules.removeAt(index)
-                                        formState.recurrenceRules = mutableRules
+                                        formState.recurrenceRules = formState.recurrenceRules.removeAt(index)
                                     },
                                     index = index,
                                     onTaskClick = null,
@@ -338,15 +336,14 @@ private fun RecurrenceSection(
             onDismiss = { editingRuleIndex = null },
             onRecurrenceSelected = { rule ->
                 if (rule != null) {
-                    val mutableRules = formState.recurrenceRules.toMutableList()
-                    val currentState = mutableRules.getOrNull(index)?.second ?: RecurrenceState()
+                    val currentState = formState.recurrenceRules.getOrNull(index)?.second ?: RecurrenceState()
                     val nextOccurrence = RecurrenceCalculator.calculateNextOccurrence(rule, currentState)
-                    if (index < mutableRules.size) {
-                        mutableRules[index] = rule to currentState.copy(nextOccurrenceDate = nextOccurrence)
+                    val newEntry = rule to currentState.copy(nextOccurrenceDate = nextOccurrence)
+                    formState.recurrenceRules = if (index < formState.recurrenceRules.size) {
+                        formState.recurrenceRules.set(index, newEntry)
                     } else {
-                        mutableRules.add(rule to currentState.copy(nextOccurrenceDate = nextOccurrence))
+                        formState.recurrenceRules.add(newEntry)
                     }
-                    formState.recurrenceRules = mutableRules
                 }
                 editingRuleIndex = null
             }
@@ -522,7 +519,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { formState.notifications += "" }) {
+                    IconButton(onClick = { formState.notifications = formState.notifications.add("") }) {
                         Icon(Icons.Default.Add, contentDescription = "Add notification")
                     }
                 }
@@ -544,9 +541,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                 OutlinedTextField(
                                     value = notification,
                                     onValueChange = { newValue ->
-                                        formState.notifications = notifications.toMutableList().apply {
-                                            set(index, newValue)
-                                        }
+                                        formState.notifications = formState.notifications.set(index, newValue)
                                     },
                                     label = { Text("Time before deadline") },
                                     placeholder = { Text("e.g., 1d, 2h 30m") },
@@ -562,9 +557,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                     }
                                 )
                                 IconButton(onClick = {
-                                    formState.notifications = formState.notifications.toMutableList().apply {
-                                        removeAt(index)
-                                    }
+                                    formState.notifications = formState.notifications.removeAt(index)
                                 }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Remove notification")
                                 }
@@ -617,7 +610,7 @@ private fun TagsSection(
                         tags.forEach { tag ->
                             TagChip(
                                 tag = tag,
-                                onRemove = { formState.tags -= tag }
+                                onRemove = { formState.tags = formState.tags.remove(tag) }
                             )
                         }
                     }
@@ -637,7 +630,7 @@ private fun TagsSection(
             onFilterTags = onFilterTags,
             onDismiss = { showTagDialog = false },
             onTagSelected = { tag ->
-                formState.tags += tag
+                formState.tags = formState.tags.add(tag)
                 showTagDialog = false
             }
         )
@@ -701,7 +694,7 @@ private fun ConnectionsSection(
                                     ConnectedTaskChip(
                                         task = connectedTask,
                                         taskId = connection.targetTaskId,
-                                        onRemove = { formState.connections -= connection },
+                                        onRemove = { formState.connections = formState.connections.remove(connection) },
                                     )
                                 }
                             }
@@ -749,7 +742,7 @@ private fun ConnectionsSection(
             onSearchTasks = onSearchTasksForConnection,
             onDismiss = { showConnectionDialog = false },
             onConnectionAdded = { connection ->
-                formState.connections += connection
+                formState.connections = formState.connections.add(connection)
             },
             onCreateNewTask = onCreateNewTaskWithConnection?.let { callback ->
                 { connectionType ->

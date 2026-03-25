@@ -2,10 +2,13 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.*
 import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Instant
 
 class ViewModeModelsTest {
 
@@ -17,7 +20,7 @@ class ViewModeModelsTest {
         status: TaskStatus = TaskStatus.Open,
         priority: Priority? = null,
         dueDate: Instant? = null,
-        tags: Set<String> = emptySet()
+        tags: PersistentSet<String> = persistentSetOf()
     ): TaskWithTotals {
         val task = Task(
             id = id,
@@ -41,19 +44,19 @@ class ViewModeModelsTest {
 
     @Test
     fun `TaskGroup default isUncategorized is false`() {
-        val group = TaskGroup(label = "Test", tasks = emptyList())
+        val group = TaskGroup(label = "Test", tasks = persistentListOf())
         assertFalse(group.isUncategorized)
     }
 
     @Test
     fun `TaskGroup with isUncategorized true`() {
-        val group = TaskGroup(label = "", tasks = emptyList(), isUncategorized = true)
+        val group = TaskGroup(label = "", tasks = persistentListOf(), isUncategorized = true)
         assertTrue(group.isUncategorized)
     }
 
     @Test
     fun `TaskGroup with blank label but isUncategorized false`() {
-        val group = TaskGroup(label = "", tasks = emptyList(), isUncategorized = false)
+        val group = TaskGroup(label = "", tasks = persistentListOf(), isUncategorized = false)
         assertFalse(group.isUncategorized)
     }
 
@@ -65,7 +68,7 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList()
+            groupingLevels = persistentListOf()
         )
         val tasks = listOf(
             createTask("1"),
@@ -87,13 +90,13 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("In Progress", setOf("InProgress")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("In Progress", persistentSetOf("InProgress")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 )
             )
@@ -124,12 +127,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 )
             )
@@ -138,7 +141,7 @@ class ViewModeModelsTest {
             createTask("1", status = TaskStatus.Open),
             createTask("2", status = TaskStatus.InProgress), // Not covered
             createTask("3", status = TaskStatus.Done),
-            createTask("4", status = TaskStatus.Blocked(emptySet())) // Not covered
+            createTask("4", status = TaskStatus.Blocked(persistentSetOf())) // Not covered
         )
 
         val result = viewMode.applyTo(tasks)
@@ -168,12 +171,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Active", setOf("Open", "InProgress")),
-                        GroupDefinition("Completed", setOf("Done", "Declined"))
+                    groups = persistentListOf(
+                        GroupDefinition("Active", persistentSetOf("Open", "InProgress")),
+                        GroupDefinition("Completed", persistentSetOf("Done", "Declined"))
                     )
                 )
             )
@@ -196,11 +199,11 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 )
             )
@@ -225,17 +228,17 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100)
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100)
                     )
                 )
             )
@@ -273,23 +276,23 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", setOf("High", "VeryHigh"))
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf("High", "VeryHigh"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.HasConnections,
-                    groups = listOf(
-                        GroupDefinition("Connected", setOf("true"))
+                    groups = persistentListOf(
+                        GroupDefinition("Connected", persistentSetOf("true"))
                     )
                 )
             )
@@ -320,25 +323,25 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "Low (1-25)",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             priorityMin = 1,
                             priorityMax = 25
                         ),
                         GroupDefinition(
                             label = "Medium (26-75)",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             priorityMin = 26,
                             priorityMax = 75
                         ),
                         GroupDefinition(
                             label = "High (76-100)",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             priorityMin = 76,
                             priorityMax = 100
                         )
@@ -369,13 +372,13 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "High (50+)",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             priorityMin = 50
                         )
                     )
@@ -406,13 +409,13 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "Low (up to 50)",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             priorityMax = 50
                         )
                     )
@@ -443,13 +446,13 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "No Priority or Low",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             priorityMax = 50,
                             includeNoPriority = true
                         )
@@ -480,13 +483,13 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "Exact Range",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             priorityMin = 25,
                             priorityMax = 75
                         )
@@ -525,24 +528,24 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.DueDate,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "Overdue",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             dueDateMaxDays = -1
                         ),
                         GroupDefinition(
                             label = "This Week",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             dueDateMinDays = 0,
                             dueDateMaxDays = 7
                         ),
                         GroupDefinition(
                             label = "Later",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             dueDateMinDays = 8
                         )
                     )
@@ -582,13 +585,13 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.DueDate,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "No Due Date or Future",
-                            values = emptySet(),
+                            values = persistentSetOf(),
                             dueDateMinDays = 1,
                             includeNoDueDate = true
                         )
@@ -622,21 +625,21 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Tags,
-                    groups = listOf(
-                        GroupDefinition("Bug", setOf("bug")),
-                        GroupDefinition("Feature", setOf("feature"))
+                    groups = persistentListOf(
+                        GroupDefinition("Bug", persistentSetOf("bug")),
+                        GroupDefinition("Feature", persistentSetOf("feature"))
                     )
                 )
             )
         )
         val tasks = listOf(
-            createTask("1", tags = setOf("bug")),
-            createTask("2", tags = setOf("feature")),
-            createTask("3", tags = setOf("bug", "feature")),
-            createTask("4", tags = setOf("other"))
+            createTask("1", tags = persistentSetOf("bug")),
+            createTask("2", tags = persistentSetOf("feature")),
+            createTask("3", tags = persistentSetOf("bug", "feature")),
+            createTask("4", tags = persistentSetOf("other"))
         )
 
         val result = viewMode.applyTo(tasks)
@@ -661,18 +664,18 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Tags,
-                    groups = listOf(
-                        GroupDefinition("Bug", setOf("bug"))
+                    groups = persistentListOf(
+                        GroupDefinition("Bug", persistentSetOf("bug"))
                     )
                 )
             )
         )
         val tasks = listOf(
-            createTask("1", tags = setOf("bug")),
-            createTask("2", tags = emptySet())
+            createTask("1", tags = persistentSetOf("bug")),
+            createTask("2", tags = persistentSetOf())
         )
 
         val result = viewMode.applyTo(tasks)
@@ -689,18 +692,18 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Tags,
-                    groups = listOf(
-                        GroupDefinition("Bug", setOf("bug")),
-                        GroupDefinition("Urgent", setOf("urgent"))
+                    groups = persistentListOf(
+                        GroupDefinition("Bug", persistentSetOf("bug")),
+                        GroupDefinition("Urgent", persistentSetOf("urgent"))
                     )
                 )
             )
         )
         val tasks = listOf(
-            createTask("1", tags = setOf("bug", "urgent"))
+            createTask("1", tags = persistentSetOf("bug", "urgent"))
         )
 
         val result = viewMode.applyTo(tasks)
@@ -725,12 +728,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.HasConnections,
-                    groups = listOf(
-                        GroupDefinition("Connected", setOf("true")),
-                        GroupDefinition("Standalone", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Connected", persistentSetOf("true")),
+                        GroupDefinition("Standalone", persistentSetOf("false"))
                     )
                 )
             )
@@ -740,13 +743,13 @@ class ViewModeModelsTest {
             id = "1",
             title = "Connected",
             spaceId = "space-1",
-            connections = setOf(TaskConnection("other", ConnectionType.RelatesTo))
+            connections = persistentSetOf(TaskConnection("other", ConnectionType.RelatesTo))
         )
         val taskWithoutConnections = Task(
             id = "2",
             title = "Standalone",
             spaceId = "space-1",
-            connections = emptySet()
+            connections = persistentSetOf()
         )
 
         val tasks = listOf(
@@ -775,11 +778,11 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.IsRecurring,
-                    groups = listOf(
-                        GroupDefinition("Recurring", setOf("true"))
+                    groups = persistentListOf(
+                        GroupDefinition("Recurring", persistentSetOf("true"))
                     )
                 )
             )
@@ -789,7 +792,7 @@ class ViewModeModelsTest {
             id = "1",
             title = "Recurring",
             spaceId = "space-1",
-            recurrenceRules = listOf(
+            recurrenceRules = persistentListOf(
                 RecurrenceRule(
                     timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
                         period = RecurrencePeriod.ofDays(1),
@@ -831,12 +834,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     ),
                     showEmptyGroups = false
                 )
@@ -858,12 +861,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     ),
                     showEmptyGroups = true
                 )
@@ -894,17 +897,17 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Active", setOf("Open", "InProgress"))
+                    groups = persistentListOf(
+                        GroupDefinition("Active", persistentSetOf("Open", "InProgress"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100)
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100)
                     )
                 )
             )
@@ -945,17 +948,17 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open"))
                     )
                 )
             )
         )
 
-        val result = viewMode.applyTo(emptyList())
+        val result = viewMode.applyTo(persistentListOf())
 
         assertTrue(result.isEmpty())
     }
@@ -966,7 +969,7 @@ class ViewModeModelsTest {
         id = "test",
         name = "Test",
         spaceId = "space-1",
-        groupingLevels = listOf(level)
+        groupingLevels = persistentListOf(level)
     )
 
     @Test
@@ -974,8 +977,8 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.Status,
-                groups = listOf(
-                    GroupDefinition("", setOf("Open"))
+                groups = persistentListOf(
+                    GroupDefinition("", persistentSetOf("Open"))
                 )
             )
         )
@@ -992,8 +995,8 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.Status,
-                groups = listOf(
-                    GroupDefinition("Empty", emptySet())
+                groups = persistentListOf(
+                    GroupDefinition("Empty", persistentSetOf())
                 )
             )
         )
@@ -1010,10 +1013,10 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.Priority,
-                groups = listOf(
+                groups = persistentListOf(
                     GroupDefinition(
                         label = "High Priority",
-                        values = emptySet(),
+                        values = persistentSetOf(),
                         priorityMin = 75
                     )
                 )
@@ -1031,8 +1034,8 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.HasConnections,
-                groups = listOf(
-                    GroupDefinition("Connected", setOf("true"))
+                groups = persistentListOf(
+                    GroupDefinition("Connected", persistentSetOf("true"))
                     // Missing "false" - this is allowed
                 )
             )
@@ -1049,9 +1052,9 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.Status,
-                groups = listOf(
-                    GroupDefinition("Group1", setOf("Open", "InProgress")),
-                    GroupDefinition("Group2", setOf("Open", "Done")) // "Open" appears in both - allowed
+                groups = persistentListOf(
+                    GroupDefinition("Group1", persistentSetOf("Open", "InProgress")),
+                    GroupDefinition("Group2", persistentSetOf("Open", "Done")) // "Open" appears in both - allowed
                 )
             )
         )
@@ -1067,8 +1070,8 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.Tags,
-                groups = listOf(
-                    GroupDefinition("Bug", setOf("bug"))
+                groups = persistentListOf(
+                    GroupDefinition("Bug", persistentSetOf("bug"))
                 )
             )
         )
@@ -1083,9 +1086,9 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.Tags,
-                groups = listOf(
-                    GroupDefinition("Bug", setOf("bug")),
-                    GroupDefinition("Also Bug", setOf("bug")) // Same tag in different group
+                groups = persistentListOf(
+                    GroupDefinition("Bug", persistentSetOf("bug")),
+                    GroupDefinition("Also Bug", persistentSetOf("bug")) // Same tag in different group
                 )
             )
         )
@@ -1101,16 +1104,16 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.Priority,
-                groups = listOf(
+                groups = persistentListOf(
                     GroupDefinition(
                         label = "Low",
-                        values = emptySet(),
+                        values = persistentSetOf(),
                         priorityMin = 1,
                         priorityMax = 50
                     ),
                     GroupDefinition(
                         label = "High",
-                        values = emptySet(),
+                        values = persistentSetOf(),
                         priorityMin = 40, // Overlapping range - would be duplicate
                         priorityMax = 100
                     )
@@ -1129,10 +1132,10 @@ class ViewModeModelsTest {
         val viewMode = createViewModeWithLevel(
             GroupingLevel(
                 field = GroupableField.DueDate,
-                groups = listOf(
+                groups = persistentListOf(
                     GroupDefinition(
                         label = "Soon",
-                        values = emptySet(),
+                        values = persistentSetOf(),
                         dueDateMinDays = 0,
                         dueDateMaxDays = 7
                     )
@@ -1155,14 +1158,14 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             "All",
-                            setOf("Open", "InProgress", "Done", "Declined", "Blocked"),
-                            orderingRules = listOf(
+                            persistentSetOf("Open", "InProgress", "Done", "Declined", "Blocked"),
+                            orderingRules = persistentListOf(
                                 OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last)
                             )
                         )
@@ -1191,15 +1194,15 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open"))
                     )
                 )
             ),
-            defaultOrderingRules = listOf(
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Id, OrderDirection.Descending)
             )
         )
@@ -1226,17 +1229,17 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", setOf("High"))
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf("High"))
                     )
                 )
             )
@@ -1260,11 +1263,11 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open"))
                     )
                 )
             )
@@ -1288,12 +1291,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.HasNotifications,
-                    groups = listOf(
-                        GroupDefinition("Has Notifications", setOf("true")),
-                        GroupDefinition("No Notifications", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Has Notifications", persistentSetOf("true")),
+                        GroupDefinition("No Notifications", persistentSetOf("false"))
                     )
                 )
             )
@@ -1303,7 +1306,7 @@ class ViewModeModelsTest {
             id = "1",
             title = "With Notifications",
             spaceId = "space-1",
-            notifications = listOf(
+            notifications = persistentListOf(
                 TaskNotification(
                     timeBeforeDeadline = RecurrencePeriod.ofHours(1)
                 )
@@ -1313,7 +1316,7 @@ class ViewModeModelsTest {
             id = "2",
             title = "Without Notifications",
             spaceId = "space-1",
-            notifications = emptyList()
+            notifications = persistentListOf()
         )
 
         val tasks = listOf(
@@ -1342,11 +1345,11 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.HasNotifications,
-                    groups = listOf(
-                        GroupDefinition("Has Notifications", setOf("true"))
+                    groups = persistentListOf(
+                        GroupDefinition("Has Notifications", persistentSetOf("true"))
                     )
                 )
             )
@@ -1373,12 +1376,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.AutoUpdateStatus,
-                    groups = listOf(
-                        GroupDefinition("Auto Update", setOf("true")),
-                        GroupDefinition("Manual", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Auto Update", persistentSetOf("true")),
+                        GroupDefinition("Manual", persistentSetOf("false"))
                     )
                 )
             )
@@ -1425,11 +1428,11 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100)
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100)
                     )
                 )
             )
@@ -1455,8 +1458,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Priority, OrderDirection.Ascending, NullPosition.First)
             )
         )
@@ -1481,8 +1484,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Priority, OrderDirection.Ascending, NullPosition.Last)
             )
         )
@@ -1507,8 +1510,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.DueDate, OrderDirection.Descending, NullPosition.First)
             )
         )
@@ -1535,8 +1538,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last),
                 OrderingRule(OrderableField.Title, OrderDirection.Ascending)
             )
@@ -1566,8 +1569,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Status, OrderDirection.Ascending),
                 OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last),
                 OrderingRule(OrderableField.DueDate, OrderDirection.Ascending, NullPosition.Last)
@@ -1600,8 +1603,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Id, OrderDirection.Ascending)
             )
         )
@@ -1633,8 +1636,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Id, OrderDirection.Ascending)
             )
         )
@@ -1662,8 +1665,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Id, OrderDirection.Descending)
             )
         )
@@ -1732,7 +1735,7 @@ class ViewModeModelsTest {
         val tasks = listOf(
             createTask("1", status = TaskStatus.Open),
             createTask("2", status = TaskStatus.InProgress),
-            createTask("3", status = TaskStatus.Blocked(emptySet())),
+            createTask("3", status = TaskStatus.Blocked(persistentSetOf())),
             createTask("4", status = TaskStatus.Done),
             createTask("5", status = TaskStatus.Declined("reason"))
         )
@@ -1762,8 +1765,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.EstimatedTime, OrderDirection.Ascending, NullPosition.Last)
             )
         )
@@ -1795,8 +1798,8 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.EstimatedTime, OrderDirection.Descending, NullPosition.First)
             )
         )
@@ -1827,7 +1830,7 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = emptyList()
+            groupingLevels = persistentListOf()
         )
 
         val result = viewMode.validate()
@@ -1841,12 +1844,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("", setOf("Open")), // Empty label
-                        GroupDefinition("Group2", emptySet()) // Empty values
+                    groups = persistentListOf(
+                        GroupDefinition("", persistentSetOf("Open")), // Empty label
+                        GroupDefinition("Group2", persistentSetOf()) // Empty values
                     )
                 )
             )
@@ -1867,12 +1870,12 @@ class ViewModeModelsTest {
             id = "test",
             name = "Test",
             spaceId = "space-1",
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.IsRecurring,
-                    groups = listOf(
-                        GroupDefinition("Recurring", setOf("true")),
-                        GroupDefinition("One-time", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Recurring", persistentSetOf("true")),
+                        GroupDefinition("One-time", persistentSetOf("false"))
                     )
                 )
             )
@@ -1889,9 +1892,8 @@ class ViewModeModelsTest {
     fun `getFieldValue returns correct status values`() {
         assertEquals("Open", createTask("1", status = TaskStatus.Open).getFieldValue(GroupableField.Status))
         assertEquals("InProgress", createTask("1", status = TaskStatus.InProgress).getFieldValue(GroupableField.Status))
-        assertEquals("Blocked", createTask("1", status = TaskStatus.Blocked(setOf("other"))).getFieldValue(GroupableField.Status))
+        assertEquals("Blocked", createTask("1", status = TaskStatus.Blocked(persistentSetOf("other"))).getFieldValue(GroupableField.Status))
         assertEquals("Done", createTask("1", status = TaskStatus.Done).getFieldValue(GroupableField.Status))
         assertEquals("Declined", createTask("1", status = TaskStatus.Declined("reason")).getFieldValue(GroupableField.Status))
     }
-
 }

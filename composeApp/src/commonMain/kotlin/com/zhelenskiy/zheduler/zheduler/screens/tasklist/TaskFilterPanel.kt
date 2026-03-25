@@ -28,6 +28,7 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.DatePickerDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.allStatusDefaultValues
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.time.ExperimentalTime
 
 private enum class FilterCategory {
@@ -210,9 +211,9 @@ private fun SearchInFilterOptions(filterState: TaskFilterState) {
                 selected = field in filterState.textSearchFields,
                 onClick = {
                     filterState.textSearchFields = if (field in filterState.textSearchFields && filterState.textSearchFields.size > 1) {
-                        filterState.textSearchFields - field
+                        filterState.textSearchFields.remove(field)
                     } else {
-                        filterState.textSearchFields + field
+                        filterState.textSearchFields.add(field)
                     }
                 },
                 label = { Text(field.displayName, style = MaterialTheme.typography.labelSmall) },
@@ -236,7 +237,7 @@ private fun StatusFilterOptions(filterState: TaskFilterState, spaceIdPrefix: Str
         ) {
             FilterChip(
                 selected = filterState.statusFilters.isEmpty(),
-                onClick = { filterState.statusFilters = emptySet() },
+                onClick = { filterState.statusFilters = persistentSetOf() },
                 label = { Text("Any", style = MaterialTheme.typography.labelSmall) },
                 modifier = Modifier.height(28.dp)
             )
@@ -247,9 +248,11 @@ private fun StatusFilterOptions(filterState: TaskFilterState, spaceIdPrefix: Str
                     selected = isSelected,
                     onClick = {
                         filterState.statusFilters = if (isSelected) {
-                            filterState.statusFilters.filterNot { it::class == status::class }.toSet()
+                            filterState.statusFilters.fold(filterState.statusFilters) { acc, s ->
+                                if (s::class == status::class) acc.remove(s) else acc
+                            }
                         } else {
-                            filterState.statusFilters + status
+                            filterState.statusFilters.add(status)
                         }
                     },
                     label = { Text(status.displayName, style = MaterialTheme.typography.labelSmall) },
@@ -578,9 +581,9 @@ private fun ConnectionsFilterOptions(filterState: TaskFilterState, spaceIdPrefix
                     selected = typeOption in filterState.connectionTypeFilters,
                     onClick = {
                         filterState.connectionTypeFilters = if (typeOption in filterState.connectionTypeFilters) {
-                            filterState.connectionTypeFilters - typeOption
+                            filterState.connectionTypeFilters.remove(typeOption)
                         } else {
-                            filterState.connectionTypeFilters + typeOption
+                            filterState.connectionTypeFilters.add(typeOption)
                         }
                     },
                     label = { Text(typeOption.displayName, style = MaterialTheme.typography.labelSmall) },
@@ -735,9 +738,9 @@ private fun TagChipsRow(filteredTags: List<String>, filterState: TaskFilterState
                 selected = tag in filterState.selectedTags,
                 onClick = {
                     filterState.selectedTags = if (tag in filterState.selectedTags) {
-                        filterState.selectedTags - tag
+                        filterState.selectedTags.remove(tag)
                     } else {
-                        filterState.selectedTags + tag
+                        filterState.selectedTags.add(tag)
                     }
                 },
                 label = { Text(tag, style = MaterialTheme.typography.labelSmall) },

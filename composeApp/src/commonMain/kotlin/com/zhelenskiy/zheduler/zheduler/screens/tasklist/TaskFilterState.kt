@@ -4,22 +4,24 @@ package com.zhelenskiy.zheduler.zheduler.screens.tasklist
 
 import androidx.compose.runtime.*
 import com.zhelenskiy.zheduler.zheduler.*
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 @Stable
 class TaskFilterState {
     var searchQuery by mutableStateOf("")
-    var textSearchFields by mutableStateOf(setOf(TaskTextSearchField.Id, TaskTextSearchField.Title))
-    var statusFilters by mutableStateOf<Set<TaskStatus>>(emptySet())
+    var textSearchFields by mutableStateOf(persistentSetOf(TaskTextSearchField.Id, TaskTextSearchField.Title))
+    var statusFilters by mutableStateOf<PersistentSet<TaskStatus>>(persistentSetOf())
     var dueDateFilter by mutableStateOf(DueDateFilter.Any)
     var priorityFilter by mutableStateOf(PriorityFilter.Any)
     var estimatedTimeFilter by mutableStateOf(EstimatedTimeFilter.Any)
     var recurrenceFilter by mutableStateOf(RecurrenceFilter.Any)
     var notificationsFilter by mutableStateOf(NotificationsFilter.Any)
     var autoUpdateStatusFilter by mutableStateOf(AutoUpdateStatusFilter.Any)
-    var connectionTypeFilters by mutableStateOf(emptySet<ConnectionTypeOption>())
-    var selectedTags by mutableStateOf(emptySet<String>())
+    var connectionTypeFilters by mutableStateOf<PersistentSet<ConnectionTypeOption>>(persistentSetOf())
+    var selectedTags by mutableStateOf<PersistentSet<String>>(persistentSetOf())
     var tagMatchMode by mutableStateOf(TagMatchMode.All)
 
     var customPriorityMin by mutableStateOf("")
@@ -106,15 +108,15 @@ class TaskFilterState {
 
     fun clearAll() {
         searchQuery = ""
-        statusFilters = emptySet()
+        statusFilters = persistentSetOf()
         dueDateFilter = DueDateFilter.Any
         priorityFilter = PriorityFilter.Any
         estimatedTimeFilter = EstimatedTimeFilter.Any
         recurrenceFilter = RecurrenceFilter.Any
         notificationsFilter = NotificationsFilter.Any
         autoUpdateStatusFilter = AutoUpdateStatusFilter.Any
-        connectionTypeFilters = emptySet()
-        selectedTags = emptySet()
+        connectionTypeFilters = persistentSetOf()
+        selectedTags = persistentSetOf()
         tagMatchMode = TagMatchMode.All
         customPriorityMin = ""
         customPriorityMax = ""

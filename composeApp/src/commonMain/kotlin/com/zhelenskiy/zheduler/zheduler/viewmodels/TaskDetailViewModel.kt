@@ -3,6 +3,9 @@
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
 import com.zhelenskiy.zheduler.zheduler.*
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,7 +28,7 @@ data class PersistedFormState(
     val description: String?,
     val priority: String?,
     val estimatedTime: String?,
-    val tags: Set<String>,
+    val tags: PersistentSet<String>,
     val dueDate: Instant?
 )
 
@@ -35,7 +38,7 @@ data class TaskDetailState(
     val currentSpaceIdPrefix: String? = null,
     val allSpacePrefixes: List<String> = emptyList(),
     val statusTimeline: List<StatusChange> = emptyList(),
-    val loadedTasks: Map<String, Task> = emptyMap()
+    val loadedTasks: PersistentMap<String, Task> = persistentMapOf()
 ) : MVIState
 
 sealed interface TaskDetailIntent : MVIIntent {
@@ -102,7 +105,7 @@ class TaskDetailContainer(
     private suspend fun TaskDetailPipelineContext.loadTaskById(taskId: String) {
         val task = repository.getTaskById(taskId) ?: return
         updateState {
-            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks + (taskId to task))
+            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks.put(taskId, task))
         }
     }
 }

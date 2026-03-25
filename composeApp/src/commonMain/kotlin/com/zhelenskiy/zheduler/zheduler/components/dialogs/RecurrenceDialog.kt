@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
@@ -21,24 +21,19 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.times
 import com.zhelenskiy.zheduler.zheduler.*
-import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.DayOfMonth
-import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.DaysOfWeek
-import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.NthDayOfWeekInMonth
-import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.YearlyOnDate
+import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.*
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
-import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AfterTimeout
-import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.*
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
-import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.TimeRecurrenceTrigger
-import com.zhelenskiy.zheduler.zheduler.TimeOfDay
 import com.zhelenskiy.zheduler.zheduler.components.common.TimeZoneSelector
 import com.zhelenskiy.zheduler.zheduler.components.common.icon
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.NoData
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.Success
-import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
-import kotlinx.datetime.*
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.datetime.TimeZone
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -77,7 +72,7 @@ fun TimeRecurrenceTriggerSelector(
                     is DayOfMonth -> RecurrenceTriggerType.FIXED_DAY_OF_MONTH
                     is NthDayOfWeekInMonth -> RecurrenceTriggerType.NTH_DAY_OF_WEEK
                     is YearlyOnDate -> RecurrenceTriggerType.YEARLY_ON_DATE
-                    is FixedPointPattern.NthDayOfWeekInMonths -> RecurrenceTriggerType.YEARLY_ON_NTH_DAY_OF_WEEK
+                    is NthDayOfWeekInMonths -> RecurrenceTriggerType.YEARLY_ON_NTH_DAY_OF_WEEK
                 }
             }
         )
@@ -534,7 +529,7 @@ private fun FixedDaysOfWeekConfiguration(
     val (timeOfDay, onShowTimePicker) = timeSelector(initialTimeOfDay = oldTimeTrigger?.pattern?.timeOfDay)
 
     var selectedDays by remember {
-        mutableStateOf((oldTimeTrigger?.pattern as? DaysOfWeek)?.days ?: emptySet())
+        mutableStateOf((oldTimeTrigger?.pattern as? DaysOfWeek)?.days ?: persistentSetOf())
     }
 
     var useSystemTimezone by remember { mutableStateOf(oldTimeTrigger.isUsingSystemDefaultTimezone) }
@@ -568,7 +563,7 @@ private fun FixedDaysOfWeekConfiguration(
                     FilterChip(
                         selected = day in selectedDays,
                         onClick = {
-                            selectedDays = if (day in selectedDays) selectedDays - day else selectedDays + day
+                            selectedDays = if (day in selectedDays) selectedDays.remove(day) else selectedDays.add(day)
                         },
                         label = { Text(day.name.take(3)) }
                     )
@@ -716,7 +711,7 @@ private fun YearlyOnDateConfiguration(
         mutableStateOf(
             when (val pattern = oldTimeTrigger?.pattern) {
                 is YearlyOnDate -> pattern.months
-                else -> setOf(RecurrenceMonth.JANUARY)
+                else -> persistentSetOf(RecurrenceMonth.JANUARY)
             }
         )
     }
@@ -782,7 +777,7 @@ private fun YearlyOnNthDayOfWeekConfiguration(
     var selectedOrdinal by remember {
         mutableStateOf(
             when (val pattern = oldTimeTrigger?.pattern) {
-                is FixedPointPattern.NthDayOfWeekInMonths -> pattern.ordinal
+                is NthDayOfWeekInMonths -> pattern.ordinal
                 else -> WeekOrdinal.FIRST
             }
         )
@@ -790,7 +785,7 @@ private fun YearlyOnNthDayOfWeekConfiguration(
     var selectedDayOfWeek by remember {
         mutableStateOf(
             when (val pattern = oldTimeTrigger?.pattern) {
-                is FixedPointPattern.NthDayOfWeekInMonths -> pattern.dayOfWeek
+                is NthDayOfWeekInMonths -> pattern.dayOfWeek
                 else -> RecurrenceDayOfWeek.MONDAY
             }
         )
@@ -799,8 +794,8 @@ private fun YearlyOnNthDayOfWeekConfiguration(
     var selectedMonths by remember {
         mutableStateOf(
             when (val pattern = oldTimeTrigger?.pattern) {
-                is FixedPointPattern.NthDayOfWeekInMonths -> pattern.months
-                else -> setOf(RecurrenceMonth.JANUARY)
+                is NthDayOfWeekInMonths -> pattern.months
+                else -> persistentSetOf(RecurrenceMonth.JANUARY)
             }
         )
     }
@@ -811,7 +806,7 @@ private fun YearlyOnNthDayOfWeekConfiguration(
     LaunchedEffect(selectedOrdinal, selectedDayOfWeek, selectedMonths, timeOfDay, useSystemTimezone, selectedTimezone) {
         onTriggerSelected(
             AtFixedPoints(
-                pattern = FixedPointPattern.NthDayOfWeekInMonths(
+                pattern = NthDayOfWeekInMonths(
                     ordinal = selectedOrdinal,
                     dayOfWeek = selectedDayOfWeek,
                     months = selectedMonths,
@@ -858,8 +853,8 @@ private val AtFixedPoints?.isUsingSystemDefaultTimezone: Boolean
 
 @Composable
 private fun MonthSelector(
-    selectedMonths: Set<RecurrenceMonth>,
-    onSelectedMonthsChange: (Set<RecurrenceMonth>) -> Unit
+    selectedMonths: PersistentSet<RecurrenceMonth>,
+    onSelectedMonthsChange: (PersistentSet<RecurrenceMonth>) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
@@ -887,9 +882,9 @@ private fun MonthSelector(
                             onClick = {
                                 onSelectedMonthsChange(
                                     if (month in selectedMonths && selectedMonths.size > 1) {
-                                        selectedMonths - month
+                                        selectedMonths.remove(month)
                                     } else {
-                                        selectedMonths + month
+                                        selectedMonths.add(month)
                                     }
                                 )
                             },
@@ -908,7 +903,7 @@ private fun MonthSelector(
 val allStatusDefaultValues = listOf(
     TaskStatus.Open,
     TaskStatus.InProgress,
-    TaskStatus.Blocked(emptySet()),
+    TaskStatus.Blocked(persistentSetOf()),
     TaskStatus.Done,
     TaskStatus.Declined("")
 )
@@ -1111,13 +1106,15 @@ private fun StatusChangesSelector(
                     FilterChip(
                         selected = isSelected,
                         onClick = {
-                            val currentStatuses = statusChangeChange?.requiredStatuses.orEmpty()
+                            val currentStatuses = statusChangeChange?.requiredStatuses ?: persistentSetOf()
                             onStatusChangeChange(
                                 StatusChange(
-                                    if (isSelected && statusChangeChange.requiredStatuses.size > 1) {
-                                        currentStatuses.filterNot { it::class == status::class }.toSet()
+                                    if (isSelected && currentStatuses.size > 1) {
+                                        currentStatuses.fold(currentStatuses) { acc, s ->
+                                            if (s::class == status::class) acc.remove(s) else acc
+                                        }
                                     } else if (!isSelected) {
-                                        currentStatuses + status
+                                        currentStatuses.add(status)
                                     } else {
                                         currentStatuses
                                     }

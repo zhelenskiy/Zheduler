@@ -4,6 +4,11 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 
 import androidx.lifecycle.SavedStateHandle
 import com.zhelenskiy.zheduler.zheduler.*
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +39,7 @@ data class TaskEditState(
     val filteredTags: List<String> = emptyList(),
     val filteredTasksForSelection: List<Task> = emptyList(),
     val searchedTasksForConnection: List<Task> = emptyList(),
-    val loadedTasks: Map<String, Task> = emptyMap()
+    val loadedTasks: PersistentMap<String, Task> = persistentMapOf()
 ) : MVIState
 
 sealed interface TaskEditIntent : MVIIntent {
@@ -112,7 +117,8 @@ class TaskEditContainer(
     fun getPersistedFormState(): PersistedFormState {
         val tags = savedStateHandle.get<String>(KEY_FORM_TAGS)
             ?.let { tagsJson -> runCatching { Json.decodeFromString<Set<String>>(tagsJson) }.getOrNull() }
-            ?: emptySet()
+            ?.toPersistentSet()
+            ?: persistentSetOf()
 
         val dueDate = savedStateHandle.get<Long>(KEY_FORM_DUE_DATE)?.let { epochMillis ->
             Instant.fromEpochMilliseconds(epochMillis)
@@ -133,14 +139,14 @@ class TaskEditContainer(
         description: String,
         priority: String,
         estimatedTime: String,
-        tags: Set<String>,
+        tags: PersistentSet<String>,
         dueDate: Instant?
     ) {
         savedStateHandle[KEY_FORM_TITLE] = title
         savedStateHandle[KEY_FORM_DESCRIPTION] = description
         savedStateHandle[KEY_FORM_PRIORITY] = priority
         savedStateHandle[KEY_FORM_ESTIMATED_TIME] = estimatedTime
-        savedStateHandle[KEY_FORM_TAGS] = Json.encodeToString(tags)
+        savedStateHandle[KEY_FORM_TAGS] = Json.encodeToString<Set<String>>(tags)
         savedStateHandle[KEY_FORM_DUE_DATE] = dueDate?.toEpochMilliseconds()
     }
 
@@ -156,7 +162,7 @@ class TaskEditContainer(
     private suspend fun TaskEditPipelineContext.loadTaskById(id: String) {
         val task = repository.getTaskById(id)
         if (task != null) {
-            updateState { copy(loadedTasks = loadedTasks + (id to task)) }
+            updateState { copy(loadedTasks = loadedTasks.put(id, task)) }
         }
     }
 

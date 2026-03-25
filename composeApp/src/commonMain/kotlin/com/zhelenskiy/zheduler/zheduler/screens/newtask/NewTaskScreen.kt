@@ -17,6 +17,7 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskAction
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskIntent
+import kotlinx.collections.immutable.PersistentSet
 import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.ExperimentalTime
 
@@ -130,7 +131,7 @@ fun NewTaskScreen(
 }
 
 @Composable
-private fun rememberFormStateFromData(taskToCopy: Task?, initialConnections: Set<TaskConnection>) =
+private fun rememberFormStateFromData(taskToCopy: Task?, initialConnections: PersistentSet<TaskConnection>) =
     if (taskToCopy != null) {
         rememberTaskFormState(taskToCopy).apply {
             connections = initialConnections

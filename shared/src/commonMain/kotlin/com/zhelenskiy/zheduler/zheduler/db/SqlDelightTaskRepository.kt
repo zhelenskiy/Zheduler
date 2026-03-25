@@ -6,14 +6,10 @@ import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import com.zhelenskiy.zheduler.zheduler.*
+import kotlinx.collections.immutable.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.atStartOfDayIn
-import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.*
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -178,7 +174,7 @@ class SqlDelightTaskRepository(
         val blockedTasks = getBlockedTasks()
         val neededTaskIds = collectNeededTaskIds(task, blockedTasks)
         // Batch fetch all necessary tasks in a single query
-        val tasksById = getTasksByIds(neededTaskIds).associateBy { it.id } + (task.id to task)
+        val tasksById = getTasksByIds(neededTaskIds).associateByToPersistentMap { it.id }.put(task.id, task)
         return TaskWithTotals(
             task = task,
             totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
@@ -233,8 +229,7 @@ class SqlDelightTaskRepository(
 
     private suspend fun loadTaskWithConnections(entity: Tasks): Task {
         val connections = queries.getConnectionsForTask(entity.id).awaitAsList()
-            .map { TaskConnection(it.targetTaskId, ConnectionType.valueOf(it.type)) }
-            .toSet()
+            .mapToPersistentSet { TaskConnection(it.targetTaskId, ConnectionType.valueOf(it.type)) }
 
         return Task(
             id = entity.id,
@@ -253,8 +248,8 @@ class SqlDelightTaskRepository(
         )
     }
 
-    override suspend fun getAllTags(spaceId: String): Set<String> =
-        queries.getAllTagsForSpace(spaceId).awaitAsList().toSet()
+    override suspend fun getAllTags(spaceId: String): PersistentSet<String> =
+        queries.getAllTagsForSpace(spaceId).awaitAsList().toPersistentSet()
 
     override suspend fun filterTags(spaceId: String, searchQuery: String, excludeTags: Set<String>): List<String> {
         val filteredTags = queries.filterTagsForSpace(spaceId, searchQuery).awaitAsList()
@@ -298,11 +293,11 @@ class SqlDelightTaskRepository(
         dueDate: Instant?,
         priority: Priority?,
         estimatedTime: RecurrencePeriod?,
-        tags: Set<String>,
-        connections: Set<TaskConnection>,
-        notifications: List<TaskNotification>,
+        tags: PersistentSet<String>,
+        connections: PersistentSet<TaskConnection>,
+        notifications: PersistentList<TaskNotification>,
         customId: String?,
-        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
+        recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
         if (queries.getSpaceById(spaceId).awaitAsOneOrNull() == null) return@withLock null
@@ -334,13 +329,13 @@ class SqlDelightTaskRepository(
     override suspend fun updateTask(task: Task): Task? = mutex.withLock {
         val oldTask = getByIdUnsafe(task.id) ?: return@withLock null
 
-        val removedConnections = oldTask.connections - task.connections
+        val removedConnections = oldTask.connections.removeAll(task.connections)
         removedConnections.forEach { connection ->
             queries.deleteConnection(task.id, connection.targetTaskId, connection.type.name)
             queries.deleteConnection(connection.targetTaskId, task.id, connection.type.symmetric.name)
         }
 
-        val addedConnections = task.connections - oldTask.connections
+        val addedConnections = task.connections.removeAll(oldTask.connections)
         addedConnections.forEach { connection ->
             queries.insertConnection(task.id, connection.targetTaskId, connection.type.name)
             addSymmetricConnectionUnsafe(task.id, connection)
@@ -351,7 +346,7 @@ class SqlDelightTaskRepository(
 
         syncToDatabase(finalTask)
 
-        val newTags = finalTask.tags - oldTask.tags
+        val newTags = finalTask.tags.removeAll(oldTask.tags)
         newTags.forEach { queries.insertTagForSpace(finalTask.spaceId, it) }
 
         // Update task_tags junction table
@@ -419,12 +414,12 @@ class SqlDelightTaskRepository(
         true
     }
 
-    override suspend fun getConnectionsForTaskSync(taskId: String): Set<TaskConnection>? {
+    override suspend fun getConnectionsForTaskSync(taskId: String): PersistentSet<TaskConnection>? {
         val connections = queries.getConnectionsForTask(taskId).awaitAsList()
         return if (connections.isEmpty() && queries.getTaskById(taskId).awaitAsOneOrNull() == null) {
             null
         } else {
-            connections.map { TaskConnection(it.targetTaskId, ConnectionType.valueOf(it.type)) }.toSet()
+            connections.mapToPersistentSet { TaskConnection(it.targetTaskId, ConnectionType.valueOf(it.type)) }
         }
     }
 
@@ -534,7 +529,7 @@ class SqlDelightTaskRepository(
         val custom = queries.getAllCustomViewModes(spaceId).awaitAsList().map { row ->
             row.configJson.toViewMode(spaceId, row.id, row.name)
         }
-        return builtIn + custom
+        return builtIn.toPersistentList().addAll(custom)
     }
 
     override suspend fun getViewModeById(spaceId: String, viewModeId: String): ViewMode? {
@@ -655,7 +650,7 @@ class SqlDelightTaskRepository(
                     priority = task.priority,
                     estimatedTime = task.estimatedTime,
                     tags = task.tags,
-                    connections = emptySet(),
+                    connections = persistentSetOf(),
                     notifications = task.notifications,
                     customId = newTaskId,
                     recurrenceRules = task.recurrenceRules,
@@ -697,11 +692,11 @@ class SqlDelightTaskRepository(
         dueDate: Instant?,
         priority: Priority?,
         estimatedTime: RecurrencePeriod?,
-        tags: Set<String>,
-        connections: Set<TaskConnection>,
-        notifications: List<TaskNotification>,
+        tags: PersistentSet<String>,
+        connections: PersistentSet<TaskConnection>,
+        notifications: PersistentList<TaskNotification>,
         customId: String?,
-        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
+        recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
@@ -930,7 +925,7 @@ class SqlDelightTaskRepository(
         spaceId: String,
         viewMode: ViewMode,
         levelIndex: Int,
-        parentFilters: List<GroupFilter>,
+        parentFilters: PersistentList<GroupFilter>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskGroupInfo> = mutex.withLock {
         if (levelIndex >= viewMode.groupingLevels.size) {
@@ -958,7 +953,7 @@ class SqlDelightTaskRepository(
     private suspend fun getTaskGroupsFromSqlFiltered(
         spaceId: String,
         level: GroupingLevel,
-        parentFilters: List<GroupFilter>,
+        parentFilters: PersistentList<GroupFilter>,
         filterParams: FilterParams
     ): List<TaskGroupInfo> {
         val result = mutableListOf<TaskGroupInfo>()
@@ -966,7 +961,7 @@ class SqlDelightTaskRepository(
         // For each group definition, count matching tasks using SQL
         for (group in level.groups) {
             val groupFilter = group.toFilter(level.field)
-            val combinedFilters = parentFilters + groupFilter
+            val combinedFilters = parentFilters.add(groupFilter)
 
             // Get tasks matching all filters
             val tasks = getTasksWithSqlFilters(spaceId, combinedFilters, filterParams)
@@ -987,7 +982,7 @@ class SqlDelightTaskRepository(
         // Count uncategorized tasks using SQL with Not filter
         // This avoids in-memory filtering by using the existing Not filter support
         if (level.groups.isNotEmpty()) {
-            val allGroupFilters = level.groups.map { it.toFilter(level.field) }
+            val allGroupFilters = level.groups.mapToPersistentList { it.toFilter(level.field) }
             val uncategorizedFilter = GroupFilter.Not(
                 field = level.field,
                 filters = allGroupFilters
@@ -996,7 +991,7 @@ class SqlDelightTaskRepository(
             // Get uncategorized tasks via SQL (Not filter is handled in getTasksWithSqlFilters)
             val uncategorizedTasks = getTasksWithSqlFilters(
                 spaceId,
-                parentFilters + uncategorizedFilter,
+                parentFilters.add(uncategorizedFilter),
                 filterParams
             )
 
@@ -1167,7 +1162,7 @@ class SqlDelightTaskRepository(
     private suspend fun getTaskGroupsWithInMemoryProcessing(
         spaceId: String,
         level: GroupingLevel,
-        parentFilters: List<GroupFilter>,
+        parentFilters: PersistentList<GroupFilter>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskGroupInfo> {
         // Get all tasks with totals filtered by criteria
@@ -1206,7 +1201,7 @@ class SqlDelightTaskRepository(
         // Add uncategorized group
         val uncategorizedTasks = filteredTasks.filter { it.task.id !in matchedTaskIds }
         if (uncategorizedTasks.isNotEmpty()) {
-            val allGroupFilters = level.groups.map { it.toFilter(level.field) }
+            val allGroupFilters = level.groups.mapToPersistentList { it.toFilter(level.field) }
             val uncategorizedFilter = GroupFilter.Not(
                 field = level.field,
                 filters = allGroupFilters
@@ -1231,8 +1226,8 @@ class SqlDelightTaskRepository(
      */
     override suspend fun getTasksForGroup(
         spaceId: String,
-        filters: List<GroupFilter>,
-        orderingRules: List<OrderingRule>,
+        filters: PersistentList<GroupFilter>,
+        orderingRules: PersistentList<OrderingRule>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskWithTotals> = mutex.withLock {
         val filterParams = buildFilterParams(filterCriteria)
@@ -1296,7 +1291,7 @@ class SqlDelightTaskRepository(
         val requireParentOf: Long = 0,
         val requireNotSubtask: Long = 0,
         // Selected tags from TaskFilterCriteria (handled via separate query)
-        val selectedTags: Set<String> = emptySet(),
+        val selectedTags: PersistentSet<String> = persistentSetOf(),
         val tagMatchMode: TagMatchMode = TagMatchMode.Any
     )
 
@@ -1324,9 +1319,9 @@ class SqlDelightTaskRepository(
         val groupStatusDone: Long = 0,
         val groupStatusDeclined: Long = 0,
         // For HasTags filter - task IDs that match tags (computed externally)
-        val tagFilterTaskIds: Set<String>? = null,
+        val tagFilterTaskIds: PersistentSet<String>? = null,
         // For Not filter - task IDs to exclude (computed externally)
-        val excludeTaskIds: Set<String>? = null
+        val excludeTaskIds: PersistentSet<String>? = null
     )
 
     /**
@@ -1408,11 +1403,11 @@ class SqlDelightTaskRepository(
             }
             is GroupFilter.HasTags -> {
                 // For HasTags, we need to query task IDs separately
-                GroupFilterParams(tagFilterTaskIds = emptySet()) // Will be filled in later
+                GroupFilterParams(tagFilterTaskIds = persistentSetOf()) // Will be filled in later
             }
             is GroupFilter.Not -> {
                 // For Not filter, we need to compute excluded task IDs
-                GroupFilterParams(excludeTaskIds = emptySet()) // Will be filled in later
+                GroupFilterParams(excludeTaskIds = persistentSetOf()) // Will be filled in later
             }
         }
     }
@@ -1454,7 +1449,7 @@ class SqlDelightTaskRepository(
                     else -> result.tagFilterTaskIds
                 },
                 excludeTaskIds = when {
-                    p.excludeTaskIds != null && result.excludeTaskIds != null -> p.excludeTaskIds + result.excludeTaskIds
+                    p.excludeTaskIds != null && result.excludeTaskIds != null -> p.excludeTaskIds.addAll(result.excludeTaskIds)
                     p.excludeTaskIds != null -> p.excludeTaskIds
                     else -> result.excludeTaskIds
                 }

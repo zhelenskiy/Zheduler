@@ -38,6 +38,7 @@ kotlin {
             api(libs.kotlinx.datetime)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.sqldelight.runtime)
+            api(libs.kotlinx.collections.immutable)
         }
 
         commonTest.dependencies {

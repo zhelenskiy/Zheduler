@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.*
 import kotlin.time.Clock
 
@@ -94,7 +96,7 @@ class TaskModelsTest {
 
     @Test
     fun `TaskStatus Blocked displayName`() {
-        assertEquals("Blocked", TaskStatus.Blocked(emptySet()).displayName)
+        assertEquals("Blocked", TaskStatus.Blocked(persistentSetOf()).displayName)
     }
 
     @Test
@@ -114,20 +116,20 @@ class TaskModelsTest {
 
     @Test
     fun `TaskStatus Blocked stores blocker IDs`() {
-        val blockerIds = setOf("TASK-1", "TASK-2", "TASK-3")
+        val blockerIds = persistentSetOf("TASK-1", "TASK-2", "TASK-3")
         val blocked = TaskStatus.Blocked(blockerIds)
         assertEquals(blockerIds, blocked.blockerTaskIds)
     }
 
     @Test
     fun `TaskStatus Blocked with empty set is valid`() {
-        val blocked = TaskStatus.Blocked(emptySet())
+        val blocked = TaskStatus.Blocked(persistentSetOf())
         assertTrue(blocked.blockerTaskIds.isEmpty())
     }
 
     @Test
     fun `TaskStatus Blocked with comment`() {
-        val blocked = TaskStatus.Blocked(setOf("TASK-1"), "Waiting for approval")
+        val blocked = TaskStatus.Blocked(persistentSetOf("TASK-1"), "Waiting for approval")
         assertEquals("Waiting for approval", blocked.comment)
     }
 
@@ -292,7 +294,7 @@ class TaskModelsTest {
                 ),
                 statusChangeTrigger = null,
                 resetToStatus = TaskStatus.Open,
-            ).to(RecurrenceState()).let(::listOf)
+            ).to(RecurrenceState()).let { persistentListOf(it) }
         )
         assertTrue(task.isRecurring)
     }

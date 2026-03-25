@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentSetOf
+
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -130,7 +132,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.InProgress))
         assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
 
-        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf())))
         assertIs<TaskStatus.Blocked>(repo.getTaskById(parent.id)!!.status)
 
         repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Open))
@@ -209,7 +211,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocker = repo.addTask(spaceId, title = "Blocker")!!
 
         // Set blocked status
-        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
         assertIs<TaskStatus.Blocked>(repo.getTaskById(blocked.id)!!.status)
 
         // Complete blocker
@@ -228,7 +230,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Done))
 
         // Then set blocked status (should immediately unblock)
-        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
 
         // Should be unblocked immediately since blocker is already done
         assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
@@ -244,7 +246,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
-            status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id, blocker3.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker1.id, blocker2.id, blocker3.id))
         )!!
 
         // Complete in non-sequential order
@@ -268,7 +270,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
-            status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id, blocker3.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker1.id, blocker2.id, blocker3.id))
         )!!
 
         // Initial state: all open, task blocked
@@ -314,7 +316,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
 
         // Complete blocker - unblocks the task
@@ -322,7 +324,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
 
         // Manually revert blocked task back to blocked state
-        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(blocked.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
 
         // Since blocker is still Done, updateStatus checks and immediately sets to InProgress
         assertEquals(TaskStatus.InProgress, repo.getTaskById(blocked.id)!!.status)
@@ -343,12 +345,12 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
         // Parent should be blocked because subtask is blocked
-        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
         assertIs<TaskStatus.Blocked>(repo.getTaskById(parent.id)!!.status)
 
         // Complete blocker - subtask unblocks, parent should auto-update
@@ -470,7 +472,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
-            status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker1.id, blocker2.id))
         )!!
 
         // Delete one blocker (connections should be cleaned up)
@@ -522,7 +524,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
 
         // Verify blocked
@@ -686,7 +688,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked",
-            status = TaskStatus.Blocked(setOf("NON-EXISTENT-1", "NON-EXISTENT-2"))
+            status = TaskStatus.Blocked(persistentSetOf("NON-EXISTENT-1", "NON-EXISTENT-2"))
         )!!
 
         // Non-existent blockers are treated as if they don't block (or system should handle gracefully)
@@ -840,14 +842,14 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val taskA = repo.addTask(
             spaceId,
             title = "Task A",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
 
         // Create taskB that is blocked by taskA
         val taskB = repo.addTask(
             spaceId,
             title = "Task B",
-            status = TaskStatus.Blocked(setOf(taskA.id))
+            status = TaskStatus.Blocked(persistentSetOf(taskA.id))
         )!!
 
         // Complete blocker - taskA should unblock
@@ -880,7 +882,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
@@ -892,7 +894,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val dependent = repo.addTask(
             spaceId,
             title = "Dependent",
-            status = TaskStatus.Blocked(setOf(parent.id))
+            status = TaskStatus.Blocked(persistentSetOf(parent.id))
         )!!
 
         // Complete blocker - subtask should unblock
@@ -931,7 +933,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
@@ -942,7 +944,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val dependent = repo.addTask(
             spaceId,
             title = "Dependent",
-            status = TaskStatus.Blocked(setOf(parent.id))
+            status = TaskStatus.Blocked(persistentSetOf(parent.id))
         )!!
 
         // Delete blocker - subtask should unblock immediately
@@ -981,7 +983,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
         repo.addConnection(subtask.id, parent.id, ConnectionType.SubtaskOf)
 
@@ -992,7 +994,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val dependent = repo.addTask(
             spaceId,
             title = "Dependent",
-            status = TaskStatus.Blocked(setOf(parent.id))
+            status = TaskStatus.Blocked(persistentSetOf(parent.id))
         )!!
 
         // Disable auto-status on parent
@@ -1062,7 +1064,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         // Update subtask to Done - parent should auto-update to Done
@@ -1107,7 +1109,7 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
             spaceId,
             title = "Subtask",
             status = TaskStatus.Done,
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         // Parent should still be Open (auto-update disabled)
@@ -1135,10 +1137,10 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
 
         val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
         val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
-        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker1.id)))!!
+        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(persistentSetOf(blocker1.id)))!!
 
         // Change blocker IDs via updateStatus
-        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker2.id))))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2, "Should have at least initial Blocked and updated Blocked")
@@ -1155,11 +1157,11 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
         val task = repo.addTask(
             spaceId,
             title = "Task",
-            status = TaskStatus.Blocked(setOf(blocker.id), "Original comment")
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id), "Original comment")
         )!!
 
         // Change comment via update
-        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Updated comment")))
+        repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id), "Updated comment")))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2, "Should have at least initial Blocked and updated Blocked")
@@ -1190,11 +1192,11 @@ abstract class TaskAutomationRepositoryTest: AbstractRepositoryTest {
 
         val blocker1 = repo.addTask(spaceId, title = "Blocker 1")!!
         val blocker2 = repo.addTask(spaceId, title = "Blocker 2")!!
-        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(setOf(blocker1.id)))!!
+        val task = repo.addTask(spaceId, title = "Task", status = TaskStatus.Blocked(persistentSetOf(blocker1.id)))!!
 
         // Change blocker IDs via update() (not updateStatus)
         val updated = repo.getTaskById(task.id)!!
-        repo.updateTask(updated.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
+        repo.updateTask(updated.copy(status = TaskStatus.Blocked(persistentSetOf(blocker2.id))))
 
         val timeline = repo.getStatusTimeline(task.id)
         assertTrue(timeline.size >= 2, "Should have at least initial Blocked and updated Blocked")

@@ -2,6 +2,9 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
+
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Done
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Open
 import kotlinx.coroutines.test.runTest
@@ -139,7 +142,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val startFrom = instant(2024, 1, 15, 0, 0) // Monday at midnight
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
-                days = setOf(RecurrenceDayOfWeek.MONDAY),
+                days = persistentSetOf(RecurrenceDayOfWeek.MONDAY),
                 timeOfDay = TimeOfDay(10, 0)
             ),
             startFrom = startFrom,
@@ -161,7 +164,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val startFrom = instant(2024, 1, 15, 12, 0) // Monday noon
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
-                days = setOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY),
+                days = persistentSetOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY),
                 timeOfDay = TimeOfDay(9, 0)
             ),
             startFrom = startFrom
@@ -286,7 +289,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val startFrom = instant(2024, 1, 1, 0, 0)
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = setOf(RecurrenceMonth.MARCH),
+                months = persistentSetOf(RecurrenceMonth.MARCH),
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
@@ -307,7 +310,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val startFrom = instant(2024, 6, 1, 0, 0)
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = setOf(RecurrenceMonth.MARCH),
+                months = persistentSetOf(RecurrenceMonth.MARCH),
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
@@ -339,7 +342,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         )
         
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(rule to currentState),
+            rules = persistentListOf(rule to currentState),
             triggerEvent = RecurrenceTriggerEvent(Open, instant(2024, 1, 17, 9, 0)),
         )
 
@@ -361,7 +364,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     fun testDisplayStringDaysOfWeek() {
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
-                days = setOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY)
+                days = persistentSetOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY)
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
         ).toRule()
@@ -380,14 +383,14 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             title = "Recurring task",
             status = Done,
             dueDate = originalDueDate,
-            recurrenceRules = RecurrenceRule(
+            recurrenceRules = persistentListOf(RecurrenceRule(
                 timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
                     period = RecurrencePeriod.ofWeeks(1),
                     firstOccurrence = originalDueDate,
                 ),
-                statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(Done)),
+                statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = persistentSetOf(Done)),
                 resetToStatus = Open,
-            ).to(RecurrenceState()).let(::listOf)
+            ).to(RecurrenceState()))
         )!!
 
         val updated = repo.processRecurrenceTrigger(
@@ -409,7 +412,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofWeeks(1),
                 firstOccurrence = originalDueDate,
             ),
-            statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(Done)),
+            statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = persistentSetOf(Done)),
             resetToStatus = Open,
             termination = RecurrenceTermination.afterOccurrences(1)
         ).to(RecurrenceState())
@@ -418,10 +421,10 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             title = "Recurring task",
             status = Done,
             dueDate = originalDueDate,
-            recurrenceRules = rules.let(::listOf)
+            recurrenceRules = persistentListOf(rules)
         )!!
         // Manually set occurrence count to simulate that the task has already occurred once
-        task = repo.updateTask(task.copy(recurrenceRules = rules.let(::listOf)))!!
+        task = repo.updateTask(task.copy(recurrenceRules = rules.let { persistentListOf(it) }))!!
 
         val updated = repo.processRecurrenceTrigger(
             task.id,
@@ -454,7 +457,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             recurrenceRules = RecurrenceTrigger.AfterTimeout(
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
-            ).toRule().to(RecurrenceState()).let(::listOf)
+            ).toRule().to(RecurrenceState()).let { persistentListOf(it) }
         )
         assertTrue(recurringTask.isRecurring)
     }

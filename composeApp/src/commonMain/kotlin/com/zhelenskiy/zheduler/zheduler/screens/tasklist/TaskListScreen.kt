@@ -47,6 +47,11 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListIntent
 import pro.respawn.flowmvi.compose.dsl.subscribe
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.time.ExperimentalTime
 
 private data class TaskListUiData(
@@ -289,7 +294,7 @@ private data class LoadedGroupData(
     val groupInfo: TaskGroupInfo,
     val groupKey: String,
     val level: Int,
-    val parentFilters: List<GroupFilter>
+    val parentFilters: PersistentList<GroupFilter>
 )
 
 /**
@@ -311,25 +316,25 @@ private fun DynamicTaskList(
     filterCriteria: TaskFilterCriteria,
     hasAnyFilteredTasks: Boolean,
     shouldAnimate: Boolean,
-    onGetTaskGroups: suspend (ViewMode, Int, List<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
-    onGetTasksForGroup: suspend (List<GroupFilter>, List<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
+    onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
+    onGetTasksForGroup: suspend (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
 ) {
     // Track collapsed state for each group by its key (survives configuration changes)
-    var collapsedGroupsSet by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    var collapsedGroupsSet by rememberSaveable { mutableStateOf(persistentSetOf<String>()) }
     // Track expanded state for uncategorized groups (collapsed by default)
-    var expandedUncategorizedSet by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    var expandedUncategorizedSet by rememberSaveable { mutableStateOf(persistentSetOf<String>()) }
 
     // Cache for loaded groups at each level, keyed by parentKey
-    var loadedGroups by remember { mutableStateOf<Map<String, List<LoadedGroupData>>>(emptyMap()) }
+    var loadedGroups by remember { mutableStateOf<PersistentMap<String, List<LoadedGroupData>>>(persistentMapOf()) }
     // Cache for loaded tasks, keyed by groupKey
-    var loadedTasks by remember { mutableStateOf<Map<String, LoadedTasksData>>(emptyMap()) }
+    var loadedTasks by remember { mutableStateOf<PersistentMap<String, LoadedTasksData>>(persistentMapOf()) }
 
     // Helper function to load a group's children
     suspend fun loadGroupChildren(groupData: LoadedGroupData): Pair<String, Any> {
-        val newFilters = groupData.parentFilters + listOfNotNull(groupData.groupInfo.filter)
+        val newFilters = groupData.groupInfo.filter?.let { groupData.parentFilters.add(it) } ?: groupData.parentFilters
         val nextLevelIndex = groupData.level + 1
 
         return if (nextLevelIndex < viewMode.groupingLevels.size) {
@@ -355,14 +360,14 @@ private fun DynamicTaskList(
     LaunchedEffect(viewMode, filterCriteria) {
         if (viewMode.groupingLevels.isNotEmpty()) {
             // Load root level
-            val groups = onGetTaskGroups(viewMode, 0, emptyList(), filterCriteria)
+            val groups = onGetTaskGroups(viewMode, 0, persistentListOf(), filterCriteria)
             val rootGroups = groups.map { groupInfo ->
                 val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
                 LoadedGroupData(
                     groupInfo = groupInfo,
                     groupKey = displayLabel,
                     level = 0,
-                    parentFilters = emptyList()
+                    parentFilters = persistentListOf()
                 )
             }
 
@@ -370,9 +375,9 @@ private fun DynamicTaskList(
             val previouslyExpandedGroupKeys = loadedGroups.keys.filter { it.isNotEmpty() }.toSet()
             val previouslyLoadedTaskKeys = loadedTasks.keys.filter { it.isNotEmpty() }.toSet()
 
-            // Start with root groups
-            val newLoadedGroups = mutableMapOf("" to rootGroups)
-            val newLoadedTasks = mutableMapOf<String, LoadedTasksData>()
+            // Start with root groups and use builders
+            val newLoadedGroupsBuilder = persistentMapOf("" to rootGroups).builder()
+            val newLoadedTasksBuilder = persistentMapOf<String, LoadedTasksData>().builder()
 
             // BFS to reload expanded groups in order
             val groupsToProcess = ArrayDeque(rootGroups)
@@ -387,23 +392,23 @@ private fun DynamicTaskList(
                         is List<*> -> {
                             @Suppress("UNCHECKED_CAST")
                             val subgroups = value as List<LoadedGroupData>
-                            newLoadedGroups[result.first] = subgroups
+                            newLoadedGroupsBuilder[result.first] = subgroups
                             groupsToProcess.addAll(subgroups)
                         }
                         is LoadedTasksData -> {
-                            newLoadedTasks[result.first] = value
+                            newLoadedTasksBuilder[result.first] = value
                         }
                     }
                 }
             }
 
-            loadedGroups = newLoadedGroups
-            loadedTasks = newLoadedTasks
+            loadedGroups = newLoadedGroupsBuilder.build()
+            loadedTasks = newLoadedTasksBuilder.build()
         } else {
             // No grouping levels - load all tasks directly
-            val tasks = onGetTasksForGroup(emptyList(), viewMode.defaultOrderingRules, filterCriteria)
-            loadedTasks = mapOf("" to LoadedTasksData(tasks, "", 0))
-            loadedGroups = emptyMap()
+            val tasks = onGetTasksForGroup(persistentListOf(), viewMode.defaultOrderingRules, filterCriteria)
+            loadedTasks = persistentMapOf("" to LoadedTasksData(tasks, "", 0))
+            loadedGroups = persistentMapOf()
         }
     }
 
@@ -413,10 +418,10 @@ private fun DynamicTaskList(
         when (val value = result.second) {
             is List<*> -> {
                 @Suppress("UNCHECKED_CAST")
-                loadedGroups = loadedGroups + (result.first to (value as List<LoadedGroupData>))
+                loadedGroups = loadedGroups.put(result.first, value as List<LoadedGroupData>)
             }
             is LoadedTasksData -> {
-                loadedTasks = loadedTasks + (result.first to value)
+                loadedTasks = loadedTasks.put(result.first, value)
             }
         }
     }
@@ -464,16 +469,16 @@ private fun DynamicTaskList(
                     expandedUncategorized = expandedUncategorizedSet,
                     onToggleCollapse = { key ->
                         collapsedGroupsSet = if (key in collapsedGroupsSet) {
-                            collapsedGroupsSet - key
+                            collapsedGroupsSet.remove(key)
                         } else {
-                            collapsedGroupsSet + key
+                            collapsedGroupsSet.add(key)
                         }
                     },
                     onToggleUncategorized = { key ->
                         expandedUncategorizedSet = if (key in expandedUncategorizedSet) {
-                            expandedUncategorizedSet - key
+                            expandedUncategorizedSet.remove(key)
                         } else {
-                            expandedUncategorizedSet + key
+                            expandedUncategorizedSet.add(key)
                         }
                     },
                     onRequestLoad = loadSubgroups,
@@ -644,8 +649,8 @@ private fun TaskListContent(
     onToggleFilterPanel: () -> Unit,
     onSaveFilter: () -> Unit,
     shouldAnimate: Boolean,
-    onGetTaskGroups: suspend (ViewMode, Int, List<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
-    onGetTasksForGroup: suspend (List<GroupFilter>, List<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
+    onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
+    onGetTasksForGroup: suspend (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,

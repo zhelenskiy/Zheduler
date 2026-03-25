@@ -4,6 +4,9 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId as generateIdImpl
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,7 +24,7 @@ data class TaskListState(
     val hasAnyTasks: Boolean = false,
     val currentSpace: Space? = null,
     val allTags: Set<String>? = null, // null = not loaded yet
-    val filteredTasks: Map<TaskFilterCriteria, List<TaskWithTotals>> = emptyMap(),
+    val filteredTasks: PersistentMap<TaskFilterCriteria, List<TaskWithTotals>> = persistentMapOf(),
     val viewModes: List<ViewMode> = emptyList(),
     val activeViewMode: ViewMode? = null,
     val filterState: TaskFilterCriteria? = null,
@@ -112,7 +115,7 @@ class TaskListContainer(
     private suspend fun TaskListPipelineContext.getFilteredTasks(criteria: TaskFilterCriteria) {
         val filtered = repository.getAllWithTotalsFiltered(spaceId, criteria)
         updateState {
-            copy(filteredTasks = filteredTasks + (criteria to filtered))
+            copy(filteredTasks = filteredTasks.put(criteria, filtered))
         }
     }
 
@@ -168,13 +171,13 @@ class TaskListContainer(
     suspend fun getTaskGroups(
         viewMode: ViewMode,
         levelIndex: Int,
-        parentFilters: List<GroupFilter>,
+        parentFilters: PersistentList<GroupFilter>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskGroupInfo> = repository.getTaskGroups(spaceId, viewMode, levelIndex, parentFilters, filterCriteria)
 
     suspend fun getTasksForGroup(
-        filters: List<GroupFilter>,
-        orderingRules: List<OrderingRule>,
+        filters: PersistentList<GroupFilter>,
+        orderingRules: PersistentList<OrderingRule>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskWithTotals> = repository.getTasksForGroup(spaceId, filters, orderingRules, filterCriteria)
 }

@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import kotlin.time.Clock
@@ -222,7 +224,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             space2.id,
             title = "Blocked Task",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
 
         // Verify the task is blocked
@@ -257,7 +259,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val blockedTask = repo.addTask(
             space3.id,
             title = "Blocked Task",
-            status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker1.id, blocker2.id))
         )!!
 
         // Delete space 1 (contains blocker1)
@@ -426,9 +428,9 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `getAllTags returns all unique tags across tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Task 1", tags = setOf("tag1", "tag2"))
-        repo.addTask(spaceId, title = "Task 2", tags = setOf("tag2", "tag3"))
-        repo.addTask(spaceId, title = "Task 3", tags = setOf("tag1", "tag3", "tag4"))
+        repo.addTask(spaceId, title = "Task 1", tags = persistentSetOf("tag1", "tag2"))
+        repo.addTask(spaceId, title = "Task 2", tags = persistentSetOf("tag2", "tag3"))
+        repo.addTask(spaceId, title = "Task 3", tags = persistentSetOf("tag1", "tag3", "tag4"))
 
         val allTags = repo.getAllTags(spaceId)
         assertEquals(setOf("tag1", "tag2", "tag3", "tag4"), allTags)
@@ -516,7 +518,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         repo.addTag(spaceId, "predefinedTag")
 
-        val task = repo.addTask(spaceId, title = "Task", tags = setOf("predefinedTag", "newTag"))!!
+        val task = repo.addTask(spaceId, title = "Task", tags = persistentSetOf("predefinedTag", "newTag"))!!
         assertEquals(setOf("predefinedTag", "newTag"), task.tags)
         assertEquals(setOf("predefinedTag", "newTag"), repo.getAllTags(spaceId))
     }
@@ -524,7 +526,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `deleteTag does not remove tag from existing tasks`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.addTask(spaceId, title = "Task", tags = setOf("tag1", "tag2"))!!
+        val task = repo.addTask(spaceId, title = "Task", tags = persistentSetOf("tag1", "tag2"))!!
 
         repo.deleteTag(spaceId, "tag1")
 
@@ -868,7 +870,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
-            status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker1.id, blocker2.id))
         )!!
 
         repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Done))
@@ -887,7 +889,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
-            status = TaskStatus.Blocked(setOf(blocker.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker.id))
         )!!
 
         repo.updateTask(repo.getTaskById(blocker.id)!!.copy(status = TaskStatus.Declined("Not needed")))
@@ -902,7 +904,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val blocked = repo.addTask(
             spaceId,
             title = "Blocked Task",
-            status = TaskStatus.Blocked(setOf(blocker1.id, blocker2.id))
+            status = TaskStatus.Blocked(persistentSetOf(blocker1.id, blocker2.id))
         )!!
 
         repo.updateTask(repo.getTaskById(blocker1.id)!!.copy(status = TaskStatus.Done))
@@ -980,7 +982,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val sharedBlocked = repo.addTask(
             spaceId,
             title = "Shared Blocked",
-            status = TaskStatus.Blocked(setOf(dep1.id, dep2.id)),
+            status = TaskStatus.Blocked(persistentSetOf(dep1.id, dep2.id)),
             dueDate = now + 2.days
         )!!
 
@@ -1022,7 +1024,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         val sharedBlocked = repo.addTask(
             spaceId,
             title = "Shared Blocked",
-            status = TaskStatus.Blocked(setOf(dep1.id, dep2.id)),
+            status = TaskStatus.Blocked(persistentSetOf(dep1.id, dep2.id)),
             priority = Priority.HIGH
         )!!
 
@@ -1118,7 +1120,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `exportSpaceToJson and importSpaceFromJson roundtrip`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task1 = repo.addTask(spaceId, title = "Task 1", tags = setOf("tag1"))!!
+        val task1 = repo.addTask(spaceId, title = "Task 1", tags = persistentSetOf("tag1"))!!
         val task2 = repo.addTask(spaceId, title = "Task 2", priority = Priority.HIGH)!!
         repo.addConnection(task1.id, task2.id, ConnectionType.DependsOn)
 
@@ -1288,11 +1290,11 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
             name = "New Mode",
             spaceId = spaceId,
             isBuiltIn = false,
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Active", setOf("Open", "InProgress"))
+                    groups = persistentListOf(
+                        GroupDefinition("Active", persistentSetOf("Open", "InProgress"))
                     )
                 )
             )

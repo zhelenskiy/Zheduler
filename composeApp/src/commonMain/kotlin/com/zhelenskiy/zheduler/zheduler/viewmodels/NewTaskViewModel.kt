@@ -3,6 +3,11 @@
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
 import com.zhelenskiy.zheduler.zheduler.*
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,12 +27,12 @@ data class NewTaskState(
     val nextId: String? = null,
     val currentSpaceIdPrefix: String? = null,
     val allSpacePrefixes: List<String> = emptyList(),
-    val initialConnections: Set<TaskConnection> = emptySet(),
+    val initialConnections: PersistentSet<TaskConnection> = persistentSetOf(),
     // Search results for form components
     val filteredTags: List<String> = emptyList(),
     val filteredTasksForSelection: List<Task> = emptyList(),
     val searchedTasksForConnection: List<Task> = emptyList(),
-    val loadedTasks: Map<String, Task> = emptyMap()
+    val loadedTasks: PersistentMap<String, Task> = persistentMapOf()
 ) : MVIState
 
 sealed interface NewTaskIntent : MVIIntent {
@@ -39,10 +44,10 @@ sealed interface NewTaskIntent : MVIIntent {
         val dueDate: kotlin.time.Instant?,
         val priority: Priority?,
         val estimatedTime: RecurrencePeriod?,
-        val tags: Set<String>,
-        val connections: Set<TaskConnection>,
-        val notifications: List<TaskNotification>,
-        val recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
+        val tags: PersistentSet<String>,
+        val connections: PersistentSet<TaskConnection>,
+        val notifications: PersistentList<TaskNotification>,
+        val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
         val autoUpdateStatusFromSubtasks: Boolean
     ) : NewTaskIntent
 
@@ -100,7 +105,7 @@ class NewTaskContainer(
         val nextId = repository.peekNextId(spaceId)
         val currentSpaceIdPrefix = repository.getSpaceById(spaceId)?.idPrefix
         val allSpacePrefixes = repository.getAllSpacePrefixes()
-        val initialConnections = prefilledConnection?.let { setOf(it) } ?: emptySet()
+        val initialConnections = prefilledConnection?.let { persistentSetOf(it) } ?: persistentSetOf()
 
         updateState {
             copy(
@@ -137,7 +142,7 @@ class NewTaskContainer(
     private suspend fun NewTaskPipelineContext.loadTask(taskId: String) {
         val task = repository.getTaskById(taskId)
         if (task != null) {
-            updateState { copy(loadedTasks = loadedTasks + (taskId to task)) }
+            updateState { copy(loadedTasks = loadedTasks.put(taskId, task)) }
         }
     }
 

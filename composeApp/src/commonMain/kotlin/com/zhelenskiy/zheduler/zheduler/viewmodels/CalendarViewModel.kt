@@ -3,6 +3,8 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,7 +21,7 @@ data class CalendarState(
     val currentYear: Int = 0,
     val currentMonth: Int = 0,
     val statusChangesByDate: Map<LocalDate, List<StatusChangeEvent>> = emptyMap(),
-    val loadedTasks: Map<String, Task> = emptyMap()
+    val loadedTasks: PersistentMap<String, Task> = persistentMapOf()
 ) : MVIState
 
 sealed interface CalendarIntent : MVIIntent {
@@ -57,7 +59,7 @@ class CalendarContainer(
     private suspend fun CalendarPipelineContext.loadTask(taskId: String) {
         val task = repository.getTaskById(taskId) ?: return
         updateState {
-            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks + (taskId to task))
+            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks.put(taskId, task))
         }
     }
 

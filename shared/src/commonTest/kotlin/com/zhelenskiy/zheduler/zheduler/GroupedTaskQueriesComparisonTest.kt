@@ -2,11 +2,13 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
-import kotlin.time.Duration.Companion.hours
 
 /**
  * Tests that compare the behavior of InMemory and SQL-based implementations
@@ -34,8 +36,8 @@ class GroupedTaskQueriesComparisonTest {
 
         /** Create a view mode (uses inMemorySpaceId but that's just for the data class) */
         fun viewMode(
-            groupingLevels: List<GroupingLevel>,
-            defaultOrderingRules: List<OrderingRule> = emptyList()
+            groupingLevels: PersistentList<GroupingLevel>,
+            defaultOrderingRules: PersistentList<OrderingRule> = persistentListOf()
         ) = ViewMode(
             id = "test",
             name = "Test",
@@ -48,7 +50,7 @@ class GroupedTaskQueriesComparisonTest {
         suspend fun compareGroups(
             viewMode: ViewMode,
             levelIndex: Int = 0,
-            parentFilters: List<GroupFilter> = emptyList(),
+            parentFilters: PersistentList<GroupFilter> = persistentListOf(),
             filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
         ) {
             val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, viewMode, levelIndex, parentFilters, filterCriteria)
@@ -65,8 +67,8 @@ class GroupedTaskQueriesComparisonTest {
 
         /** Compare getTasksForGroup results between both implementations */
         suspend fun compareTasks(
-            filters: List<GroupFilter>,
-            orderingRules: List<OrderingRule> = emptyList(),
+            filters: PersistentList<GroupFilter>,
+            orderingRules: PersistentList<OrderingRule> = persistentListOf(),
             filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
         ): Pair<List<TaskWithTotals>, List<TaskWithTotals>> {
             val inMemoryTasks = inMemoryRepo.getTasksForGroup(inMemorySpaceId, filters, orderingRules, filterCriteria)
@@ -123,16 +125,16 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Open task 2", status = TaskStatus.Open)
                 addTask(spaceId, title = "In Progress task", status = TaskStatus.InProgress)
                 addTask(spaceId, title = "Done task", status = TaskStatus.Done)
-                addTask(spaceId, title = "Blocked task", status = TaskStatus.Blocked(emptySet()))
+                addTask(spaceId, title = "Blocked task", status = TaskStatus.Blocked(persistentSetOf()))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("In Progress", setOf("InProgress")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("In Progress", persistentSetOf("InProgress")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 )
             ))
@@ -151,14 +153,14 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "No priority", priority = null)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100),
-                        GroupDefinition("Medium", emptySet(), priorityMin = 40, priorityMax = 74),
-                        GroupDefinition("Low", emptySet(), priorityMin = 1, priorityMax = 39),
-                        GroupDefinition("No Priority", emptySet(), includeNoPriority = true)
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100),
+                        GroupDefinition("Medium", persistentSetOf(), priorityMin = 40, priorityMax = 74),
+                        GroupDefinition("Low", persistentSetOf(), priorityMin = 1, priorityMax = 39),
+                        GroupDefinition("No Priority", persistentSetOf(), includeNoPriority = true)
                     )
                 )
             ))
@@ -179,14 +181,14 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "No due date", dueDate = null)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.DueDate,
-                    groups = listOf(
-                        GroupDefinition("Overdue", emptySet(), dueDateMaxDays = -1),
-                        GroupDefinition("This Week", emptySet(), dueDateMinDays = 0, dueDateMaxDays = 7),
-                        GroupDefinition("Later", emptySet(), dueDateMinDays = 8),
-                        GroupDefinition("No Due Date", emptySet(), includeNoDueDate = true)
+                    groups = persistentListOf(
+                        GroupDefinition("Overdue", persistentSetOf(), dueDateMaxDays = -1),
+                        GroupDefinition("This Week", persistentSetOf(), dueDateMinDays = 0, dueDateMaxDays = 7),
+                        GroupDefinition("Later", persistentSetOf(), dueDateMinDays = 8),
+                        GroupDefinition("No Due Date", persistentSetOf(), includeNoDueDate = true)
                     )
                 )
             ))
@@ -208,19 +210,19 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "InProgress Medium", status = TaskStatus.InProgress, priority = Priority(50))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100),
-                        GroupDefinition("Low", emptySet(), priorityMin = 1, priorityMax = 40)
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100),
+                        GroupDefinition("Low", persistentSetOf(), priorityMin = 1, priorityMax = 40)
                     )
                 )
             ))
@@ -229,8 +231,8 @@ class GroupedTaskQueriesComparisonTest {
             compareGroups(viewMode, levelIndex = 0)
 
             // Test second level for "Open" status
-            val openFilter = GroupFilter.Values(GroupableField.Status, setOf("Open"))
-            compareGroups(viewMode, levelIndex = 1, parentFilters = listOf(openFilter))
+            val openFilter = GroupFilter.Values(GroupableField.Status, persistentSetOf("Open"))
+            compareGroups(viewMode, levelIndex = 1, parentFilters = persistentListOf(openFilter))
         }
     }
 
@@ -238,16 +240,16 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare getTasksForGroup with complex filters`() = runTest {
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Task 1", status = TaskStatus.Open, priority = Priority(90), tags = setOf("urgent"))
-                addTask(spaceId, title = "Task 2", status = TaskStatus.Open, priority = Priority(20), tags = setOf("bug"))
-                addTask(spaceId, title = "Task 3", status = TaskStatus.Done, priority = Priority(85), tags = setOf("feature"))
-                addTask(spaceId, title = "Task 4", status = TaskStatus.InProgress, priority = Priority(50), tags = setOf("urgent", "bug"))
+                addTask(spaceId, title = "Task 1", status = TaskStatus.Open, priority = Priority(90), tags = persistentSetOf("urgent"))
+                addTask(spaceId, title = "Task 2", status = TaskStatus.Open, priority = Priority(20), tags = persistentSetOf("bug"))
+                addTask(spaceId, title = "Task 3", status = TaskStatus.Done, priority = Priority(85), tags = persistentSetOf("feature"))
+                addTask(spaceId, title = "Task 4", status = TaskStatus.InProgress, priority = Priority(50), tags = persistentSetOf("urgent", "bug"))
             }
 
-            val statusFilter = GroupFilter.Values(GroupableField.Status, setOf("Open"))
-            val orderingRules = listOf(OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last))
+            val statusFilter = GroupFilter.Values(GroupableField.Status, persistentSetOf("Open"))
+            val orderingRules = persistentListOf(OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last))
 
-            compareTasks(listOf(statusFilter), orderingRules)
+            compareTasks(persistentListOf(statusFilter), orderingRules)
         }
     }
 
@@ -263,9 +265,9 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val priorityFilter = GroupFilter.PriorityRange(min = 75, max = 100, includeNull = false)
-            val orderingRules = listOf(OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last))
+            val orderingRules = persistentListOf(OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last))
 
-            val (_, dbTasks) = compareTasks(listOf(priorityFilter), orderingRules)
+            val (_, dbTasks) = compareTasks(persistentListOf(priorityFilter), orderingRules)
             assertEquals(2, dbTasks.size, "Should have 2 high priority tasks")
         }
     }
@@ -282,18 +284,18 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "InProgress 1", status = TaskStatus.InProgress, priority = Priority(50))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100),
-                        GroupDefinition("Low", emptySet(), priorityMin = 1, priorityMax = 40)
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100),
+                        GroupDefinition("Low", persistentSetOf(), priorityMin = 1, priorityMax = 40)
                     )
                 )
             ))
 
             // Filter to only Open tasks
-            val filterCriteria = TaskFilterCriteria(statusFilters = setOf(TaskStatus.Open))
+            val filterCriteria = TaskFilterCriteria(statusFilters = persistentSetOf(TaskStatus.Open))
             compareGroups(viewMode, filterCriteria = filterCriteria)
         }
     }
@@ -302,23 +304,23 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare grouping with tag filter criteria`() = runTest {
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Bug 1", status = TaskStatus.Open, tags = setOf("bug"))
-                addTask(spaceId, title = "Bug 2", status = TaskStatus.Done, tags = setOf("bug", "urgent"))
-                addTask(spaceId, title = "Feature 1", status = TaskStatus.Open, tags = setOf("feature"))
-                addTask(spaceId, title = "No tags", status = TaskStatus.Open, tags = emptySet())
+                addTask(spaceId, title = "Bug 1", status = TaskStatus.Open, tags = persistentSetOf("bug"))
+                addTask(spaceId, title = "Bug 2", status = TaskStatus.Done, tags = persistentSetOf("bug", "urgent"))
+                addTask(spaceId, title = "Feature 1", status = TaskStatus.Open, tags = persistentSetOf("feature"))
+                addTask(spaceId, title = "No tags", status = TaskStatus.Open, tags = persistentSetOf())
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 )
             ))
 
-            val filterCriteria = TaskFilterCriteria(selectedTags = setOf("bug"), tagMatchMode = TagMatchMode.Any)
+            val filterCriteria = TaskFilterCriteria(selectedTags = persistentSetOf("bug"), tagMatchMode = TagMatchMode.Any)
             compareGroups(viewMode, filterCriteria = filterCriteria)
         }
     }
@@ -332,21 +334,21 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Standalone task", status = TaskStatus.Open)
                 val task4 = addTask(spaceId, title = "Related task", status = TaskStatus.Done)!!
 
-                updateTask(task2.copy(connections = setOf(TaskConnection(task1.id, ConnectionType.SubtaskOf))))
-                updateTask(task4.copy(connections = setOf(TaskConnection(task1.id, ConnectionType.RelatesTo))))
+                updateTask(task2.copy(connections = persistentSetOf(TaskConnection(task1.id, ConnectionType.SubtaskOf))))
+                updateTask(task4.copy(connections = persistentSetOf(TaskConnection(task1.id, ConnectionType.RelatesTo))))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 )
             ))
 
-            val filterCriteria = TaskFilterCriteria(connectionTypeFilters = setOf(ConnectionTypeOption.SubtaskOf))
+            val filterCriteria = TaskFilterCriteria(connectionTypeFilters = persistentSetOf(ConnectionTypeOption.SubtaskOf))
             compareGroups(viewMode, filterCriteria = filterCriteria)
         }
     }
@@ -358,7 +360,7 @@ class GroupedTaskQueriesComparisonTest {
         val now = Clock.System.now()
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Recurring task", recurrenceRules = listOf(
+                addTask(spaceId, title = "Recurring task", recurrenceRules = persistentListOf(
                     RecurrenceRule(
                         timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
                             period = RecurrencePeriod.ofDays(1),
@@ -372,12 +374,12 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Non-recurring task 2")
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.IsRecurring,
-                    groups = listOf(
-                        GroupDefinition("Recurring", setOf("true")),
-                        GroupDefinition("One-time", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Recurring", persistentSetOf("true")),
+                        GroupDefinition("One-time", persistentSetOf("false"))
                     )
                 )
             ))
@@ -390,19 +392,19 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare hasNotifications grouping results`() = runTest {
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "With notifications", notifications = listOf(
+                addTask(spaceId, title = "With notifications", notifications = persistentListOf(
                     TaskNotification(timeBeforeDeadline = RecurrencePeriod.ofHours(1))
                 ))
                 addTask(spaceId, title = "Without notifications 1")
                 addTask(spaceId, title = "Without notifications 2")
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.HasNotifications,
-                    groups = listOf(
-                        GroupDefinition("Has Notifications", setOf("true")),
-                        GroupDefinition("No Notifications", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Has Notifications", persistentSetOf("true")),
+                        GroupDefinition("No Notifications", persistentSetOf("false"))
                     )
                 )
             ))
@@ -419,15 +421,15 @@ class GroupedTaskQueriesComparisonTest {
                 val task2 = addTask(spaceId, title = "Connected task 2")!!
                 addTask(spaceId, title = "Standalone task")
 
-                updateTask(task1.copy(connections = setOf(TaskConnection(task2.id, ConnectionType.RelatesTo))))
+                updateTask(task1.copy(connections = persistentSetOf(TaskConnection(task2.id, ConnectionType.RelatesTo))))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.HasConnections,
-                    groups = listOf(
-                        GroupDefinition("Connected", setOf("true")),
-                        GroupDefinition("Standalone", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Connected", persistentSetOf("true")),
+                        GroupDefinition("Standalone", persistentSetOf("false"))
                     )
                 )
             ))
@@ -445,12 +447,12 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Manual 2", autoUpdateStatusFromSubtasks = false)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.AutoUpdateStatus,
-                    groups = listOf(
-                        GroupDefinition("Auto", setOf("true")),
-                        GroupDefinition("Manual", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Auto", persistentSetOf("true")),
+                        GroupDefinition("Manual", persistentSetOf("false"))
                     )
                 )
             ))
@@ -473,26 +475,26 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "InProgress Medium", status = TaskStatus.InProgress, priority = Priority(50), dueDate = now + 5.days)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("Done", setOf("Done"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("Done", persistentSetOf("Done"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100),
-                        GroupDefinition("Low", emptySet(), priorityMin = 1, priorityMax = 40)
+                    groups = persistentListOf(
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100),
+                        GroupDefinition("Low", persistentSetOf(), priorityMin = 1, priorityMax = 40)
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.DueDate,
-                    groups = listOf(
-                        GroupDefinition("This Week", emptySet(), dueDateMinDays = 0, dueDateMaxDays = 7),
-                        GroupDefinition("Later", emptySet(), dueDateMinDays = 8)
+                    groups = persistentListOf(
+                        GroupDefinition("This Week", persistentSetOf(), dueDateMinDays = 0, dueDateMaxDays = 7),
+                        GroupDefinition("Later", persistentSetOf(), dueDateMinDays = 8)
                     )
                 )
             ))
@@ -500,11 +502,11 @@ class GroupedTaskQueriesComparisonTest {
             // Test all three levels
             compareGroups(viewMode, levelIndex = 0)
 
-            val openFilter = GroupFilter.Values(GroupableField.Status, setOf("Open"))
-            compareGroups(viewMode, levelIndex = 1, parentFilters = listOf(openFilter))
+            val openFilter = GroupFilter.Values(GroupableField.Status, persistentSetOf("Open"))
+            compareGroups(viewMode, levelIndex = 1, parentFilters = persistentListOf(openFilter))
 
             val highFilter = GroupFilter.PriorityRange(min = 75, max = 100, includeNull = false)
-            compareGroups(viewMode, levelIndex = 2, parentFilters = listOf(openFilter, highFilter))
+            compareGroups(viewMode, levelIndex = 2, parentFilters = persistentListOf(openFilter, highFilter))
         }
     }
 
@@ -513,18 +515,18 @@ class GroupedTaskQueriesComparisonTest {
         val now = Clock.System.now()
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Match all", status = TaskStatus.Open, priority = Priority(90), tags = setOf("urgent"), dueDate = now)
+                addTask(spaceId, title = "Match all", status = TaskStatus.Open, priority = Priority(90), tags = persistentSetOf("urgent"), dueDate = now)
                 addTask(spaceId, title = "Open high no tag", status = TaskStatus.Open, priority = Priority(85), dueDate = now + 1.days)
-                addTask(spaceId, title = "Open low urgent", status = TaskStatus.Open, priority = Priority(20), tags = setOf("urgent"), dueDate = now)
-                addTask(spaceId, title = "Done high urgent", status = TaskStatus.Done, priority = Priority(90), tags = setOf("urgent"), dueDate = now)
+                addTask(spaceId, title = "Open low urgent", status = TaskStatus.Open, priority = Priority(20), tags = persistentSetOf("urgent"), dueDate = now)
+                addTask(spaceId, title = "Done high urgent", status = TaskStatus.Done, priority = Priority(90), tags = persistentSetOf("urgent"), dueDate = now)
             }
 
-            val filters = listOf(
-                GroupFilter.Values(GroupableField.Status, setOf("Open")),
+            val filters = persistentListOf(
+                GroupFilter.Values(GroupableField.Status, persistentSetOf("Open")),
                 GroupFilter.PriorityRange(min = 75, max = 100, includeNull = false)
             )
-            val filterCriteria = TaskFilterCriteria(selectedTags = setOf("urgent"), tagMatchMode = TagMatchMode.Any)
-            val orderingRules = listOf(OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last))
+            val filterCriteria = TaskFilterCriteria(selectedTags = persistentSetOf("urgent"), tagMatchMode = TagMatchMode.Any)
+            val orderingRules = persistentListOf(OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last))
 
             val (_, dbTasks) = compareTasks(filters, orderingRules, filterCriteria)
             assertEquals(1, dbTasks.size, "Should have 1 matching task")
@@ -544,15 +546,15 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "No estimate", estimatedTime = null)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.EstimatedTime,
-                    groups = listOf(
-                        GroupDefinition("Quick", emptySet(), estimatedTimeMin = null, estimatedTimeMax = RecurrencePeriod(minutes = 30)),
-                        GroupDefinition("Short", emptySet(), estimatedTimeMin = RecurrencePeriod(minutes = 30), estimatedTimeMax = RecurrencePeriod.ofHours(1)),
-                        GroupDefinition("Medium", emptySet(), estimatedTimeMin = RecurrencePeriod.ofHours(1), estimatedTimeMax = RecurrencePeriod.ofHours(4)),
-                        GroupDefinition("Long", emptySet(), estimatedTimeMin = RecurrencePeriod.ofHours(4), estimatedTimeMax = null),
-                        GroupDefinition("No Estimate", emptySet(), includeNoEstimatedTime = true)
+                    groups = persistentListOf(
+                        GroupDefinition("Quick", persistentSetOf(), estimatedTimeMin = null, estimatedTimeMax = RecurrencePeriod(minutes = 30)),
+                        GroupDefinition("Short", persistentSetOf(), estimatedTimeMin = RecurrencePeriod(minutes = 30), estimatedTimeMax = RecurrencePeriod.ofHours(1)),
+                        GroupDefinition("Medium", persistentSetOf(), estimatedTimeMin = RecurrencePeriod.ofHours(1), estimatedTimeMax = RecurrencePeriod.ofHours(4)),
+                        GroupDefinition("Long", persistentSetOf(), estimatedTimeMin = RecurrencePeriod.ofHours(4), estimatedTimeMax = null),
+                        GroupDefinition("No Estimate", persistentSetOf(), includeNoEstimatedTime = true)
                     )
                 )
             ))
@@ -577,7 +579,7 @@ class GroupedTaskQueriesComparisonTest {
                 includeNull = false
             )
 
-            compareTasks(listOf(estimatedTimeFilter))
+            compareTasks(persistentListOf(estimatedTimeFilter))
         }
     }
 
@@ -596,7 +598,7 @@ class GroupedTaskQueriesComparisonTest {
                 includeNull = true
             )
 
-            val (_, dbTasks) = compareTasks(listOf(estimatedTimeFilter))
+            val (_, dbTasks) = compareTasks(persistentListOf(estimatedTimeFilter))
             assertEquals(2, dbTasks.size, "Should have 2 tasks without estimated time")
         }
     }
@@ -607,19 +609,19 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare tags grouping results`() = runTest {
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Bug task", tags = setOf("bug"))
-                addTask(spaceId, title = "Feature task", tags = setOf("feature"))
-                addTask(spaceId, title = "Bug and urgent", tags = setOf("bug", "urgent"))
-                addTask(spaceId, title = "No tags", tags = emptySet())
+                addTask(spaceId, title = "Bug task", tags = persistentSetOf("bug"))
+                addTask(spaceId, title = "Feature task", tags = persistentSetOf("feature"))
+                addTask(spaceId, title = "Bug and urgent", tags = persistentSetOf("bug", "urgent"))
+                addTask(spaceId, title = "No tags", tags = persistentSetOf())
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Tags,
-                    groups = listOf(
-                        GroupDefinition("Bugs", setOf("bug")),
-                        GroupDefinition("Features", setOf("feature")),
-                        GroupDefinition("Urgent", setOf("urgent"))
+                    groups = persistentListOf(
+                        GroupDefinition("Bugs", persistentSetOf("bug")),
+                        GroupDefinition("Features", persistentSetOf("feature")),
+                        GroupDefinition("Urgent", persistentSetOf("urgent"))
                     )
                 )
             ))
@@ -632,14 +634,14 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare tags getTasksForGroup with HasTags filter`() = runTest {
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Task with bug tag", tags = setOf("bug"))
-                addTask(spaceId, title = "Task with both tags", tags = setOf("bug", "urgent"))
-                addTask(spaceId, title = "Task with urgent only", tags = setOf("urgent"))
-                addTask(spaceId, title = "Task without relevant tags", tags = setOf("feature"))
+                addTask(spaceId, title = "Task with bug tag", tags = persistentSetOf("bug"))
+                addTask(spaceId, title = "Task with both tags", tags = persistentSetOf("bug", "urgent"))
+                addTask(spaceId, title = "Task with urgent only", tags = persistentSetOf("urgent"))
+                addTask(spaceId, title = "Task without relevant tags", tags = persistentSetOf("feature"))
             }
 
-            val hasBugTag = GroupFilter.HasTags(tags = setOf("bug"))
-            val (_, dbTasks) = compareTasks(listOf(hasBugTag))
+            val hasBugTag = GroupFilter.HasTags(tags = persistentSetOf("bug"))
+            val (_, dbTasks) = compareTasks(persistentListOf(hasBugTag))
             assertEquals(2, dbTasks.size, "Should have 2 tasks with bug tag")
         }
     }
@@ -653,19 +655,19 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Open", status = TaskStatus.Open)
                 addTask(spaceId, title = "InProgress", status = TaskStatus.InProgress)
                 addTask(spaceId, title = "Done", status = TaskStatus.Done)
-                addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(emptySet(), "comment"))
+                addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(persistentSetOf(), "comment"))
                 addTask(spaceId, title = "Declined", status = TaskStatus.Declined("not needed"))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Open", setOf("Open")),
-                        GroupDefinition("In Progress", setOf("InProgress")),
-                        GroupDefinition("Done", setOf("Done")),
-                        GroupDefinition("Blocked", setOf("Blocked")),
-                        GroupDefinition("Declined", setOf("Declined"))
+                    groups = persistentListOf(
+                        GroupDefinition("Open", persistentSetOf("Open")),
+                        GroupDefinition("In Progress", persistentSetOf("InProgress")),
+                        GroupDefinition("Done", persistentSetOf("Done")),
+                        GroupDefinition("Blocked", persistentSetOf("Blocked")),
+                        GroupDefinition("Declined", persistentSetOf("Declined"))
                     )
                 )
             ))
@@ -682,16 +684,16 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Open 2", status = TaskStatus.Open)
                 addTask(spaceId, title = "InProgress", status = TaskStatus.InProgress)
                 addTask(spaceId, title = "Done", status = TaskStatus.Done)
-                addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(emptySet()))
+                addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(persistentSetOf()))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
-                        GroupDefinition("Active", setOf("Open", "InProgress")),
-                        GroupDefinition("Completed", setOf("Done")),
-                        GroupDefinition("Blocked", setOf("Blocked"))
+                    groups = persistentListOf(
+                        GroupDefinition("Active", persistentSetOf("Open", "InProgress")),
+                        GroupDefinition("Completed", persistentSetOf("Done")),
+                        GroupDefinition("Blocked", persistentSetOf("Blocked"))
                     )
                 )
             ))
@@ -713,14 +715,14 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Priority 1", priority = Priority(1))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("Critical", emptySet(), priorityMin = 90, priorityMax = 100),
-                        GroupDefinition("High", emptySet(), priorityMin = 70, priorityMax = 89),
-                        GroupDefinition("Medium", emptySet(), priorityMin = 40, priorityMax = 69),
-                        GroupDefinition("Low", emptySet(), priorityMin = 1, priorityMax = 39)
+                    groups = persistentListOf(
+                        GroupDefinition("Critical", persistentSetOf(), priorityMin = 90, priorityMax = 100),
+                        GroupDefinition("High", persistentSetOf(), priorityMin = 70, priorityMax = 89),
+                        GroupDefinition("Medium", persistentSetOf(), priorityMin = 40, priorityMax = 69),
+                        GroupDefinition("Low", persistentSetOf(), priorityMin = 1, priorityMax = 39)
                     )
                 )
             ))
@@ -739,12 +741,12 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "No Priority 2", priority = null)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Priority,
-                    groups = listOf(
-                        GroupDefinition("High or Unset", emptySet(), priorityMin = 75, priorityMax = 100, includeNoPriority = true),
-                        GroupDefinition("Low", emptySet(), priorityMin = 1, priorityMax = 40)
+                    groups = persistentListOf(
+                        GroupDefinition("High or Unset", persistentSetOf(), priorityMin = 75, priorityMax = 100, includeNoPriority = true),
+                        GroupDefinition("Low", persistentSetOf(), priorityMin = 1, priorityMax = 40)
                     )
                 )
             ))
@@ -766,12 +768,12 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "No Due Date 2", dueDate = null)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.DueDate,
-                    groups = listOf(
-                        GroupDefinition("Soon or Unset", emptySet(), dueDateMinDays = 0, dueDateMaxDays = 3, includeNoDueDate = true),
-                        GroupDefinition("Later", emptySet(), dueDateMinDays = 4)
+                    groups = persistentListOf(
+                        GroupDefinition("Soon or Unset", persistentSetOf(), dueDateMinDays = 0, dueDateMaxDays = 3, includeNoDueDate = true),
+                        GroupDefinition("Later", persistentSetOf(), dueDateMinDays = 4)
                     )
                 )
             ))
@@ -791,13 +793,13 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Future", dueDate = now + 5.days)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.DueDate,
-                    groups = listOf(
-                        GroupDefinition("Overdue", emptySet(), dueDateMaxDays = -1),
-                        GroupDefinition("Today", emptySet(), dueDateMinDays = 0, dueDateMaxDays = 0),
-                        GroupDefinition("Future", emptySet(), dueDateMinDays = 1)
+                    groups = persistentListOf(
+                        GroupDefinition("Overdue", persistentSetOf(), dueDateMaxDays = -1),
+                        GroupDefinition("Today", persistentSetOf(), dueDateMinDays = 0, dueDateMaxDays = 0),
+                        GroupDefinition("Future", persistentSetOf(), dueDateMinDays = 1)
                     )
                 )
             ))
@@ -814,19 +816,19 @@ class GroupedTaskQueriesComparisonTest {
             setupTasks { spaceId ->
                 addTask(spaceId, title = "Open", status = TaskStatus.Open)
                 addTask(spaceId, title = "Done", status = TaskStatus.Done)
-                addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(emptySet()))
+                addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(persistentSetOf()))
                 addTask(spaceId, title = "Declined", status = TaskStatus.Declined("reason"))
             }
 
             val notFilter = GroupFilter.Not(
                 field = GroupableField.Status,
-                filters = listOf(
-                    GroupFilter.Values(GroupableField.Status, setOf("Open")),
-                    GroupFilter.Values(GroupableField.Status, setOf("Done"))
+                filters = persistentListOf(
+                    GroupFilter.Values(GroupableField.Status, persistentSetOf("Open")),
+                    GroupFilter.Values(GroupableField.Status, persistentSetOf("Done"))
                 )
             )
 
-            val (_, dbTasks) = compareTasks(listOf(notFilter))
+            val (_, dbTasks) = compareTasks(persistentListOf(notFilter))
             assertEquals(2, dbTasks.size, "Should have 2 tasks (Blocked and Declined)")
         }
     }
@@ -841,13 +843,13 @@ class GroupedTaskQueriesComparisonTest {
                 addTask(spaceId, title = "Low Done", status = TaskStatus.Done, priority = Priority(15))
             }
 
-            val openFilter = GroupFilter.Values(GroupableField.Status, setOf("Open"))
+            val openFilter = GroupFilter.Values(GroupableField.Status, persistentSetOf("Open"))
             val notHighPriority = GroupFilter.Not(
                 field = GroupableField.Priority,
-                filters = listOf(GroupFilter.PriorityRange(min = 75, max = 100, includeNull = false))
+                filters = persistentListOf(GroupFilter.PriorityRange(min = 75, max = 100, includeNull = false))
             )
 
-            val (_, dbTasks) = compareTasks(listOf(openFilter, notHighPriority))
+            val (_, dbTasks) = compareTasks(persistentListOf(openFilter, notHighPriority))
             assertEquals(1, dbTasks.size, "Should have 1 task (Low Open)")
             assertEquals("Low Open", dbTasks.first().task.title)
         }
@@ -862,8 +864,8 @@ class GroupedTaskQueriesComparisonTest {
             setupTasks { spaceId ->
                 val task1 = addTask(spaceId, title = "All true",
                     autoUpdateStatusFromSubtasks = true,
-                    notifications = listOf(TaskNotification(timeBeforeDeadline = RecurrencePeriod.ofHours(1))),
-                    recurrenceRules = listOf(
+                    notifications = persistentListOf(TaskNotification(timeBeforeDeadline = RecurrencePeriod.ofHours(1))),
+                    recurrenceRules = persistentListOf(
                         RecurrenceRule(
                             timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(RecurrencePeriod.ofDays(1), now),
                             statusChangeTrigger = null,
@@ -872,32 +874,32 @@ class GroupedTaskQueriesComparisonTest {
                     )
                 )!!
                 val task2 = addTask(spaceId, title = "Connected task")!!
-                updateTask(task1.copy(connections = setOf(TaskConnection(task2.id, ConnectionType.RelatesTo))))
+                updateTask(task1.copy(connections = persistentSetOf(TaskConnection(task2.id, ConnectionType.RelatesTo))))
 
                 addTask(spaceId, title = "All false", autoUpdateStatusFromSubtasks = false)
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.IsRecurring,
-                    groups = listOf(
-                        GroupDefinition("Recurring", setOf("true")),
-                        GroupDefinition("One-time", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("Recurring", persistentSetOf("true")),
+                        GroupDefinition("One-time", persistentSetOf("false"))
                     )
                 ),
                 GroupingLevel(
                     field = GroupableField.HasNotifications,
-                    groups = listOf(
-                        GroupDefinition("With Notifications", setOf("true")),
-                        GroupDefinition("Without Notifications", setOf("false"))
+                    groups = persistentListOf(
+                        GroupDefinition("With Notifications", persistentSetOf("true")),
+                        GroupDefinition("Without Notifications", persistentSetOf("false"))
                     )
                 )
             ))
 
             compareGroups(viewMode, levelIndex = 0)
 
-            val recurringFilter = GroupFilter.Values(GroupableField.IsRecurring, setOf("true"))
-            compareGroups(viewMode, levelIndex = 1, parentFilters = listOf(recurringFilter))
+            val recurringFilter = GroupFilter.Values(GroupableField.IsRecurring, persistentSetOf("true"))
+            compareGroups(viewMode, levelIndex = 1, parentFilters = persistentListOf(recurringFilter))
         }
     }
 
@@ -907,10 +909,10 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare empty results`() = runTest {
         withTestContext {
             // Add no tasks
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(GroupDefinition("Open", setOf("Open")))
+                    groups = persistentListOf(GroupDefinition("Open", persistentSetOf("Open")))
                 )
             ))
 
@@ -923,14 +925,14 @@ class GroupedTaskQueriesComparisonTest {
         withTestContext {
             setupTasks { spaceId ->
                 addTask(spaceId, title = "Open task", status = TaskStatus.Open)
-                addTask(spaceId, title = "Blocked task", status = TaskStatus.Blocked(emptySet()))
+                addTask(spaceId, title = "Blocked task", status = TaskStatus.Blocked(persistentSetOf()))
                 addTask(spaceId, title = "Declined task", status = TaskStatus.Declined("reason"))
             }
 
-            val viewMode = viewMode(listOf(
+            val viewMode = viewMode(persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(GroupDefinition("Open", setOf("Open")))
+                    groups = persistentListOf(GroupDefinition("Open", persistentSetOf("Open")))
                 )
             ))
 
@@ -951,20 +953,20 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Priority,
-                        groups = listOf(
-                            GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100),
-                            GroupDefinition("Low", emptySet(), priorityMin = 1, priorityMax = 30)
+                        groups = persistentListOf(
+                            GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100),
+                            GroupDefinition("Low", persistentSetOf(), priorityMin = 1, priorityMax = 30)
                             // Medium (40-74) and null not covered - should be uncategorized
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -989,20 +991,20 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.DueDate,
-                        groups = listOf(
-                            GroupDefinition("This Week", emptySet(), dueDateMinDays = 0, dueDateMaxDays = 7),
-                            GroupDefinition("Next Week", emptySet(), dueDateMinDays = 8, dueDateMaxDays = 14)
+                        groups = persistentListOf(
+                            GroupDefinition("This Week", persistentSetOf(), dueDateMinDays = 0, dueDateMaxDays = 7),
+                            GroupDefinition("Next Week", persistentSetOf(), dueDateMinDays = 8, dueDateMaxDays = 14)
                             // Days 15-34 and null not covered
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1026,20 +1028,20 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.EstimatedTime,
-                        groups = listOf(
-                            GroupDefinition("Short", emptySet(), estimatedTimeMin = null, estimatedTimeMax = RecurrencePeriod.ofHours(1)),
-                            GroupDefinition("Medium", emptySet(), estimatedTimeMin = RecurrencePeriod.ofHours(1), estimatedTimeMax = RecurrencePeriod.ofHours(4))
+                        groups = persistentListOf(
+                            GroupDefinition("Short", persistentSetOf(), estimatedTimeMin = null, estimatedTimeMax = RecurrencePeriod.ofHours(1)),
+                            GroupDefinition("Medium", persistentSetOf(), estimatedTimeMin = RecurrencePeriod.ofHours(1), estimatedTimeMax = RecurrencePeriod.ofHours(4))
                             // Very long (>4h) and null not covered
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1056,26 +1058,26 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare uncategorized tasks with tags grouping`() = runTest {
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Bug task", tags = setOf("bug"))
-                addTask(spaceId, title = "Unknown tag", tags = setOf("unknown"))
-                addTask(spaceId, title = "No tags", tags = emptySet())
+                addTask(spaceId, title = "Bug task", tags = persistentSetOf("bug"))
+                addTask(spaceId, title = "Unknown tag", tags = persistentSetOf("unknown"))
+                addTask(spaceId, title = "No tags", tags = persistentSetOf())
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Tags,
-                        groups = listOf(
-                            GroupDefinition("Bugs", setOf("bug")),
-                            GroupDefinition("Features", setOf("feature"))
+                        groups = persistentListOf(
+                            GroupDefinition("Bugs", persistentSetOf("bug")),
+                            GroupDefinition("Features", persistentSetOf("feature"))
                             // "unknown" tag and no tags not covered
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1098,16 +1100,16 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Status,
-                        groups = emptyList() // No groups defined - all should be uncategorized
+                        groups = persistentListOf() // No groups defined - all should be uncategorized
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
             assertEquals(1, dbGroups.size, "Should only have uncategorized group")
@@ -1129,20 +1131,20 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Status,
-                        groups = listOf(
+                        groups = persistentListOf(
                             // Both groups include "Open" - task should appear in both
-                            GroupDefinition("Active", setOf("Open", "InProgress")),
-                            GroupDefinition("Not Done", setOf("Open", "Blocked", "InProgress"))
+                            GroupDefinition("Active", persistentSetOf("Open", "InProgress")),
+                            GroupDefinition("Not Done", persistentSetOf("Open", "Blocked", "InProgress"))
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1173,20 +1175,20 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Priority,
-                        groups = listOf(
+                        groups = persistentListOf(
                             // Overlapping ranges: 75-100 and 70-85
-                            GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100),
-                            GroupDefinition("Medium-High", emptySet(), priorityMin = 70, priorityMax = 85)
+                            GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100),
+                            GroupDefinition("Medium-High", persistentSetOf(), priorityMin = 70, priorityMax = 85)
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1210,25 +1212,25 @@ class GroupedTaskQueriesComparisonTest {
     fun `compare duplicate tasks with overlapping tags`() = runTest {
         withTestContext {
             setupTasks { spaceId ->
-                addTask(spaceId, title = "Bug and urgent", tags = setOf("bug", "urgent")) // Matches both groups
-                addTask(spaceId, title = "Only bug", tags = setOf("bug"))
-                addTask(spaceId, title = "Only urgent", tags = setOf("urgent"))
+                addTask(spaceId, title = "Bug and urgent", tags = persistentSetOf("bug", "urgent")) // Matches both groups
+                addTask(spaceId, title = "Only bug", tags = persistentSetOf("bug"))
+                addTask(spaceId, title = "Only urgent", tags = persistentSetOf("urgent"))
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Tags,
-                        groups = listOf(
-                            GroupDefinition("Bugs", setOf("bug")),
-                            GroupDefinition("Urgent", setOf("urgent"))
+                        groups = persistentListOf(
+                            GroupDefinition("Bugs", persistentSetOf("bug")),
+                            GroupDefinition("Urgent", persistentSetOf("urgent"))
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1256,20 +1258,20 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.DueDate,
-                        groups = listOf(
+                        groups = persistentListOf(
                             // Overlapping ranges: 0-7 and 3-10
-                            GroupDefinition("This Week", emptySet(), dueDateMinDays = 0, dueDateMaxDays = 7),
-                            GroupDefinition("Extended", emptySet(), dueDateMinDays = 3, dueDateMaxDays = 10)
+                            GroupDefinition("This Week", persistentSetOf(), dueDateMinDays = 0, dueDateMaxDays = 7),
+                            GroupDefinition("Extended", persistentSetOf(), dueDateMinDays = 3, dueDateMaxDays = 10)
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1295,21 +1297,21 @@ class GroupedTaskQueriesComparisonTest {
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Priority,
-                        groups = listOf(
+                        groups = persistentListOf(
                             // High priority range + null (will include null priority task)
-                            GroupDefinition("High or Unset", emptySet(), priorityMin = 75, priorityMax = 100, includeNoPriority = true),
+                            GroupDefinition("High or Unset", persistentSetOf(), priorityMin = 75, priorityMax = 100, includeNoPriority = true),
                             // Only null (will also include null priority task)
-                            GroupDefinition("Unset Only", emptySet(), includeNoPriority = true)
+                            GroupDefinition("Unset Only", persistentSetOf(), includeNoPriority = true)
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1337,7 +1339,7 @@ class GroupedTaskQueriesComparisonTest {
 
             // Get tasks in overlapping range 75-85 (should include Priority 80)
             val filter = GroupFilter.PriorityRange(min = 75, max = 85, includeNull = false)
-            val (inMemoryTasks, dbTasks) = compareTasks(listOf(filter))
+            val (inMemoryTasks, dbTasks) = compareTasks(persistentListOf(filter))
 
             assertEquals(1, dbTasks.size, "Should have 1 task (Priority 80)")
             assertEquals("Priority 80", dbTasks.first().task.title)
@@ -1350,22 +1352,22 @@ class GroupedTaskQueriesComparisonTest {
             setupTasks { spaceId ->
                 addTask(spaceId, title = "Open High", status = TaskStatus.Open, priority = Priority(90))
                 addTask(spaceId, title = "Open Medium", status = TaskStatus.Open, priority = Priority(50)) // Uncategorized at level 1
-                addTask(spaceId, title = "Blocked High", status = TaskStatus.Blocked(emptySet()), priority = Priority(85)) // Uncategorized at level 0
+                addTask(spaceId, title = "Blocked High", status = TaskStatus.Blocked(persistentSetOf()), priority = Priority(85)) // Uncategorized at level 0
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Status,
-                        groups = listOf(
-                            GroupDefinition("Open", setOf("Open"))
+                        groups = persistentListOf(
+                            GroupDefinition("Open", persistentSetOf("Open"))
                             // Blocked not covered
                         )
                     ),
                     GroupingLevel(
                         field = GroupableField.Priority,
-                        groups = listOf(
-                            GroupDefinition("High", emptySet(), priorityMin = 75, priorityMax = 100)
+                        groups = persistentListOf(
+                            GroupDefinition("High", persistentSetOf(), priorityMin = 75, priorityMax = 100)
                             // Medium (40-74) not covered
                         )
                     )
@@ -1373,8 +1375,8 @@ class GroupedTaskQueriesComparisonTest {
             )
 
             // Test first level
-            val inMemoryLevel0 = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbLevel0 = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryLevel0 = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbLevel0 = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryLevel0.size, dbLevel0.size, "Level 0 group count should match")
 
@@ -1383,9 +1385,9 @@ class GroupedTaskQueriesComparisonTest {
             assertEquals(1, level0Uncategorized?.taskCount, "Level 0 uncategorized should have 1 task (Blocked)")
 
             // Test second level for Open status
-            val openFilter = GroupFilter.Values(GroupableField.Status, setOf("Open"))
-            val inMemoryLevel1 = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 1, listOf(openFilter))
-            val dbLevel1 = dbRepo.getTaskGroups(dbSpaceId, vm, 1, listOf(openFilter))
+            val openFilter = GroupFilter.Values(GroupableField.Status, persistentSetOf("Open"))
+            val inMemoryLevel1 = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 1, persistentListOf(openFilter))
+            val dbLevel1 = dbRepo.getTaskGroups(dbSpaceId, vm, 1, persistentListOf(openFilter))
 
             assertEquals(inMemoryLevel1.size, dbLevel1.size, "Level 1 group count should match")
 
@@ -1401,33 +1403,33 @@ class GroupedTaskQueriesComparisonTest {
             // Create tasks with various tag combinations
             setupTasks { spaceId ->
                 // Task with all 7 tags
-                addTask(spaceId, title = "All tags", tags = setOf("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7"))
+                addTask(spaceId, title = "All tags", tags = persistentSetOf("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7"))
                 // Task with only first 5 tags
-                addTask(spaceId, title = "First 5 tags", tags = setOf("tag1", "tag2", "tag3", "tag4", "tag5"))
+                addTask(spaceId, title = "First 5 tags", tags = persistentSetOf("tag1", "tag2", "tag3", "tag4", "tag5"))
                 // Task with only last 2 tags (tag6, tag7)
-                addTask(spaceId, title = "Last 2 tags", tags = setOf("tag6", "tag7"))
+                addTask(spaceId, title = "Last 2 tags", tags = persistentSetOf("tag6", "tag7"))
                 // Task with tag6 only
-                addTask(spaceId, title = "Tag6 only", tags = setOf("tag6"))
+                addTask(spaceId, title = "Tag6 only", tags = persistentSetOf("tag6"))
                 // Task with tag7 only
-                addTask(spaceId, title = "Tag7 only", tags = setOf("tag7"))
+                addTask(spaceId, title = "Tag7 only", tags = persistentSetOf("tag7"))
                 // Task with no matching tags
-                addTask(spaceId, title = "Other tags", tags = setOf("other", "unrelated"))
+                addTask(spaceId, title = "Other tags", tags = persistentSetOf("other", "unrelated"))
             }
 
             val vm = viewMode(
-                listOf(
+                persistentListOf(
                     GroupingLevel(
                         field = GroupableField.Tags,
-                        groups = listOf(
+                        groups = persistentListOf(
                             // Group with 7 tags - more than the SQL query's 5 tag limit
-                            GroupDefinition("All Seven Tags", setOf("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7"))
+                            GroupDefinition("All Seven Tags", persistentSetOf("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7"))
                         )
                     )
                 )
             )
 
-            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, emptyList())
-            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, emptyList())
+            val inMemoryGroups = inMemoryRepo.getTaskGroups(inMemorySpaceId, vm, 0, persistentListOf())
+            val dbGroups = dbRepo.getTaskGroups(dbSpaceId, vm, 0, persistentListOf())
 
             assertEquals(inMemoryGroups.size, dbGroups.size, "Number of groups should match")
 
@@ -1448,8 +1450,8 @@ class GroupedTaskQueriesComparisonTest {
             assertEquals(5, dbAllTags?.taskCount, "DB All Seven Tags should have 5 tasks")
 
             // Also verify getTasksForGroup works correctly
-            val filter = GroupFilter.HasTags(tags = setOf("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7"))
-            val (inMemoryTasks, dbTasks) = compareTasks(listOf(filter))
+            val filter = GroupFilter.HasTags(tags = persistentSetOf("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7"))
+            val (inMemoryTasks, dbTasks) = compareTasks(persistentListOf(filter))
 
             assertEquals(5, dbTasks.size, "Should have 5 tasks matching any of the 7 tags")
 

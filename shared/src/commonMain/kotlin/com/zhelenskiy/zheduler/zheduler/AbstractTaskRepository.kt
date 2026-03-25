@@ -6,6 +6,8 @@ import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.NthDayOfWeekInMonths
 import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.YearlyOnDate
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AfterTimeout
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -175,7 +177,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * Returns null if task doesn't exist.
      * Subclasses must implement this to provide data access.
      */
-    protected abstract suspend fun getConnectionsForTaskSync(taskId: String): Set<TaskConnection>?
+    protected abstract suspend fun getConnectionsForTaskSync(taskId: String): PersistentSet<TaskConnection>?
 
     protected suspend fun getCalculatedStatusFromSubtasks(subtasksIds: List<String>, getByIdUnsafe: suspend (String) -> Task?): TaskStatus? {
         val subtasks = subtasksIds.mapNotNull { getByIdUnsafe(it) }
@@ -206,9 +208,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         val firstStatus = subtaskStatuses.first()
 
         fun combineBlocks(list: List<TaskStatus.Blocked>): TaskStatus.Blocked {
-            val allBlockers = list
-                .flatMap { it.blockerTaskIds }
-                .toSet()
+            val allBlockers = list.flatMapToPersistentSet { it.blockerTaskIds }
             val allComments = list
                 .mapNotNull { status -> if (status.comment.isBlank()) null else status.blockerTaskIds to status.comment }
                 .toSet()
@@ -310,7 +310,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         getBlockedTasks().forEach { task ->
             val status = task.status
             if (status is TaskStatus.Blocked && deletedBlockerId in status.blockerTaskIds) {
-                val remainingBlockers = status.blockerTaskIds - deletedBlockerId
+                val remainingBlockers = status.blockerTaskIds.remove(deletedBlockerId)
 
                 val shouldUnblock = areAllBlockersResolved(remainingBlockers)
                 if (shouldUnblock) {
@@ -471,10 +471,10 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         task: Task,
         blockedTasks: List<Task>,
         tasksById: Map<String, Task>,
-        visited: Set<String> = emptySet()
+        visited: PersistentSet<String> = persistentSetOf()
     ): Instant? {
         if (task.id in visited) return null
-        val newVisited = visited + task.id
+        val newVisited = visited.add(task.id)
 
         val dependentDueDates = task.connections
             .filter { it.type == ConnectionType.IsDependencyOf }
@@ -585,7 +585,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             if (calculatedStatus != null && calculatedStatus != finalTask.status) {
                 finalTask = finalTask.copy(status = calculatedStatus)
                 val subtasks = getSubtasks(taskId)
-                automaticReason = AutomaticChangeReason.UpdatedFromSubtasks(subtasks.map { it.id })
+                automaticReason = AutomaticChangeReason.UpdatedFromSubtasks(subtasks.mapToPersistentList { it.id })
             }
         }
 
@@ -663,7 +663,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 taskId = parentTaskId,
                 previousStatus = parentTask.status,
                 newStatus = calculatedStatus,
-                automaticChangeReason = AutomaticChangeReason.UpdatedFromSubtasks(subtasks.map { it.id })
+                automaticChangeReason = AutomaticChangeReason.UpdatedFromSubtasks(subtasks.mapToPersistentList { it.id })
             )
             val updated = parentTask.copy(status = calculatedStatus)
             persistTaskUpdate(updated)
@@ -756,7 +756,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     protected fun remapBlockedStatus(status: TaskStatus, oldToNewTaskId: Map<String, String>): TaskStatus {
         return when (status) {
             is TaskStatus.Blocked -> {
-                val remappedBlockers = status.blockerTaskIds.mapNotNull { oldToNewTaskId[it] }.toSet()
+                val remappedBlockers = status.blockerTaskIds.mapNotNullToPersistentSet { oldToNewTaskId[it] }
                 if (remappedBlockers.isEmpty()) TaskStatus.Open else TaskStatus.Blocked(
                     remappedBlockers,
                     status.comment
@@ -785,7 +785,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 val connectionsToRemove = task.connections.filter { it.targetTaskId in taskIdsInDeletedSpace }
                 if (connectionsToRemove.isNotEmpty()) {
                     updatedTask = updatedTask.copy(
-                        connections = updatedTask.connections - connectionsToRemove.toSet()
+                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.remove(conn) }
                     )
                     removeConnectionsToDeletedTasks(task.id, connectionsToRemove)
                     modified = true
@@ -794,7 +794,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 // Update blocked status if blocker is being deleted
                 val status = task.status
                 if (status is TaskStatus.Blocked) {
-                    val remainingBlockers = status.blockerTaskIds - taskIdsInDeletedSpace
+                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.remove(id) }
                     if (remainingBlockers != status.blockerTaskIds) {
                         val newStatus = if (remainingBlockers.isEmpty()) {
                             TaskStatus.InProgress
@@ -833,12 +833,9 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     /**
      * Parses comma-separated task IDs into a set of normalized (uppercase, trimmed) IDs.
      */
-    protected fun parseTaskIds(taskIdsString: String): Set<String> =
-        if (taskIdsString.isBlank()) emptySet()
-        else taskIdsString.split(",")
-            .map { it.trim().uppercase() }
-            .filter { it.isNotBlank() }
-            .toSet()
+    protected fun parseTaskIds(taskIdsString: String): PersistentSet<String> =
+        if (taskIdsString.isBlank()) persistentSetOf()
+        else taskIdsString.split(",").mapNotNullToPersistentSet { it.trim().uppercase().takeIf(String::isNotBlank) }
 
     /**
      * Checks if task connections match the specified task IDs for each connection type.

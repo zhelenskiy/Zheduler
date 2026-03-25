@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -121,16 +123,16 @@ enum class ConnectionTypeOption {
  */
 data class TaskFilterCriteria(
     val searchQuery: String = "",
-    val textSearchFields: Set<TaskTextSearchField> = setOf(TaskTextSearchField.Id, TaskTextSearchField.Title),
-    val statusFilters: Set<TaskStatus> = emptySet(),
+    val textSearchFields: PersistentSet<TaskTextSearchField> = persistentSetOf(TaskTextSearchField.Id, TaskTextSearchField.Title),
+    val statusFilters: PersistentSet<TaskStatus> = persistentSetOf(),
     val dueDateFilter: DueDateFilter = DueDateFilter.Any,
     val priorityFilter: PriorityFilter = PriorityFilter.Any,
     val estimatedTimeFilter: EstimatedTimeFilter = EstimatedTimeFilter.Any,
     val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,
     val notificationsFilter: NotificationsFilter = NotificationsFilter.Any,
     val autoUpdateStatusFilter: AutoUpdateStatusFilter = AutoUpdateStatusFilter.Any,
-    val connectionTypeFilters: Set<ConnectionTypeOption> = emptySet(),
-    val selectedTags: Set<String> = emptySet(),
+    val connectionTypeFilters: PersistentSet<ConnectionTypeOption> = persistentSetOf(),
+    val selectedTags: PersistentSet<String> = persistentSetOf(),
     val tagMatchMode: TagMatchMode = TagMatchMode.All,
     val customPriorityMin: String = "",
     val customPriorityMax: String = "",
@@ -167,15 +169,3 @@ data class TaskFilterCriteria(
                 blockedByComment.isNotBlank() ||
                 declinedReason.isNotBlank()
 }
-
-/**
- * Groups tasks by their resolution status for the Priority view.
- * - Resolved: Done or Declined
- * - Blocked: TaskStatus.Blocked
- * - Unresolved: Everything else (Open, InProgress)
- */
-data class GroupedTasks(
-    val unresolved: List<TaskWithTotals>,
-    val blocked: List<TaskWithTotals>,
-    val resolved: List<TaskWithTotals>
-)

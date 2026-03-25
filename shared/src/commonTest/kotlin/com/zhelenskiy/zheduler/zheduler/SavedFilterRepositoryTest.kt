@@ -2,6 +2,9 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
+
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -179,10 +182,10 @@ abstract class SavedFilterRepositoryTest : AbstractRepositoryTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val complexCriteria = TaskFilterCriteria(
             searchQuery = "complex search",
-            statusFilters = setOf(TaskStatus.Open, TaskStatus.InProgress),
+            statusFilters = persistentSetOf(TaskStatus.Open, TaskStatus.InProgress),
             priorityFilter = PriorityFilter.High,
             dueDateFilter = DueDateFilter.ThisWeek,
-            selectedTags = setOf("tag1", "tag2"),
+            selectedTags = persistentSetOf("tag1", "tag2"),
             tagMatchMode = TagMatchMode.All,
             estimatedTimeFilter = EstimatedTimeFilter.Quick,
             recurrenceFilter = RecurrenceFilter.HasRecurrence,
@@ -202,10 +205,10 @@ abstract class SavedFilterRepositoryTest : AbstractRepositoryTest {
         val retrieved = repo.getSavedFilterById(spaceId, "filter-complex")
         assertNotNull(retrieved)
         assertEquals("complex search", retrieved.criteria.searchQuery)
-        assertEquals(setOf(TaskStatus.Open, TaskStatus.InProgress), retrieved.criteria.statusFilters)
+        assertEquals(persistentSetOf(TaskStatus.Open, TaskStatus.InProgress), retrieved.criteria.statusFilters)
         assertEquals(PriorityFilter.High, retrieved.criteria.priorityFilter)
         assertEquals(DueDateFilter.ThisWeek, retrieved.criteria.dueDateFilter)
-        assertEquals(setOf("tag1", "tag2"), retrieved.criteria.selectedTags)
+        assertEquals(persistentSetOf("tag1", "tag2"), retrieved.criteria.selectedTags)
         assertEquals(TagMatchMode.All, retrieved.criteria.tagMatchMode)
         assertEquals(EstimatedTimeFilter.Quick, retrieved.criteria.estimatedTimeFilter)
         assertEquals(RecurrenceFilter.HasRecurrence, retrieved.criteria.recurrenceFilter)
@@ -323,8 +326,8 @@ abstract class SavedFilterRepositoryTest : AbstractRepositoryTest {
             id = "custom-view-mode",
             name = "My Custom View",
             spaceId = spaceId,
-            groupingLevels = emptyList(),
-            defaultOrderingRules = emptyList()
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf()
         )
         repo.saveViewMode(customViewMode)
 
@@ -372,8 +375,8 @@ abstract class SavedFilterRepositoryTest : AbstractRepositoryTest {
             id = "custom-view-mode",
             name = "Custom View",
             spaceId = spaceId,
-            groupingLevels = emptyList(),
-            defaultOrderingRules = emptyList()
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf()
         )
         repo.saveViewMode(customViewMode)
 
@@ -428,8 +431,8 @@ abstract class SavedFilterRepositoryTest : AbstractRepositoryTest {
             id = "to-delete-view-mode",
             name = "To Delete",
             spaceId = spaceId,
-            groupingLevels = emptyList(),
-            defaultOrderingRules = emptyList()
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf()
         )
         repo.saveViewMode(customViewMode)
 

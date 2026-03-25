@@ -1,6 +1,8 @@
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
 
 import androidx.compose.runtime.*
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentSet
 import com.zhelenskiy.zheduler.zheduler.*
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -33,8 +35,8 @@ class ViewModeEditorState(
         name = name.trim(),
         spaceId = spaceId,
         isBuiltIn = false,
-        groupingLevels = groupingLevels.map { it.toGroupingLevel() },
-        defaultOrderingRules = defaultOrderingRules.map { it.toOrderingRule() }
+        groupingLevels = groupingLevels.mapToPersistentList { it.toGroupingLevel() },
+        defaultOrderingRules = defaultOrderingRules.mapToPersistentList { it.toOrderingRule() }
     )
 
     fun validate(): GroupingValidationResult = toViewMode().validate()
@@ -111,7 +113,7 @@ class GroupingLevelState(
 
     fun toGroupingLevel(): GroupingLevel = GroupingLevel(
         field = field,
-        groups = groups.map { it.toGroupDefinition() },
+        groups = groups.mapToPersistentList { it.toGroupDefinition() },
         showEmptyGroups = showEmptyGroups
     )
 
@@ -197,41 +199,41 @@ class GroupingLevelState(
         groups.clear()
         when (field) {
             GroupableField.Status -> {
-                groups.add(GroupDefinitionState(GroupDefinition("Unresolved Tasks", setOf("Open", "InProgress"))))
-                groups.add(GroupDefinitionState(GroupDefinition("Blocked Tasks", setOf("Blocked"))))
-                groups.add(GroupDefinitionState(GroupDefinition("Completed Tasks", setOf("Done", "Declined"))))
+                groups.add(GroupDefinitionState(GroupDefinition("Unresolved Tasks", persistentSetOf("Open", "InProgress"))))
+                groups.add(GroupDefinitionState(GroupDefinition("Blocked Tasks", persistentSetOf("Blocked"))))
+                groups.add(GroupDefinitionState(GroupDefinition("Completed Tasks", persistentSetOf("Done", "Declined"))))
             }
             GroupableField.Priority -> {
-                groups.add(GroupDefinitionState(GroupDefinition("High Priority", emptySet(), priorityMin = 75, priorityMax = 100)))
-                groups.add(GroupDefinitionState(GroupDefinition("Medium Priority", emptySet(), priorityMin = 25, priorityMax = 74)))
-                groups.add(GroupDefinitionState(GroupDefinition("Low Priority", emptySet(), priorityMin = 1, priorityMax = 24, includeNoPriority = true)))
+                groups.add(GroupDefinitionState(GroupDefinition("High Priority", persistentSetOf(), priorityMin = 75, priorityMax = 100)))
+                groups.add(GroupDefinitionState(GroupDefinition("Medium Priority", persistentSetOf(), priorityMin = 25, priorityMax = 74)))
+                groups.add(GroupDefinitionState(GroupDefinition("Low Priority", persistentSetOf(), priorityMin = 1, priorityMax = 24, includeNoPriority = true)))
             }
             GroupableField.DueDate -> {
-                groups.add(GroupDefinitionState(GroupDefinition("Overdue", emptySet(), dueDateMaxDays = -1)))
-                groups.add(GroupDefinitionState(GroupDefinition("Due Today", emptySet(), dueDateMinDays = 0, dueDateMaxDays = 0)))
-                groups.add(GroupDefinitionState(GroupDefinition("Due This Week", emptySet(), dueDateMinDays = 1, dueDateMaxDays = 7)))
-                groups.add(GroupDefinitionState(GroupDefinition("Due Later", emptySet(), dueDateMinDays = 8, includeNoDueDate = true)))
+                groups.add(GroupDefinitionState(GroupDefinition("Overdue", persistentSetOf(), dueDateMaxDays = -1)))
+                groups.add(GroupDefinitionState(GroupDefinition("Due Today", persistentSetOf(), dueDateMinDays = 0, dueDateMaxDays = 0)))
+                groups.add(GroupDefinitionState(GroupDefinition("Due This Week", persistentSetOf(), dueDateMinDays = 1, dueDateMaxDays = 7)))
+                groups.add(GroupDefinitionState(GroupDefinition("Due Later", persistentSetOf(), dueDateMinDays = 8, includeNoDueDate = true)))
             }
             GroupableField.HasConnections -> {
-                groups.add(GroupDefinitionState(GroupDefinition("With Connections", setOf("true"))))
-                groups.add(GroupDefinitionState(GroupDefinition("No Connections", setOf("false"))))
+                groups.add(GroupDefinitionState(GroupDefinition("With Connections", persistentSetOf("true"))))
+                groups.add(GroupDefinitionState(GroupDefinition("No Connections", persistentSetOf("false"))))
             }
             GroupableField.IsRecurring -> {
-                groups.add(GroupDefinitionState(GroupDefinition("Recurring Tasks", setOf("true"))))
-                groups.add(GroupDefinitionState(GroupDefinition("One-time Tasks", setOf("false"))))
+                groups.add(GroupDefinitionState(GroupDefinition("Recurring Tasks", persistentSetOf("true"))))
+                groups.add(GroupDefinitionState(GroupDefinition("One-time Tasks", persistentSetOf("false"))))
             }
             GroupableField.HasNotifications -> {
-                groups.add(GroupDefinitionState(GroupDefinition("With Notifications", setOf("true"))))
-                groups.add(GroupDefinitionState(GroupDefinition("No Notifications", setOf("false"))))
+                groups.add(GroupDefinitionState(GroupDefinition("With Notifications", persistentSetOf("true"))))
+                groups.add(GroupDefinitionState(GroupDefinition("No Notifications", persistentSetOf("false"))))
             }
             GroupableField.AutoUpdateStatus -> {
-                groups.add(GroupDefinitionState(GroupDefinition("Auto-updating Status", setOf("true"))))
-                groups.add(GroupDefinitionState(GroupDefinition("Manual Status", setOf("false"))))
+                groups.add(GroupDefinitionState(GroupDefinition("Auto-updating Status", persistentSetOf("true"))))
+                groups.add(GroupDefinitionState(GroupDefinition("Manual Status", persistentSetOf("false"))))
             }
             GroupableField.EstimatedTime -> {
-                groups.add(GroupDefinitionState(GroupDefinition("Quick Tasks", emptySet(), estimatedTimeMax = RecurrencePeriod(minutes = 30))))
-                groups.add(GroupDefinitionState(GroupDefinition("Medium Tasks", emptySet(), estimatedTimeMin = RecurrencePeriod(minutes = 30, seconds = 1), estimatedTimeMax = RecurrencePeriod(hours = 4))))
-                groups.add(GroupDefinitionState(GroupDefinition("Long Tasks", emptySet(), estimatedTimeMin = RecurrencePeriod(hours = 4, seconds = 1), includeNoEstimatedTime = true)))
+                groups.add(GroupDefinitionState(GroupDefinition("Quick Tasks", persistentSetOf(), estimatedTimeMax = RecurrencePeriod(minutes = 30))))
+                groups.add(GroupDefinitionState(GroupDefinition("Medium Tasks", persistentSetOf(), estimatedTimeMin = RecurrencePeriod(minutes = 30, seconds = 1), estimatedTimeMax = RecurrencePeriod(hours = 4))))
+                groups.add(GroupDefinitionState(GroupDefinition("Long Tasks", persistentSetOf(), estimatedTimeMin = RecurrencePeriod(hours = 4, seconds = 1), includeNoEstimatedTime = true)))
             }
             GroupableField.Tags -> {
                 // Tags don't need default groups - user will define them
@@ -370,8 +372,8 @@ class GroupDefinitionState(
     fun toGroupDefinition(): GroupDefinition {
         return GroupDefinition(
             label = label.trim(),
-            values = values.toSet(),
-            orderingRules = orderingRules.map { it.toOrderingRule() },
+            values = values.toPersistentSet(),
+            orderingRules = orderingRules.mapToPersistentList { it.toOrderingRule() },
             priorityMin = priorityMinText.trim().toIntOrNull(),
             priorityMax = priorityMaxText.trim().toIntOrNull(),
             includeNoPriority = includeNoPriority,
