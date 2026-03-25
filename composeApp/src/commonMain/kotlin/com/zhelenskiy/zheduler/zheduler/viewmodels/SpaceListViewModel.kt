@@ -2,6 +2,10 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 
 import com.zhelenskiy.zheduler.zheduler.Space
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
+import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,10 +34,10 @@ data class ImportResult(val space: Space?)
 data class SpaceListState(
     val hasSpaces: Boolean? = null,
     val searchQuery: String = "",
-    val searchOptions: Set<SpaceSearchOption> = setOf(SpaceSearchOption.Name, SpaceSearchOption.Prefix),
+    val searchOptions: PersistentSet<SpaceSearchOption> = persistentSetOf(SpaceSearchOption.Name, SpaceSearchOption.Prefix),
     val showSearchOptions: Boolean = false,
     val filteredSpaces: List<Space>? = null,
-    val tagsBySpace: Map<String, Set<String>> = emptyMap(),
+    val tagsBySpace: PersistentMap<String, Set<String>> = persistentMapOf(),
     val lastExportResult: ExportResult? = null,
     val lastImportResult: ImportResult? = null
 ) : MVIState
@@ -118,9 +122,9 @@ class SpaceListContainer(
     private suspend fun SpaceListPipelineContext.toggleSearchOption(option: SpaceSearchOption) {
         updateState {
             val newOptions = if (option in searchOptions && searchOptions.size > 1) {
-                searchOptions - option
+                searchOptions.remove(option)
             } else {
-                searchOptions + option
+                searchOptions.add(option)
             }
             copy(searchOptions = newOptions)
         }
@@ -179,7 +183,7 @@ class SpaceListContainer(
 
     private suspend fun SpaceListPipelineContext.loadTagsForSpace(spaceId: String) {
         val tags = repository.getAllTags(spaceId)
-        updateState { copy(tagsBySpace = tagsBySpace + (spaceId to tags)) }
+        updateState { copy(tagsBySpace = tagsBySpace.put(spaceId, tags)) }
     }
 
     private suspend fun SpaceListPipelineContext.addTagToSpace(spaceId: String, tag: String) {

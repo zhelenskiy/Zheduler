@@ -2,6 +2,10 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.datetime.LocalDate
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -152,7 +156,7 @@ interface TaskRepository {
      * @param spaceId The space ID
      * @return Set of all tag strings in the space
      */
-    suspend fun getAllTags(spaceId: String): Set<String>
+    suspend fun getAllTags(spaceId: String): PersistentSet<String>
 
     /**
      * Filter tags by search query for a specific space, excluding already selected tags.
@@ -212,11 +216,11 @@ interface TaskRepository {
         dueDate: kotlinx.datetime.Instant? = null,
         priority: Priority? = null,
         estimatedTime: RecurrencePeriod? = null,
-        tags: Set<String> = emptySet(),
-        connections: Set<TaskConnection> = emptySet(),
-        notifications: List<TaskNotification> = emptyList(),
+        tags: PersistentSet<String> = persistentSetOf(),
+        connections: PersistentSet<TaskConnection> = persistentSetOf(),
+        notifications: PersistentList<TaskNotification> = persistentListOf(),
         customId: String? = null,
-        recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>> = emptyList(),
+        recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(),
         autoUpdateStatusFromSubtasks: Boolean = false
     ): Task?
 
@@ -522,7 +526,7 @@ interface TaskRepository {
         spaceId: String,
         viewMode: ViewMode,
         levelIndex: Int,
-        parentFilters: List<GroupFilter>,
+        parentFilters: PersistentList<GroupFilter>,
         filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
     ): List<TaskGroupInfo>
 
@@ -537,8 +541,8 @@ interface TaskRepository {
      */
     suspend fun getTasksForGroup(
         spaceId: String,
-        filters: List<GroupFilter>,
-        orderingRules: List<OrderingRule>,
+        filters: PersistentList<GroupFilter>,
+        orderingRules: PersistentList<OrderingRule>,
         filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
     ): List<TaskWithTotals>
 

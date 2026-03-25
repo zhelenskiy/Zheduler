@@ -2,6 +2,10 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.datetime.*
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
@@ -40,16 +44,16 @@ enum class GroupableField {
      * Used for validation to ensure all values are covered by groups.
      * Priority, DueDate, and EstimatedTime use custom ranges instead of predefined values.
      */
-    fun getAllPossibleValues(): Set<String> = when (this) {
-        Status -> setOf("Open", "InProgress", "Blocked", "Done", "Declined")
-        Priority -> emptySet() // Uses custom ranges
-        DueDate -> emptySet() // Uses custom ranges
-        EstimatedTime -> emptySet() // Uses custom ranges
-        Tags -> emptySet() // Tags are dynamic, cannot be exhaustively enumerated
-        HasConnections -> setOf("true", "false")
-        IsRecurring -> setOf("true", "false")
-        HasNotifications -> setOf("true", "false")
-        AutoUpdateStatus -> setOf("true", "false")
+    fun getAllPossibleValues(): PersistentSet<String> = when (this) {
+        Status -> persistentSetOf("Open", "InProgress", "Blocked", "Done", "Declined")
+        Priority -> persistentSetOf() // Uses custom ranges
+        DueDate -> persistentSetOf() // Uses custom ranges
+        EstimatedTime -> persistentSetOf() // Uses custom ranges
+        Tags -> persistentSetOf() // Tags are dynamic, cannot be exhaustively enumerated
+        HasConnections -> persistentSetOf("true", "false")
+        IsRecurring -> persistentSetOf("true", "false")
+        HasNotifications -> persistentSetOf("true", "false")
+        AutoUpdateStatus -> persistentSetOf("true", "false")
     }
 
     /**
@@ -147,8 +151,10 @@ data class OrderingRule(
 @Serializable
 data class GroupDefinition(
     val label: String,
-    val values: Set<String>,
-    val orderingRules: List<OrderingRule> = emptyList(),
+    @Serializable(with = PersistentSetSerializer::class)
+    val values: PersistentSet<String> = persistentSetOf(),
+    @Serializable(with = PersistentListSerializer::class)
+    val orderingRules: PersistentList<OrderingRule> = persistentListOf(),
     // Custom range for Priority (0-100)
     val priorityMin: Int? = null,
     val priorityMax: Int? = null,
@@ -170,7 +176,8 @@ data class GroupDefinition(
 @Serializable
 data class GroupingLevel(
     val field: GroupableField,
-    val groups: List<GroupDefinition>,
+    @Serializable(with = PersistentListSerializer::class)
+    val groups: PersistentList<GroupDefinition>,
     val showEmptyGroups: Boolean = false
 )
 
@@ -199,7 +206,7 @@ sealed class GroupingValidationError {
 sealed class GroupingValidationResult {
     data object Valid : GroupingValidationResult()
 
-    data class Invalid(val errors: List<GroupingValidationError>) : GroupingValidationResult()
+    data class Invalid(val errors: PersistentList<GroupingValidationError>) : GroupingValidationResult()
 }
 
 /**
@@ -212,8 +219,10 @@ data class ViewMode(
     val name: String,
     val spaceId: String,
     val isBuiltIn: Boolean = false,
-    val groupingLevels: List<GroupingLevel> = emptyList(),
-    val defaultOrderingRules: List<OrderingRule> = listOf(
+    @Serializable(with = PersistentListSerializer::class)
+    val groupingLevels: PersistentList<GroupingLevel> = persistentListOf(),
+    @Serializable(with = PersistentListSerializer::class)
+    val defaultOrderingRules: PersistentList<OrderingRule> = persistentListOf(
         OrderingRule(OrderableField.TotalDueDate, OrderDirection.Ascending, NullPosition.Last),
         OrderingRule(OrderableField.TotalPriority, OrderDirection.Descending, NullPosition.Last),
         OrderingRule(OrderableField.Id, OrderDirection.Ascending)
@@ -228,8 +237,8 @@ data class ViewMode(
             name = "Chronological",
             spaceId = spaceId,
             isBuiltIn = true,
-            groupingLevels = emptyList(),
-            defaultOrderingRules = listOf(
+            groupingLevels = persistentListOf(),
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.Id, OrderDirection.Descending)
             )
         )
@@ -242,26 +251,26 @@ data class ViewMode(
             name = "Priority",
             spaceId = spaceId,
             isBuiltIn = true,
-            groupingLevels = listOf(
+            groupingLevels = persistentListOf(
                 GroupingLevel(
                     field = GroupableField.Status,
-                    groups = listOf(
+                    groups = persistentListOf(
                         GroupDefinition(
                             label = "Unresolved",
-                            values = setOf("Open", "InProgress")
+                            values = persistentSetOf("Open", "InProgress")
                         ),
                         GroupDefinition(
                             label = "Blocked",
-                            values = setOf("Blocked")
+                            values = persistentSetOf("Blocked")
                         ),
                         GroupDefinition(
                             label = "Resolved",
-                            values = setOf("Done", "Declined")
+                            values = persistentSetOf("Done", "Declined")
                         )
                     )
                 )
             ),
-            defaultOrderingRules = listOf(
+            defaultOrderingRules = persistentListOf(
                 OrderingRule(OrderableField.TotalDueDate, OrderDirection.Ascending, NullPosition.Last),
                 OrderingRule(OrderableField.TotalPriority, OrderDirection.Descending, NullPosition.Last),
                 OrderingRule(OrderableField.Id, OrderDirection.Ascending)
@@ -282,28 +291,28 @@ data class ViewMode(
      * Returns all validation errors found, or Valid if all is well.
      */
     fun validate(): GroupingValidationResult {
-        val errors = mutableListOf<GroupingValidationError>()
+        val errors = buildPersistentList {
+            for (level in groupingLevels) {
+                val field = level.field
 
-        for (level in groupingLevels) {
-            val field = level.field
-
-            // Check for empty group labels and empty groups
-            for (group in level.groups) {
-                if (group.label.isBlank()) {
-                    errors.add(GroupingValidationError.EmptyGroupLabel(field))
+                // Check for empty group labels and empty groups
+                for (group in level.groups) {
+                    if (group.label.isBlank()) {
+                        add(GroupingValidationError.EmptyGroupLabel(field))
+                    }
+                    // Allow empty values if custom range is used
+                    val hasCustomRange = when (field) {
+                        GroupableField.Priority, GroupableField.DueDate, GroupableField.EstimatedTime -> true
+                        else -> false
+                    }
+                    if (group.values.isEmpty() && !hasCustomRange) {
+                        add(GroupingValidationError.EmptyGroup(field, group.label))
+                    }
                 }
-                // Allow empty values if custom range is used
-                val hasCustomRange = when (field) {
-                    GroupableField.Priority, GroupableField.DueDate, GroupableField.EstimatedTime -> true
-                    else -> false
-                }
-                if (group.values.isEmpty() && !hasCustomRange) {
-                    errors.add(GroupingValidationError.EmptyGroup(field, group.label))
-                }
+                // Duplicate values and non-exhaustive coverage are allowed
+                // Tasks matching multiple groups will appear in the all matching groups
+                // Tasks not matching any group will appear in the uncategorized group
             }
-            // Duplicate values and non-exhaustive coverage are allowed
-            // Tasks matching multiple groups will appear in the all matching groups
-            // Tasks not matching any group will appear in the uncategorized group
         }
 
         return if (errors.isEmpty()) {
@@ -381,7 +390,8 @@ sealed class GroupFilter {
     @Serializable
     data class Values(
         override val field: GroupableField,
-        val values: Set<String>
+        @Serializable(with = PersistentSetSerializer::class)
+        val values: PersistentSet<String>
     ) : GroupFilter()
 
     /**
@@ -423,7 +433,8 @@ sealed class GroupFilter {
     @Serializable
     data class HasTags(
         override val field: GroupableField = GroupableField.Tags,
-        val tags: Set<String>
+        @Serializable(with = PersistentSetSerializer::class)
+        val tags: PersistentSet<String>
     ) : GroupFilter()
 
     /**
@@ -433,7 +444,8 @@ sealed class GroupFilter {
     @Serializable
     data class Not(
         override val field: GroupableField,
-        val filters: List<GroupFilter>
+        @Serializable(with = PersistentListSerializer::class)
+        val filters: PersistentList<GroupFilter>
     ) : GroupFilter()
 }
 

@@ -5,6 +5,10 @@ package com.zhelenskiy.zheduler.zheduler.components.form
 import androidx.compose.runtime.*
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -14,14 +18,14 @@ class TaskFormState(
     initialDescription: String,
     initialPriority: String,
     initialEstimatedTime: String,
-    initialTags: Set<String>,
+    initialTags: PersistentSet<String>,
     initialDueDate: Instant?,
     initialStatus: TaskStatus,
-    initialConnections: Set<TaskConnection>,
-    initialNotifications: List<String>, // Compact time strings (e.g., "1d", "2h 30m")
-    initialRecurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>>,
+    initialConnections: PersistentSet<TaskConnection>,
+    initialNotifications: PersistentList<String>, // Compact time strings (e.g., "1d", "2h 30m")
+    initialRecurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
     initialAutoUpdateStatusFromSubtasks: Boolean,
-    initialAnimateVisibilityChanges: Boolean = true
+    initialAnimateVisibilityChanges: Boolean = false
 ) {
     var title by mutableStateOf(initialTitle)
     var description by mutableStateOf(initialDescription)
@@ -63,9 +67,8 @@ class TaskFormState(
             connections = connections,
             notifications = notifications
                 .takeIf { dueDate != null }
-                ?.mapNotNull { parseCompactTimeToPeriod(it) }
-                ?.map { TaskNotification(it) }
-                ?: emptyList(),
+                ?.mapNotNullToPersistentList { parseCompactTimeToPeriod(it)?.let(::TaskNotification) }
+                ?: persistentListOf(),
             recurrenceRules = recurrenceRules,
             autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
         )
@@ -75,12 +78,12 @@ class TaskFormState(
         title = task.title
         description = task.description
         priority = task.priority?.value?.toString() ?: ""
-        estimatedTime = task.estimatedTime?.let { it.toBriefString() } ?: ""
+        estimatedTime = task.estimatedTime?.toBriefString() ?: ""
         tags = task.tags
         dueDate = task.dueDate
         status = task.status
         connections = task.connections
-        notifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() }
+        notifications = task.notifications.mapToPersistentList { it.timeBeforeDeadline.toBriefString() }
         recurrenceRules = task.recurrenceRules
         autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
     }
@@ -123,12 +126,12 @@ data class ParsedTaskValues(
     val description: String,
     val priority: Priority?,
     val estimatedTime: RecurrencePeriod?,
-    val tags: Set<String>,
+    val tags: PersistentSet<String>,
     val dueDate: Instant?,
     val status: TaskStatus,
-    val connections: Set<TaskConnection>,
-    val notifications: List<TaskNotification> = emptyList(),
-    val recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>> = emptyList(),
+    val connections: PersistentSet<TaskConnection>,
+    val notifications: PersistentList<TaskNotification> = persistentListOf(),
+    val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(),
     val autoUpdateStatusFromSubtasks: Boolean = false
 )
 
@@ -138,12 +141,12 @@ fun rememberTaskFormState(
     initialDescription: String = "",
     initialPriority: String = "",
     initialEstimatedTime: String = "",
-    initialTags: Set<String> = emptySet(),
+    initialTags: PersistentSet<String> = persistentSetOf(),
     initialDueDate: Instant? = null,
     initialStatus: TaskStatus = TaskStatus.Open,
-    initialConnections: Set<TaskConnection> = emptySet(),
-    initialNotifications: List<String> = emptyList(),
-    initialRecurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>> = emptyList(),
+    initialConnections: PersistentSet<TaskConnection> = persistentSetOf(),
+    initialNotifications: PersistentList<String> = persistentListOf(),
+    initialRecurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(),
     initialAutoUpdateStatusFromSubtasks: Boolean = false
 ): TaskFormState {
     return remember {
@@ -175,7 +178,7 @@ fun rememberTaskFormState(task: Task): TaskFormState {
             initialDueDate = task.dueDate,
             initialStatus = task.status,
             initialConnections = task.connections,
-            initialNotifications = task.notifications.map { it.timeBeforeDeadline.toBriefString() },
+            initialNotifications = task.notifications.mapToPersistentList { it.timeBeforeDeadline.toBriefString() },
             initialRecurrenceRules = task.recurrenceRules,
             initialAutoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
         )

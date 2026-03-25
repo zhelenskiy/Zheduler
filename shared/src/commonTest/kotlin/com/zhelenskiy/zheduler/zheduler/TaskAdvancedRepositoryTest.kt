@@ -2,12 +2,14 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
+
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.test.*
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 
 class InMemoryTaskAdvancedRepositoryTest: TaskAdvancedRepositoryTest(), InMemoryRepositoryTest
@@ -30,7 +32,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `exportSpaceToJson returns valid JSON`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        repo.addTask(spaceId, title = "Task 1", tags = setOf("tag1", "tag2"))
+        repo.addTask(spaceId, title = "Task 1", tags = persistentSetOf("tag1", "tag2"))
         repo.addTask(spaceId, title = "Task 2", priority = Priority.HIGH)
 
         val json = repo.exportSpaceToJson(spaceId)
@@ -125,7 +127,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     fun `importSpaceFromJson remaps blocked status blocker IDs`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val blocker = repo.addTask(spaceId, title = "Blocker")!!
-        repo.addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(setOf(blocker.id)))
+        repo.addTask(spaceId, title = "Blocked", status = TaskStatus.Blocked(persistentSetOf(blocker.id)))
 
         val json = repo.exportSpaceToJson(spaceId)!!
 
@@ -157,7 +159,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
 
         val criteria = TaskFilterCriteria(
             searchQuery = "test",
-            statusFilters = setOf(TaskStatus.Open),
+            statusFilters = persistentSetOf(TaskStatus.Open),
             blockedByTaskIds = "TASK-1, TASK-2",
             blockedByComment = "waiting",
             declinedReason = "not needed"
@@ -166,7 +168,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
 
         val retrieved = repo.getFilterState(spaceId)
         assertEquals("test", retrieved.searchQuery)
-        assertEquals(setOf(TaskStatus.Open), retrieved.statusFilters)
+        assertEquals(persistentSetOf(TaskStatus.Open), retrieved.statusFilters)
         assertEquals("TASK-1, TASK-2", retrieved.blockedByTaskIds)
         assertEquals("waiting", retrieved.blockedByComment)
         assertEquals("not needed", retrieved.declinedReason)
@@ -212,14 +214,14 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val task = repo.addTask(
             spaceId,
             title = "Recurring",
-            recurrenceRules = RecurrenceRule(
+            recurrenceRules = persistentListOf(RecurrenceRule(
                 timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
                     period = RecurrencePeriod.ofDays(1),
                     firstOccurrence = now
                 ),
                 statusChangeTrigger = null,
                 resetToStatus = TaskStatus.Done,
-            ).to(RecurrenceState()).let(::listOf)
+            ).to(RecurrenceState()))
         )!!
 
         val recurrenceState = task.recurrenceRules.single().second
@@ -236,14 +238,14 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
             spaceId,
             title = "Recurring",
             status = TaskStatus.Done,
-            recurrenceRules = RecurrenceRule(
+            recurrenceRules = persistentListOf(RecurrenceRule(
                 timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
                     period = RecurrencePeriod.ofDays(1),
                     firstOccurrence = now,
                 ),
                 statusChangeTrigger = null,
                 resetToStatus = TaskStatus.Open,
-            ).to(RecurrenceState()).let(::listOf)
+            ).to(RecurrenceState()))
         )!!
 
         val updated = repo.processRecurrenceTrigger(
@@ -264,14 +266,14 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
             spaceId,
             title = "Past due recurring",
             dueDate = pastDue,
-            recurrenceRules = RecurrenceRule(
+            recurrenceRules = persistentListOf(RecurrenceRule(
                 timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
                     period = RecurrencePeriod.ofDays(1),
                     firstOccurrence = pastDue
                 ),
                 statusChangeTrigger = null,
                 resetToStatus = TaskStatus.Done,
-            ).to(RecurrenceState()).let(::listOf)
+            ).to(RecurrenceState()))
         )
 
         val updated = repo.processDateBasedRecurrences(Clock.System.now())
@@ -326,12 +328,12 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val child1 = repo.addTask(
             spaceId,
             title = "Child 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val child2 = repo.addTask(
             spaceId,
             title = "Child 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         repo.updateTask(repo.getTaskById(child1.id)!!.copy(status = TaskStatus.Done))
@@ -413,9 +415,9 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `update preserves tags in allTags`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
-        val task = repo.addTask(spaceId, title = "Task", tags = setOf("tag1"))!!
+        val task = repo.addTask(spaceId, title = "Task", tags = persistentSetOf("tag1"))!!
 
-        val updated = task.copy(tags = setOf("tag1", "tag2", "tag3"))
+        val updated = task.copy(tags = persistentSetOf("tag1", "tag2", "tag3"))
         repo.updateTask(updated)
 
         val allTags = repo.getAllTags(spaceId)
@@ -431,13 +433,13 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf)),
+            connections = persistentSetOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf)),
             autoUpdateStatusFromSubtasks = true
         )!!
         val child = repo.addTask(
             spaceId,
             title = "Child",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         // Update child to Done

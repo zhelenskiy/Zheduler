@@ -5,6 +5,8 @@ package com.zhelenskiy.zheduler.zheduler
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Done
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Open
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.datetime.*
 import kotlin.test.*
 import kotlin.time.Duration.Companion.hours
@@ -186,7 +188,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         val startFrom = instant(2024, 2, 29, 9, 0)
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = setOf(RecurrenceMonth.FEBRUARY),
+                months = persistentSetOf(RecurrenceMonth.FEBRUARY),
                 dayOfMonth = 29,
                 timeOfDay = TimeOfDay(9, 0)
             ),
@@ -332,7 +334,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `DaysOfWeek requires at least one day`() {
         assertFailsWith<IllegalArgumentException> {
-            FixedPointPattern.DaysOfWeek(emptySet())
+            FixedPointPattern.DaysOfWeek(persistentSetOf())
         }
     }
 
@@ -360,7 +362,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     fun `YearlyOnDate rejects invalid day`() {
         assertFailsWith<IllegalArgumentException> {
             FixedPointPattern.YearlyOnDate(
-                months = setOf(RecurrenceMonth.JANUARY),
+                months = persistentSetOf(RecurrenceMonth.JANUARY),
                 dayOfMonth = 32
             )
         }
@@ -372,7 +374,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
             FixedPointPattern.NthDayOfWeekInMonths(
                 ordinal = WeekOrdinal.FIRST,
                 dayOfWeek = RecurrenceDayOfWeek.MONDAY,
-                months = emptySet()
+                months = persistentSetOf()
             )
         }
     }
@@ -383,7 +385,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     fun `processRecurrence for None rule returns terminated`() {
         val now = instant(2024, 1, 1, 0, 0)
         val result = RecurrenceService.processRecurrence(
-            rules = emptyList(),
+            rules = persistentListOf(),
             triggerEvent = RecurrenceTriggerEvent(Open, now)
         )
 
@@ -398,7 +400,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         ).toRule()
 
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, instant(2024, 1, 1, 0, 0))
         )
 
@@ -413,13 +415,13 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0),
             ),
-            statusChangeTrigger = RecurrenceTrigger.StatusChange(requiredStatuses = setOf(Done)),
+            statusChangeTrigger = StatusChange(requiredStatuses = persistentSetOf(Done)),
             resetToStatus = Open
         )
 
         val now = instant(2024, 1, 2, 12, 0)
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
         assertNotNull(result)
@@ -455,7 +457,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     fun `displayString for all days of week`() {
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
-                days = RecurrenceDayOfWeek.entries.toSet()
+                days = RecurrenceDayOfWeek.entries.toSet().let { persistentSetOf(*it.toTypedArray()) }
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
         ).toRule()
@@ -468,7 +470,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     fun `displayString for single day of week`() {
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.DaysOfWeek(
-                days = setOf(RecurrenceDayOfWeek.WEDNESDAY)
+                days = persistentSetOf(RecurrenceDayOfWeek.WEDNESDAY)
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
         ).toRule()
@@ -494,7 +496,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     fun `displayString for YearlyOnDate`() {
         val rule = RecurrenceTrigger.AtFixedPoints(
             pattern = FixedPointPattern.YearlyOnDate(
-                months = setOf(RecurrenceMonth.DECEMBER),
+                months = persistentSetOf(RecurrenceMonth.DECEMBER),
                 dayOfMonth = 25
             ),
             startFrom = instant(2024, 1, 1, 0, 0)
@@ -583,7 +585,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
         val rule2 = RecurrenceRule(
@@ -591,12 +593,12 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofWeeks(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
 
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(
+            rules = persistentListOf(
                 rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
                 rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 8, 0, 0))
             ),
@@ -620,7 +622,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open,
             termination = RecurrenceTermination.afterOccurrences(1)
         )
@@ -629,12 +631,12 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofWeeks(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
 
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(
+            rules = persistentListOf(
                 rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
                 rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 8, 0, 0))
             ),
@@ -657,7 +659,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
         val rule2 = RecurrenceRule(
@@ -665,13 +667,13 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(2),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
 
         // Rule1 has earlier next occurrence (Jan 2) vs Rule2 (Jan 3)
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(
+            rules = persistentListOf(
                 rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 7, 0, 0)),
                 rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 6, 0, 0)) // Earlier
             ),
@@ -695,27 +697,27 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
 
         // Time passed but status not matching
         val result1 = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Open, now)
         )
         assertNull(result1)
 
         // Status matches but time not passed
         val result2 = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 3, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 3, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
         assertNull(result2)
 
         // Both conditions met
         val result3 = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
         assertNotNull(result3)
@@ -729,14 +731,14 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open,
             termination = RecurrenceTermination.afterOccurrences(1)
         )
 
         // First (and only) occurrence - rule should be removed after this
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
         assertNotNull(result)
@@ -755,14 +757,14 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open,
             termination = RecurrenceTermination.onDate(endDate)
         )
 
         // This occurrence happens before end date
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
         assertNotNull(result)
@@ -781,7 +783,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open,
             termination = RecurrenceTermination(
                 afterOccurrences = RecurrenceTerminationCondition.AfterOccurrences(1),
@@ -791,7 +793,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
 
         // First occurrence - rule should be removed (hits occurrence limit of 1)
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
         assertNotNull(result)
@@ -809,7 +811,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
         val rule2 = RecurrenceRule(
@@ -817,13 +819,13 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofWeeks(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(TaskStatus.InProgress)),
+            statusChangeTrigger = StatusChange(persistentSetOf(TaskStatus.InProgress)),
             resetToStatus = Open
         )
 
         // Trigger with Done status - only rule1 should trigger
         val result1 = RecurrenceService.processRecurrence(
-            rules = listOf(
+            rules = persistentListOf(
                 rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
                 rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))
             ),
@@ -835,7 +837,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
 
         // Trigger with InProgress status - only rule2 should trigger
         val result2 = RecurrenceService.processRecurrence(
-            rules = listOf(
+            rules = persistentListOf(
                 rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
                 rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))
             ),
@@ -854,7 +856,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = TaskStatus.InProgress // Resets to InProgress
         )
         val rule2 = RecurrenceRule(
@@ -862,12 +864,12 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(TaskStatus.InProgress)), // Triggers on InProgress
+            statusChangeTrigger = StatusChange(persistentSetOf(TaskStatus.InProgress)), // Triggers on InProgress
             resetToStatus = Open
         )
 
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(
+            rules = persistentListOf(
                 rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
                 rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))
             ),
@@ -890,7 +892,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
         val rule2 = RecurrenceRule(
@@ -898,13 +900,13 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(2),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open
         )
 
         // Rule1 has earlier next occurrence (Jan 2) vs Rule2 (Jan 3)
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(
+            rules = persistentListOf(
                 rule1 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0)),
                 rule2 to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 3, 0, 0))
             ),
@@ -925,12 +927,12 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 period = RecurrencePeriod.ofDays(1),
                 firstOccurrence = instant(2024, 1, 1, 0, 0)
             ),
-            statusChangeTrigger = StatusChange(setOf(Done)),
+            statusChangeTrigger = StatusChange(persistentSetOf(Done)),
             resetToStatus = Open,
             termination = RecurrenceTermination.onDate(now - 1.hours)
         )
         val result = RecurrenceService.processRecurrence(
-            rules = listOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
         )
         assertNotNull(result)

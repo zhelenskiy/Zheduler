@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,7 +49,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
                 spaceId,
                 title = "Subtask $index",
                 status = TaskStatus.Open, // Add as Open first
-                connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+                connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
             )!!
             // Now update to desired status to trigger parent update
             updateTask(getTaskById(subtask.id)!!.copy(status = status))
@@ -127,16 +128,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id))))
-        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker1.id))))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker2.id))))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -158,16 +159,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "Comment 1")))
-        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "Comment 2")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker1.id), "Comment 1")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker2.id), "Comment 2")))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -189,16 +190,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Comment 1")))
-        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id), "Comment 2")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id), "Comment 1")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id), "Comment 2")))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -222,16 +223,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "")))
-        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker1.id), "")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker2.id), "")))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -254,16 +255,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker1.id), "")))
-        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker2.id), "Important comment")))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker1.id), "")))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker2.id), "Important comment")))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -316,15 +317,15 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
         repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.InProgress))
 
         assertEquals(TaskStatus.InProgress, repo.getTaskById(parent.id)!!.status)
@@ -347,15 +348,15 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
         repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Open))
 
         assertEquals(TaskStatus.Open, repo.getTaskById(parent.id)!!.status)
@@ -401,15 +402,15 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
         repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Done))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
@@ -431,15 +432,15 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
         repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Declined("reason")))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
@@ -498,10 +499,10 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf())))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -522,16 +523,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
-        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf())))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf())))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -552,16 +553,16 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
-        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(emptySet())))
-        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(setOf(blocker.id))))
+        repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf())))
+        repo.updateTask(repo.getTaskById(subtask2.id)!!.copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id))))
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Blocked>(parentStatus)
@@ -582,7 +583,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask = repo.addTask(
             spaceId,
             title = "Subtask",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         repo.updateTask(repo.getTaskById(subtask.id)!!.copy(status = TaskStatus.Done))
@@ -633,12 +634,12 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         // Trigger initial update
@@ -668,12 +669,12 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val subtask1 = repo.addTask(
             spaceId,
             title = "Subtask 1",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
         val subtask2 = repo.addTask(
             spaceId,
             title = "Subtask 2",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         repo.updateTask(repo.getTaskById(subtask1.id)!!.copy(status = TaskStatus.Declined("First reason")))
@@ -756,14 +757,14 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
         val parent = repo.addTask(
             spaceId,
             title = "Parent",
-            connections = setOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf)),
+            connections = persistentSetOf(TaskConnection(grandparent.id, ConnectionType.SubtaskOf)),
             autoUpdateStatusFromSubtasks = true
         )!!
 
         val child = repo.addTask(
             spaceId,
             title = "Child",
-            connections = setOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
+            connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf))
         )!!
 
         // Update child to Done - should propagate up

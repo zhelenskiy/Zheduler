@@ -282,11 +282,10 @@ private fun MutableMap<FilterChipType, String>.addStatusChip(criteria: TaskFilte
             is TaskStatus.Blocked -> {
                 val ids = criteria.blockedByTaskIds
                     .takeIf { it.isNotBlank() }
-                    ?.split(",")
-                    ?.map { it.trim() }
-                    ?.filter { Regex("[a-zA-Z]+-[1-9][0-9]*").matchEntire(it) != null }
                     .orEmpty()
-                    .toSet()
+                    .split(",")
+                    .map { it.trim() }
+                    .filterToPersistentSet { Regex("[a-zA-Z]+-[1-9][0-9]*").matchEntire(it) != null }
                 status.copy(blockerTaskIds = ids, comment = criteria.blockedByComment)
             }
             is TaskStatus.Declined -> status.copy(reason = criteria.declinedReason)

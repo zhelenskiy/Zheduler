@@ -73,6 +73,7 @@ kotlin {
             implementation(libs.kstore)
             implementation(libs.flowmvi.core)
             implementation(libs.flowmvi.compose)
+            implementation(libs.kotlinx.collections.immutable)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

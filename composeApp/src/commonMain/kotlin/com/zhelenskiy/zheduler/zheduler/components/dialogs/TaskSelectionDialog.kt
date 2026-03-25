@@ -15,15 +15,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.Task
+import kotlinx.collections.immutable.PersistentSet
 
 @Composable
 fun TaskSelectionDialog(
     title: String,
     filteredTasks: List<Task>,
     onFilterTasks: (String) -> Unit,
-    selectedTaskIds: Set<String>,
+    selectedTaskIds: PersistentSet<String>,
     onDismiss: () -> Unit,
-    onTasksSelected: (Set<String>) -> Unit
+    onTasksSelected: (PersistentSet<String>) -> Unit
 ) {
     var currentSelection by remember { mutableStateOf(selectedTaskIds) }
     var searchQuery by remember { mutableStateOf("") }
@@ -59,9 +60,9 @@ fun TaskSelectionDialog(
                                 .fillMaxWidth()
                                 .clickable {
                                     currentSelection = if (task.id in currentSelection) {
-                                        currentSelection - task.id
+                                        currentSelection.remove(task.id)
                                     } else {
-                                        currentSelection + task.id
+                                        currentSelection.add(task.id)
                                     }
                                 }
                                 .padding(vertical = 4.dp),
@@ -71,9 +72,9 @@ fun TaskSelectionDialog(
                                 checked = task.id in currentSelection,
                                 onCheckedChange = {
                                     currentSelection = if (it) {
-                                        currentSelection + task.id
+                                        currentSelection.add(task.id)
                                     } else {
-                                        currentSelection - task.id
+                                        currentSelection.remove(task.id)
                                     }
                                 }
                             )

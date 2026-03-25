@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentSetOf
+
 import kotlin.test.*
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
@@ -41,7 +43,7 @@ class IsMissedTest {
 
     @Test
     fun `Task isMissed returns true when due date is in the past and status is Blocked`() {
-        val task = Task(id = "TEST-1", title = "Test", spaceId = "space-1", dueDate = pastDue, status = TaskStatus.Blocked(emptySet()))
+        val task = Task(id = "TEST-1", title = "Test", spaceId = "space-1", dueDate = pastDue, status = TaskStatus.Blocked(persistentSetOf()))
         assertTrue(task.isMissed(now))
     }
 
@@ -120,7 +122,7 @@ class IsMissedTest {
 
     @Test
     fun `TaskWithTotals isMissed returns true when total due date is past and status is Blocked`() {
-        val task = Task(id = "TEST-1", title = "Test", spaceId = "space-1", dueDate = futureDue, status = TaskStatus.Blocked(setOf("BLOCKER-1")))
+        val task = Task(id = "TEST-1", title = "Test", spaceId = "space-1", dueDate = futureDue, status = TaskStatus.Blocked(persistentSetOf("BLOCKER-1")))
         val taskWithTotals = TaskWithTotals(task, totalDueDate = pastDue, totalPriority = null)
         assertTrue(taskWithTotals.isMissed(now))
     }

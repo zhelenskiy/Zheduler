@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -28,7 +29,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task2 = repo.addTask(space.id, "Second Task")!!
         val task3 = repo.addTask(space.id, "Third Task")!!
 
-        val results = repo.searchTasksForConnection(space.id, task1.id, "", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task1.id, "", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(2, results.size, "Should return 2 tasks (excluding current)")
         assertTrue(results.any { it.id == task2.id }, "Should include task2")
@@ -44,7 +45,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task1 = repo.addTask(space.id, "Task One")!!
         val task2 = repo.addTask(space.id, "Task Two")!!
 
-        val results = repo.searchTasksForConnection(space.id, task1.id, "Task", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task1.id, "Task", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task2.id, results[0].id, "Should only return task2")
@@ -63,7 +64,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
 
         // Search by part of task1's ID
         val idPart = task1.id.substring(0, 5)
-        val results = repo.searchTasksForConnection(space.id, task2.id, idPart, emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task2.id, idPart, persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find task by ID")
@@ -78,7 +79,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task2 = repo.addTask(space.id, "Second Task")!!
 
         // Search with lowercase version of ID
-        val results = repo.searchTasksForConnection(space.id, task2.id, task1.id.lowercase(), emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task2.id, task1.id.lowercase(), persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find task with case-insensitive ID search")
@@ -95,7 +96,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         repo.addTask(space.id, "Code Review")
         val task3 = repo.addTask(space.id, "Another Meeting")!!
 
-        val results = repo.searchTasksForConnection(space.id, task3.id, "Meeting", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task3.id, "Meeting", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find tasks with 'Meeting' in title")
@@ -109,7 +110,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task1 = repo.addTask(space.id, "Important MEETING")!!
         val task2 = repo.addTask(space.id, "Code Review")!!
 
-        val results = repo.searchTasksForConnection(space.id, task2.id, "meeting", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task2.id, "meeting", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find task with case-insensitive title search")
@@ -123,7 +124,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task1 = repo.addTask(space.id, "Review Pull Request")!!
         val task2 = repo.addTask(space.id, "Write Documentation")!!
 
-        val results = repo.searchTasksForConnection(space.id, task2.id, "Pull", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task2.id, "Pull", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find task with partial title match")
@@ -141,7 +142,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task3 = repo.addTask(space.id, "Other Task")!!
 
         // Search for "TST" which appears in IDs
-        val results = repo.searchTasksForConnection(space.id, task3.id, "TST", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task3.id, "TST", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         // Should find tasks by ID (all tasks have TST prefix)
         assertTrue(results.size >= 2, "Should find multiple tasks with TST in ID")
@@ -162,8 +163,8 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task4 = repo.addTask(space.id, "Fourth Task")!!
 
         // Exclude task2 and task3
-        val excludeIds = setOf(task2.id, task3.id)
-        val results = repo.searchTasksForConnection(space.id, task1.id, "", excludeIds, ConnectionType.RelatesTo, emptySet())
+        val excludeIds = persistentSetOf(task2.id, task3.id)
+        val results = repo.searchTasksForConnection(space.id, task1.id, "", excludeIds, ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task4.id, results[0].id, "Should only return task4")
@@ -179,7 +180,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task3 = repo.addTask(space.id, "Code Review")!!
 
         // Search for "Meeting" but exclude task2
-        val results = repo.searchTasksForConnection(space.id, task3.id, "Meeting", setOf(task2.id), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task3.id, "Meeting", persistentSetOf(task2.id), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find task1 but not task2")
@@ -197,7 +198,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task2 = repo.addTask(space2.id, "Task in Space 2")!!
         val task3 = repo.addTask(space1.id, "Another Task in Space 1")!!
 
-        val results = repo.searchTasksForConnection(space1.id, task1.id, "", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space1.id, task1.id, "", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task3.id, results[0].id, "Should only return tasks from space1")
@@ -214,7 +215,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task1 = repo.addTask(space.id, "First Task")!!
         repo.addTask(space.id, "Second Task")
 
-        val results = repo.searchTasksForConnection(space.id, task1.id, "NonExistentQuery", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task1.id, "NonExistentQuery", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertTrue(results.isEmpty(), "Should return empty list when no matches found")
     }
@@ -228,7 +229,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task2 = repo.addTask(space.id, "Second Task")!!
 
         // Exclude task2, and task1 is the current task
-        val results = repo.searchTasksForConnection(space.id, task1.id, "", setOf(task2.id), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task1.id, "", persistentSetOf(task2.id), ConnectionType.RelatesTo, persistentSetOf())
 
         assertTrue(results.isEmpty(), "Should return empty list when all tasks are excluded")
     }
@@ -243,7 +244,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task1 = repo.addTask(space.id, "Task: Important!")!!
         val task2 = repo.addTask(space.id, "Normal Task")!!
 
-        val results = repo.searchTasksForConnection(space.id, task2.id, "Important!", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task2.id, "Important!", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find task with special characters")
@@ -259,7 +260,7 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task1 = repo.addTask(space.id, "Apple Task")!!
         val task2 = repo.addTask(space.id, "Banana Task")!!
 
-        val results = repo.searchTasksForConnection(space.id, task2.id, "A", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task2.id, "A", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task1.id, results[0].id, "Should find task starting with A")
@@ -274,10 +275,10 @@ abstract class SearchTasksForConnectionTest : AbstractRepositoryTest {
         val task2 = repo.addTask(
             space.id,
             "Task Two",
-            connections = setOf(TaskConnection(task1.id, ConnectionType.RelatesTo))
+            connections = persistentSetOf(TaskConnection(task1.id, ConnectionType.RelatesTo))
         )!!
 
-        val results = repo.searchTasksForConnection(space.id, task1.id, "", emptySet(), ConnectionType.RelatesTo, emptySet())
+        val results = repo.searchTasksForConnection(space.id, task1.id, "", persistentSetOf(), ConnectionType.RelatesTo, persistentSetOf())
 
         assertEquals(1, results.size)
         assertEquals(task2.id, results[0].id)

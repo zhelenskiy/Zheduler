@@ -1,14 +1,14 @@
 package com.zhelenskiy.zheduler.zheduler.components.dialogs
 
 import androidx.compose.animation.AnimatedContent
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -163,8 +163,8 @@ private fun ColumnScope.BlockedStatusOption(
 ) {
     var showBlockerSelection by remember { mutableStateOf(false) }
     val status = selectedStatusType as? Blocked
-        ?: lastSelectedForType[Blocked(emptySet()).displayName] as? Blocked
-        ?: Blocked(emptySet())
+        ?: lastSelectedForType[Blocked(persistentSetOf()).displayName] as? Blocked
+        ?: Blocked(persistentSetOf())
 
     StatusRadioOption(
         status = status,
@@ -203,8 +203,8 @@ private fun ColumnScope.BlockedStatusOption(
 
 @Composable
 private fun BlockedStatusDetails(
-    blockerTaskIds: Set<String>,
-    onBlockerTaskIdsChange: (Set<String>) -> Unit,
+    blockerTaskIds: PersistentSet<String>,
+    onBlockerTaskIdsChange: (PersistentSet<String>) -> Unit,
     blockedComment: String,
     onBlockedCommentChange: (String) -> Unit,
     loadedTasks: Map<String, Task>,
@@ -228,7 +228,7 @@ private fun BlockedStatusDetails(
                 loadedTasks = loadedTasks,
                 onLoadTask = onLoadTask,
                 onRemoveTask = { taskId ->
-                    onBlockerTaskIdsChange(blockerTaskIds - taskId)
+                    onBlockerTaskIdsChange(blockerTaskIds.remove(taskId))
                 }
             )
         }
@@ -247,7 +247,7 @@ private fun BlockedStatusDetails(
 
 @Composable
 private fun BlockerTasksList(
-    blockerTaskIds: Set<String>,
+    blockerTaskIds: PersistentSet<String>,
     loadedTasks: Map<String, Task>,
     onLoadTask: (String) -> Unit,
     onRemoveTask: (String) -> Unit

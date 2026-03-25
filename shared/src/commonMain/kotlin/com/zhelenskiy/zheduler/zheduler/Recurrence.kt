@@ -4,6 +4,9 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.datetime.*
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
@@ -418,7 +421,8 @@ sealed class FixedPointPattern : Presentable {
      */
     @Serializable
     data class DaysOfWeek(
-        val days: Set<RecurrenceDayOfWeek>,
+        @Serializable(with = PersistentSetSerializer::class)
+        val days: PersistentSet<RecurrenceDayOfWeek>,
         override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
     ) : FixedPointPattern() {
         init {
@@ -499,7 +503,8 @@ sealed class FixedPointPattern : Presentable {
      */
     @Serializable
     data class YearlyOnDate(
-        val months: Set<RecurrenceMonth>,
+        @Serializable(with = PersistentSetSerializer::class)
+        val months: PersistentSet<RecurrenceMonth>,
         val dayOfMonth: Int,
         override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
     ) : FixedPointPattern() {
@@ -526,7 +531,8 @@ sealed class FixedPointPattern : Presentable {
     data class NthDayOfWeekInMonths(
         val ordinal: WeekOrdinal,
         val dayOfWeek: RecurrenceDayOfWeek,
-        val months: Set<RecurrenceMonth>,
+        @Serializable(with = PersistentSetSerializer::class)
+        val months: PersistentSet<RecurrenceMonth>,
         override val timeOfDay: TimeOfDay = TimeOfDay.MIDNIGHT
     ) : FixedPointPattern() {
         init {
@@ -587,7 +593,10 @@ sealed class RecurrenceTrigger {
      * Triggered when task reaches one of the specified statuses
      */
     @Serializable
-    data class StatusChange(val requiredStatuses: Set<TaskStatus>) : RecurrenceTrigger()
+    data class StatusChange(
+        @Serializable(with = PersistentSetSerializer::class)
+        val requiredStatuses: PersistentSet<TaskStatus>
+    ) : RecurrenceTrigger()
 }
 
 interface Presentable {
@@ -974,10 +983,10 @@ object RecurrenceService {
      * @return RecurrenceResult with updated state and next due date (earliest among all rules)
      */
     fun processRecurrence(
-        rules: List<Pair<RecurrenceRule, RecurrenceState>>,
+        rules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
         triggerEvent: RecurrenceTriggerEvent,
-        usedRules: Set<Int> = setOf()
-    ): Pair<List<Pair<RecurrenceRule, RecurrenceState>>, TaskStatus>? {
+        usedRules: PersistentSet<Int> = persistentSetOf()
+    ): Pair<PersistentList<Pair<RecurrenceRule, RecurrenceState>>, TaskStatus>? {
         val (rule, currentState, index) = rules.mapIndexed { index, (rule, state) -> Triple(rule, state, index) }
             .filter { (_, _, index) -> index !in usedRules }
             .filter { (rule, state, _) -> RecurrenceCalculator.shouldTrigger(rule, triggerEvent, state) }
@@ -998,20 +1007,18 @@ object RecurrenceService {
 
         // Calculate next occurrence from all rules and take the earliest
 
-        val newRules = rules.toMutableList().apply {
-            val newAfterOccurrences = rule.termination.afterOccurrences?.count?.dec()?.coerceAtLeast(0)
-            val newRule = rule.copy(
-                termination = rule.termination.copy(
-                    afterOccurrences = newAfterOccurrences?.let(::AfterOccurrences)
-                )
+        val newAfterOccurrences = rule.termination.afterOccurrences?.count?.dec()?.coerceAtLeast(0)
+        val newRule = rule.copy(
+            termination = rule.termination.copy(
+                afterOccurrences = newAfterOccurrences?.let(::AfterOccurrences)
             )
-            set(index, Pair(newRule, newState))
-        }
+        )
+        val newRules = rules.set(index, Pair(newRule, newState))
         val newStatus = rule.resetToStatus
         val newUsedRules = if (newRules.size == rules.size) {
-            usedRules + index
+            usedRules.add(index)
         } else {
-            (usedRules.filter { it < index } + usedRules.filter { it > index }.map(Int::dec)).toSet()
+            usedRules.filterToPersistentSet { it < index }.addAll(usedRules.filter { it > index }.map(Int::dec))
         }
         return processRecurrence(newRules, triggerEvent.copy(currentStatus = newStatus), newUsedRules) ?: Pair(newRules, newStatus)
     }

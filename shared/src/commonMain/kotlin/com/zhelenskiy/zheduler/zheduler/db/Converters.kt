@@ -3,6 +3,12 @@
 package com.zhelenskiy.zheduler.zheduler.db
 
 import com.zhelenskiy.zheduler.zheduler.*
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentList
+import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.jvm.JvmName
@@ -62,9 +68,9 @@ fun String?.toRecurrencePeriodOrNull(): RecurrencePeriod? = this?.let { dbJson.d
 fun Set<String>.toJson(): String = dbJson.encodeToString(this)
 
 /**
- * Convert JSON string to Set<String> (tags)
+ * Convert JSON string to PersistentSet<String> (tags)
  */
-fun String.toStringSet(): Set<String> = dbJson.decodeFromString(this)
+fun String.toStringSet(): PersistentSet<String> = dbJson.decodeFromString<Set<String>>(this).toPersistentSet()
 
 /**
  * Convert List<TaskNotification> to JSON string for storage
@@ -72,9 +78,9 @@ fun String.toStringSet(): Set<String> = dbJson.decodeFromString(this)
 fun List<TaskNotification>.toJson(): String = dbJson.encodeToString(this)
 
 /**
- * Convert JSON string to List<TaskNotification>
+ * Convert JSON string to PersistentList<TaskNotification>
  */
-fun String.toNotificationList(): List<TaskNotification> = dbJson.decodeFromString(this)
+fun String.toNotificationList(): PersistentList<TaskNotification> = dbJson.decodeFromString<List<TaskNotification>>(this).toPersistentList()
 
 /**
  * Convert list of RecurrenceRule to JSON string for storage
@@ -85,17 +91,7 @@ fun List<Pair<RecurrenceRule, RecurrenceState>>.toJson(): String = dbJson.encode
 /**
  * Convert JSON string to list of RecurrenceRule
  */
-fun String.toRecurrenceRuleList(): List<Pair<RecurrenceRule, RecurrenceState>> = dbJson.decodeFromString(this)
-
-/**
- * Convert RecurrenceState to JSON string for storage
- */
-fun RecurrenceState.toJson(): String = dbJson.encodeToString(this)
-
-/**
- * Convert JSON string to RecurrenceState
- */
-fun String.toRecurrenceState(): RecurrenceState = dbJson.decodeFromString(this)
+fun String.toRecurrenceRuleList(): PersistentList<Pair<RecurrenceRule, RecurrenceState>> = dbJson.decodeFromString<List<Pair<RecurrenceRule, RecurrenceState>>>(this).toPersistentList()
 
 /**
  * Convert TaskFilterCriteria to JSON string for storage
@@ -113,16 +109,20 @@ fun String.toTaskFilterCriteria(): TaskFilterCriteria = dbJson.decodeFromString<
 @Serializable
 data class TaskFilterCriteriaSerializable(
     val searchQuery: String = "",
-    val textSearchFields: Set<TaskTextSearchField> = setOf(TaskTextSearchField.Id, TaskTextSearchField.Title),
-    val statusFilters: Set<TaskStatus> = emptySet(),
+    @Serializable(with = PersistentSetSerializer::class)
+    val textSearchFields: PersistentSet<TaskTextSearchField> = persistentSetOf(TaskTextSearchField.Id, TaskTextSearchField.Title),
+    @Serializable(with = PersistentSetSerializer::class)
+    val statusFilters: PersistentSet<TaskStatus> = persistentSetOf(),
     val dueDateFilter: DueDateFilter = DueDateFilter.Any,
     val priorityFilter: PriorityFilter = PriorityFilter.Any,
     val estimatedTimeFilter: EstimatedTimeFilter = EstimatedTimeFilter.Any,
     val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,
     val notificationsFilter: NotificationsFilter = NotificationsFilter.Any,
     val autoUpdateStatusFilter: AutoUpdateStatusFilter = AutoUpdateStatusFilter.Any,
-    val connectionTypeFilters: Set<ConnectionTypeOption> = emptySet(),
-    val selectedTags: Set<String> = emptySet(),
+    @Serializable(with = PersistentSetSerializer::class)
+    val connectionTypeFilters: PersistentSet<ConnectionTypeOption> = persistentSetOf(),
+    @Serializable(with = PersistentSetSerializer::class)
+    val selectedTags: PersistentSet<String> = persistentSetOf(),
     val tagMatchMode: TagMatchMode = TagMatchMode.All,
     val customPriorityMin: String = "",
     val customPriorityMax: String = "",
@@ -205,8 +205,10 @@ data class TaskFilterCriteriaSerializable(
  */
 @Serializable
 data class ViewModeConfigSerializable(
-    val groupingLevels: List<GroupingLevel> = emptyList(),
-    val defaultOrderingRules: List<OrderingRule> = listOf(
+    @Serializable(with = PersistentListSerializer::class)
+    val groupingLevels: PersistentList<GroupingLevel> = persistentListOf(),
+    @Serializable(with = PersistentListSerializer::class)
+    val defaultOrderingRules: PersistentList<OrderingRule> = persistentListOf(
         OrderingRule(OrderableField.TotalDueDate, OrderDirection.Ascending, NullPosition.Last),
         OrderingRule(OrderableField.TotalPriority, OrderDirection.Descending, NullPosition.Last),
         OrderingRule(OrderableField.Id, OrderDirection.Ascending)

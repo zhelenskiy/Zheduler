@@ -2,6 +2,10 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -50,7 +54,11 @@ sealed class TaskStatus : Presentable {
     data object Open : TaskStatus()
 
     @Serializable
-    data class Blocked(val blockerTaskIds: Set<String>, val comment: String = "") : TaskStatus()
+    data class Blocked(
+        @Serializable(with = PersistentSetSerializer::class)
+        val blockerTaskIds: PersistentSet<String>,
+        val comment: String = "",
+    ) : TaskStatus()
 
     @Serializable
     data object InProgress : TaskStatus()
@@ -166,7 +174,10 @@ sealed class AutomaticChangeReason {
     }
 
     @Serializable
-    data class UpdatedFromSubtasks(val relatedTaskIds: List<String>) : AutomaticChangeReason() {
+    data class UpdatedFromSubtasks(
+        @Serializable(with = PersistentListSerializer::class)
+        val relatedTaskIds: PersistentList<String>
+    ) : AutomaticChangeReason() {
         override val text: String = if (relatedTaskIds.size == 1) "by subtask" else "by subtasks"
     }
 
@@ -221,11 +232,15 @@ data class Task(
     val dueDate: Instant? = null,
     val priority: Priority? = null,
     val estimatedTime: RecurrencePeriod? = null,
-    val tags: Set<String> = emptySet(),
-    val connections: Set<TaskConnection> = emptySet(),
-    val notifications: List<TaskNotification> = emptyList(), // Notifications before deadline
+    @Serializable(with = PersistentSetSerializer::class)
+    val tags: PersistentSet<String> = persistentSetOf(),
+    @Serializable(with = PersistentSetSerializer::class)
+    val connections: PersistentSet<TaskConnection> = persistentSetOf(),
+    @Serializable(with = PersistentListSerializer::class)
+    val notifications: PersistentList<TaskNotification> = persistentListOf(), // Notifications before deadline
     val spaceId: String, // ID of the space this task belongs to
-    val recurrenceRules: List<Pair<RecurrenceRule, RecurrenceState>> = emptyList(), // Multiple recurrence rules
+    @Serializable(with = PersistentListSerializer::class)
+    val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(), // Multiple recurrence rules
     val autoUpdateStatusFromSubtasks: Boolean = false // Automatically update status based on subtasks
 ) {
     /**

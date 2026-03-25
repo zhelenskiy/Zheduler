@@ -603,7 +603,7 @@ private fun AvailableValuesHint(level: GroupingLevelState) {
     if (level.field.requiresExhaustiveCoverage()) {
         val allValues = level.field.getAllPossibleValues()
         val usedValues = level.groups.flatMap { it.values }.toSet()
-        val availableValues = allValues - usedValues
+        val availableValues = allValues.removeAll(usedValues)
         if (availableValues.isNotEmpty()) {
             Text(
                 "Available values: ${availableValues.joinToString(", ")}",
@@ -926,7 +926,7 @@ private fun AddValueButton(
     onFilterTags: (String, Set<String>) -> Unit
 ) {
     if (field.requiresExhaustiveCoverage()) {
-        val availableValues = field.getAllPossibleValues() - group.values.toSet()
+        val availableValues = field.getAllPossibleValues().removeAll(group.values)
         if (availableValues.isNotEmpty()) {
             var showMenu by remember { mutableStateOf(false) }
             Box {
