@@ -5,7 +5,8 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.kotlinSerialization)
-    alias(libs.plugins.sqldelight)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.room3)
 }
 
 kotlin {
@@ -37,7 +38,7 @@ kotlin {
             implementation(libs.kotlinx.serializationJson)
             api(libs.kotlinx.datetime)
             implementation(libs.kotlinx.coroutines.core)
-            implementation(libs.sqldelight.runtime)
+            api(libs.room3.runtime)
             api(libs.kotlinx.collections.immutable)
         }
 
@@ -46,36 +47,43 @@ kotlin {
         }
 
         androidMain.dependencies {
-            implementation(libs.sqldelight.android)
-            implementation(libs.sqlite.requery)  // SQLite with JSON1 extension support
+            implementation(libs.sqlite.bundled)
         }
 
         androidUnitTest.dependencies {
             implementation(libs.core.ktx)
             implementation(libs.robolectric)
             implementation(libs.junit)
+            implementation(libs.sqlite.bundled)
         }
 
         iosMain.dependencies {
-            implementation(libs.sqldelight.native)
+            implementation(libs.sqlite.bundled)
         }
 
         jvmMain.dependencies {
-            implementation(libs.sqldelight.jvm)
+            implementation(libs.sqlite.bundled)
+        }
+
+        jvmTest.dependencies {
+            implementation(libs.sqlite.bundled)
         }
 
         // webMain is automatically created by default hierarchy template
         // It's shared between jsMain and wasmJsMain
         webMain.dependencies {
-            implementation(libs.sqldelight.web)  // web-worker-driver used by both JS and WasmJS
-            implementation(npm("sql.js", "1.12.0"))
-            implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
-            implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
-            implementation(npm("@js-joda/timezone", "2.18.3"))
+            implementation(libs.room3.runtime)
+            implementation(libs.sqlite.web)
+        }
+
+        webTest.dependencies {
+            implementation(libs.sqlite.web)
         }
 
         wasmJsMain.dependencies {
             implementation(libs.kotlinx.browser)
+            implementation(libs.room3.runtime)
+            implementation(libs.sqlite.web)
         }
 
         commonTest.dependencies {
@@ -84,15 +92,19 @@ kotlin {
     }
 }
 
-sqldelight {
-    databases {
-        create("ZhedulerDatabase") {
-            packageName.set("com.zhelenskiy.zheduler.zheduler.db")
-            generateAsync = true
-        }
-    }
-    linkSqlite = true
+room3 {
+    schemaDirectory("$projectDir/schemas")
 }
+
+dependencies {
+    add("kspAndroid", libs.room3.compiler)
+    add("kspIosArm64", libs.room3.compiler)
+    add("kspIosSimulatorArm64", libs.room3.compiler)
+    add("kspJvm", libs.room3.compiler)
+    add("kspJs", libs.room3.compiler)
+    add("kspWasmJs", libs.room3.compiler)
+}
+
 
 android {
     namespace = "com.zhelenskiy.zheduler.zheduler.shared"

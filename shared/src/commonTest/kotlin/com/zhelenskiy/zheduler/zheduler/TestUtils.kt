@@ -34,13 +34,13 @@ interface InMemoryRepositoryTest : AbstractRepositoryTest {
 
 /**
  * Factory function to create a database-backed repository.
- * Platform-specific implementations provide the appropriate SQLite driver.
+ * Platform-specific implementations provide the appropriate Room database.
  */
 expect suspend fun createDatabaseRepository(clock: Clock = Clock.System): TaskRepository
 
 /**
  * Optional cleanup function called after each database test.
- * Platform-specific implementations can provide cleanup logic (e.g., closing drivers).
+ * Platform-specific implementations can provide cleanup logic (e.g., closing database).
  */
 expect fun cleanupDatabaseTest()
 

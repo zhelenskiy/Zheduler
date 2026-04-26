@@ -2,39 +2,32 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
-import app.cash.sqldelight.async.coroutines.await
-import app.cash.sqldelight.async.coroutines.awaitCreate
-import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.worker.WebWorkerDriver
-import com.zhelenskiy.zheduler.zheduler.db.DriverFactory
-import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
-import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
+import androidx.room3.Room
+import androidx.sqlite.driver.web.WebWorkerSQLiteDriver
+import com.zhelenskiy.zheduler.zheduler.db.RoomTaskRepository
+import com.zhelenskiy.zheduler.zheduler.db.ZhedulerRoomDatabase
+import kotlinx.coroutines.Dispatchers
+import org.w3c.dom.Worker
 import kotlin.time.Clock
 
-// Track all drivers created for cleanup
-internal val webTestDrivers = mutableListOf<SqlDriver>()
+private var testDb: ZhedulerRoomDatabase? = null
+private var testIndex = 0
+
+private fun createTestWorker(): Worker = js("""new Worker(new URL("sqlite-web-worker/worker.js", import.meta.url))""")
 
 actual suspend fun createDatabaseRepository(clock: Clock): TaskRepository {
-    val driver = DriverFactory().createDriver()
-
-    // Track this driver for cleanup
-    webTestDrivers.add(driver)
-
-    return SqlDelightTaskRepository(ZhedulerDatabase(driver), clock)
+    testIndex++
+    val db = Room.databaseBuilder<ZhedulerRoomDatabase>(
+        name = "test-$testIndex.db"
+    )
+        .setDriver(WebWorkerSQLiteDriver(createTestWorker()))
+        .setQueryCoroutineContext(Dispatchers.Default)
+        .build()
+    testDb = db
+    return RoomTaskRepository(db.zhedulerDao(), clock)
 }
 
 actual fun cleanupDatabaseTest() {
-    // Close all drivers created during this test
-    webTestDrivers.forEach { driver ->
-        try {
-            driver.close()
-        } catch (e: Exception) {
-            // Ignore errors during cleanup
-            logCleanupError(e)
-        }
-    }
-    webTestDrivers.clear()
+    testDb?.close()
+    testDb = null
 }
-
-// Platform-specific logging
-internal expect fun logCleanupError(e: Exception)

@@ -5,8 +5,8 @@ package com.zhelenskiy.zheduler.zheduler.di
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
-import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
-import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
+import com.zhelenskiy.zheduler.zheduler.db.ZhedulerRoomDatabase
+import com.zhelenskiy.zheduler.zheduler.db.RoomTaskRepository
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
@@ -37,14 +37,14 @@ interface AppGraph {
     val clock: Clock
 
     /**
-     * Provides the singleton ZhedulerDatabase instance.
+     * Provides the singleton ZhedulerRoomDatabase instance.
      */
-    val database: ZhedulerDatabase
+    val database: ZhedulerRoomDatabase
 
     /**
-     * Provides the singleton SqlDelightTaskRepository instance.
+     * Provides the singleton RoomTaskRepository instance.
      */
-    val taskRepository: SqlDelightTaskRepository
+    val taskRepository: RoomTaskRepository
 
     /**
      * Singleton SpaceListContainer - preserves search state across navigation.
@@ -83,50 +83,50 @@ interface AppGraph {
 
         @Provides
         @SingleIn(AppScope::class)
-        fun provideDeferredDatabaseForDI(): Deferred<ZhedulerDatabase> = deferredDatabaseInstance
+        fun provideDeferredDatabaseForDI(): Deferred<ZhedulerRoomDatabase> = deferredDatabaseInstance
 
         @OptIn(ExperimentalCoroutinesApi::class)
         @Provides
         @SingleIn(AppScope::class)
-        fun provideDatabaseForDI(deferredDatabase: Deferred<ZhedulerDatabase>): ZhedulerDatabase =
+        fun provideDatabaseForDI(deferredDatabase: Deferred<ZhedulerRoomDatabase>): ZhedulerRoomDatabase =
             deferredDatabase.getCompleted()
 
         @Provides
         @SingleIn(AppScope::class)
-        fun provideTaskRepository(database: ZhedulerDatabase, clock: Clock): SqlDelightTaskRepository =
-            SqlDelightTaskRepository(database, clock)
+        fun provideTaskRepository(database: ZhedulerRoomDatabase, clock: Clock): RoomTaskRepository =
+            RoomTaskRepository(database.zhedulerDao(), clock)
 
         @Provides
         @SingleIn(AppScope::class)
-        fun provideSpaceListContainer(repository: SqlDelightTaskRepository): SpaceListContainer =
+        fun provideSpaceListContainer(repository: RoomTaskRepository): SpaceListContainer =
             SpaceListContainer(repository)
 
         @Provides
-        fun provideTaskListContainerFactory(repository: SqlDelightTaskRepository): TaskListContainerFactory =
+        fun provideTaskListContainerFactory(repository: RoomTaskRepository): TaskListContainerFactory =
             TaskListContainerFactory { spaceId ->
                 TaskListContainer(repository, spaceId)
             }
 
         @Provides
-        fun provideCalendarContainerFactory(repository: SqlDelightTaskRepository): CalendarContainerFactory =
+        fun provideCalendarContainerFactory(repository: RoomTaskRepository): CalendarContainerFactory =
             CalendarContainerFactory { spaceId ->
                 CalendarContainer(repository, spaceId)
             }
 
         @Provides
-        fun provideNewTaskContainerFactory(repository: SqlDelightTaskRepository): NewTaskContainerFactory =
+        fun provideNewTaskContainerFactory(repository: RoomTaskRepository): NewTaskContainerFactory =
             NewTaskContainerFactory { spaceId, prefilledConnection, taskIdToCopy ->
                 NewTaskContainer(repository, spaceId, prefilledConnection, taskIdToCopy)
             }
 
         @Provides
-        fun provideTaskDetailContainerFactory(repository: SqlDelightTaskRepository): TaskDetailContainerFactory =
+        fun provideTaskDetailContainerFactory(repository: RoomTaskRepository): TaskDetailContainerFactory =
             TaskDetailContainerFactory { spaceId, taskId ->
                 TaskDetailContainer(repository, spaceId, taskId)
             }
 
         @Provides
-        fun provideTaskEditContainerFactory(repository: SqlDelightTaskRepository): TaskEditContainerFactory =
+        fun provideTaskEditContainerFactory(repository: RoomTaskRepository): TaskEditContainerFactory =
             TaskEditContainerFactory { spaceId, taskId, savedStateHandle ->
                 TaskEditContainer(repository, spaceId, taskId, savedStateHandle)
             }
@@ -136,9 +136,9 @@ interface AppGraph {
 /**
  * Expect function to provide platform-specific deferred database
  */
-expect fun provideDeferredDatabase(): Deferred<ZhedulerDatabase>
+expect fun provideDeferredDatabase(): Deferred<ZhedulerRoomDatabase>
 
 /**
  * Cached deferred database instance to ensure we use the same one everywhere.
  */
-val deferredDatabaseInstance: Deferred<ZhedulerDatabase> by lazy { provideDeferredDatabase() }
+val deferredDatabaseInstance: Deferred<ZhedulerRoomDatabase> by lazy { provideDeferredDatabase() }

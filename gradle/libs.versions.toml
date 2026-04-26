@@ -17,13 +17,12 @@ androidx-espresso = "3.7.0"
 androidx-lifecycle = "2.9.6"
 androidx-testExt = "1.3.0"
 composeHotReload = "1.0.0"
-composeMultiplatform = "1.10.0"
+composeMultiplatform = "1.10.3"
 junit = "4.13.2"
 nucleus = "1.4.7"
 robolectric = "4.14.1"
-sqlite-requery = "3.49.0"
-# 2.3.0 has https://youtrack.jetbrains.com/projects/KT/issues/KT-83372/compileDebugKotlinAndroid-hangs-in-2.3.0-with-SQLDelight
-kotlin = "2.2.21"
+kotlin = "2.3.20"
+ksp = "2.3.6"
 kotlinx-coroutines = "1.10.2"
 kotlinx-datetime = "0.7.1"
 kotlinx-serialization = "1.8.0"
@@ -34,8 +33,8 @@ ktor = "3.3.3"
 logback = "1.5.24"
 material3 = "1.10.0-alpha05"
 filekit = "0.12.0"
-sqldelight = "2.1.0"
-webPackPlugin = "9.1.0"
+room3 = "3.0.0-alpha03"
+sqlite = "2.7.0-alpha03"
 flowmvi = "3.2.1"
 kotlinx-collections-immutable = "0.3.8"
 
@@ -55,7 +54,6 @@ nucleus-decorated-window-jni = { module = "io.github.kdroidfilter:nucleus.decora
 nucleus-decorated-window-material = { module = "io.github.kdroidfilter:nucleus.decorated-window-material", version.ref = "nucleus" }
 nucleus-system-color = { module = "io.github.kdroidfilter:nucleus.system-color", version.ref = "nucleus" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
-sqlite-requery = { module = "com.github.requery:sqlite-android", version.ref = "sqlite-requery" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-testExt-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-testExt" }
 androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-espresso" }
@@ -88,12 +86,10 @@ ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-j
 ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
 filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
-sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
-sqldelight-coroutines = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
-sqldelight-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
-sqldelight-native = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
-sqldelight-jvm = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
-sqldelight-web = { module = "app.cash.sqldelight:web-worker-driver", version.ref = "sqldelight" }
+room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room3" }
+room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3" }
+sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
+sqlite-web = { module = "androidx.sqlite:sqlite-web", version.ref = "sqlite" }
 flowmvi-core = { module = "pro.respawn.flowmvi:core", version.ref = "flowmvi" }
 flowmvi-compose = { module = "pro.respawn.flowmvi:compose", version.ref = "flowmvi" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinx-collections-immutable" }
@@ -109,4 +105,5 @@ kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
-sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+room3 = { id = "androidx.room3", version.ref = "room3" }

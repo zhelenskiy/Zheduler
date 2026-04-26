@@ -27,9 +27,6 @@ kotlin {
             baseName = "ComposeApp"
             isStatic = true
         }
-        iosTarget.binaries.all {
-            linkerOpts("-lsqlite3")
-        }
     }
 
     jvm()
@@ -74,6 +71,7 @@ kotlin {
             implementation(libs.flowmvi.core)
             implementation(libs.flowmvi.compose)
             implementation(libs.kotlinx.collections.immutable)
+            implementation(libs.room3.runtime)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -87,22 +85,29 @@ kotlin {
             implementation(libs.nucleus.decorated.window.material)
             implementation(libs.kstore.file)
             implementation(libs.appdirs)
+            implementation(libs.sqlite.bundled)
         }
         androidMain.dependencies {
             implementation(libs.kstore.file)
             implementation(libs.appdirs)
+            implementation(libs.sqlite.bundled)
         }
         iosMain.dependencies {
             implementation(libs.kstore.file)
+            implementation(libs.sqlite.bundled)
+        }
+        webMain.dependencies {
+            implementation(libs.sqlite.web)
+            implementation(projects.sqliteWasmWorker)
+            implementation(projects.sqlJsWorker)
         }
         jsMain.dependencies {
             implementation(libs.kstore.storage)
+            implementation(npm("@js-joda/timezone", "2.18.3"))
         }
         wasmJsMain.dependencies {
             implementation(libs.kstore.storage)
-            implementation(npm("sql.js", "1.12.0"))
-            implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
-            implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
+            implementation(npm("@js-joda/timezone", "2.18.3"))
         }
     }
 }

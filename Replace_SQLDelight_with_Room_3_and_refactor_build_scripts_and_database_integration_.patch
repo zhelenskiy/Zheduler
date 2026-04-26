@@ -1,0 +1,637 @@
+Subject: [PATCH] Replace SQLDelight with Room 3 and refactor build scripts and database integration.
+---
+Index: sqlJsWorker/build.gradle.kts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/sqlJsWorker/build.gradle.kts b/sqlJsWorker/build.gradle.kts
+new file mode 100644
+--- /dev/null	(date 1776608199219)
++++ b/sqlJsWorker/build.gradle.kts	(date 1776608199219)
+@@ -0,0 +1,30 @@
++@file:OptIn(ExperimentalWasmDsl::class)
++
++import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
++
++plugins {
++    alias(libs.plugins.kotlinMultiplatform)
++}
++
++kotlin {
++    js {
++        browser()
++        useEsModules()
++    }
++    wasmJs {
++        browser()
++        useEsModules()
++    }
++
++    sourceSets {
++        commonMain.dependencies {
++            api(libs.sqlite.web)
++            implementation(
++                npm("sqlite-wasm-worker", layout.projectDirectory.dir("worker").asFile)
++            )
++        }
++        wasmJsMain.dependencies {
++            implementation(libs.kotlinx.browser)
++        }
++    }
++}
+Index: sqlJsWorker/worker/worker.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/sqlJsWorker/worker/worker.js b/sqlJsWorker/worker/worker.js
+new file mode 100644
+--- /dev/null	(date 1776608187665)
++++ b/sqlJsWorker/worker/worker.js	(date 1776608187665)
+@@ -0,0 +1,157 @@
++import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
++
++let sqlite3 = null;
++
++// Maps to track of active database connections and prepared statements by their unique IDs.
++const databases = new Map(); // stores databaseId -> SQLiteDbObject
++const statements = new Map(); // stores statementId -> SQLiteStatementObject
++
++// Counters to generate unique IDs for new database connections and statements.
++let nextDatabaseId = 0;
++let nextStatementId = 0;
++
++function openRequest(id, requestData) {
++    try {
++        const newDatabaseId = nextDatabaseId++;
++        const newDatabase = new sqlite3.oo1.OpfsDb(requestData.fileName);
++        databases.set(newDatabaseId, newDatabase);
++        postMessage({'id': id, data: {'databaseId': newDatabaseId}});
++    } catch (error) {
++        postMessage({'id': id, error: error.message});
++    }
++}
++
++function prepareRequest(id, requestData) {
++    try {
++        const newStatementId = nextStatementId++;
++        const resultData = {
++            'statementId': newStatementId,
++            'parameterCount': 0,
++            'columnNames': []
++        };
++        const database = databases.get(requestData.databaseId);
++        if (!database) {
++            postMessage({'id': id, error: "Invalid database ID: " + requestData.databaseId});
++            return;
++        }
++        const statement = database.prepare(requestData.sql);
++        statements.set(newStatementId, statement);
++        resultData.parameterCount = sqlite3.capi.sqlite3_bind_parameter_count(statement);
++        for (let i = 0; i < statement.columnCount; i++) {
++            resultData.columnNames.push(sqlite3.capi.sqlite3_column_name(statement, i));
++        }
++        postMessage({'id': id, data: resultData});
++    } catch (error) {
++        postMessage({'id': id, error: error.message});
++    }
++}
++
++function stepRequest(id, requestData) {
++    const statement = statements.get(requestData.statementId);
++    if (!statement) {
++        postMessage({'id': id, error: "Invalid statement ID: " + requestData.statementId});
++        return;
++    }
++    try {
++        const resultData = {
++            'rows': [],
++            'columnTypes': []
++        };
++        statement.reset()
++        statement.clearBindings()
++        for (let i = 0; i < requestData.bindings.length; i++) {
++            statement.bind(i + 1, requestData.bindings[i]);
++        }
++        while (statement.step()) {
++            if (!resultData.columnTypes.length) {
++                for (let i = 0; i < statement.columnCount; i++) {
++                    resultData.columnTypes.push(sqlite3.capi.sqlite3_column_type(statement, i));
++                }
++            }
++            resultData.rows.push(statement.get([]));
++        }
++        postMessage({'id': id, data: resultData});
++    } catch (error) {
++        postMessage({'id': id, error: error.message});
++    }
++}
++
++function closeRequest(id, requestData) {
++    if (requestData.statementId) {
++        const statement = statements.get(requestData.statementId);
++        if (!statement) {
++            postMessage({'id': id, error: "Invalid statement ID: " + requestData.statementId});
++            return;
++        }
++        try {
++            statement.finalize();
++            statements.delete(requestData.statementId);
++        } catch (error) {
++            postMessage({'id': id, error: error.message});
++        }
++    }
++
++    if (requestData.databaseId) {
++        const database = databases.get(requestData.databaseId);
++        if (!database) {
++            postMessage({'id': id, error: "Invalid database ID: " + requestData.databaseId});
++            return;
++        }
++        try {
++            database.close();
++            databases.delete(requestData.databaseId);
++        } catch (error) {
++            postMessage({'id': id, error: error.message});
++        }
++    }
++}
++
++// A map that links command names (strings) to their respective handler functions.
++const commandMap = {
++    'open': openRequest,
++    'prepare': prepareRequest,
++    'step': stepRequest,
++    'close': closeRequest,
++};
++
++function handleMessage(e) {
++    const requestMsg = e.data;
++    console.log("handleMessage: " + JSON.stringify(requestMsg));
++    if (!Object.hasOwn(requestMsg, 'data') && requestMsg.data == null) {
++        postMessage(
++            {'id': requestMsg.id, 'error': "Invalid request, missing 'data'."}
++        );
++        return;
++    }
++    if (!Object.hasOwn(requestMsg.data, 'cmd') && requestMsg.data.cmd == null) {
++        postMessage(
++            {'id': requestMsg.id, 'error': "Invalid request, missing 'cmd'."}
++        );
++        return;
++    }
++    const command = requestMsg.data.cmd;
++    const requestHandler = commandMap[command];
++    if (requestHandler) {
++        requestHandler(requestMsg.id, requestMsg.data);
++    } else {
++        postMessage(
++            {'id': requestMsg.id, 'error': "Invalid request, unknown command: '" + command + "'."}
++        );
++    }
++}
++
++const messageQueue = [];
++onmessage = (e) => {
++    if (!sqlite3) {
++        messageQueue.push(e);
++    } else {
++        handleMessage(e);
++    }
++};
++
++sqlite3InitModule().then(instance => {
++    sqlite3 = instance;
++    while (messageQueue.length > 0) {
++        handleMessage(messageQueue.shift());
++    }
++});
+Index: build.gradle.kts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/build.gradle.kts b/build.gradle.kts
+--- a/build.gradle.kts	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/build.gradle.kts	(date 1776164637114)
+@@ -9,4 +9,6 @@
+     alias(libs.plugins.kotlinJvm) apply false
+     alias(libs.plugins.kotlinMultiplatform) apply false
+     alias(libs.plugins.ktor) apply false
+-}
+\ No newline at end of file
++    alias(libs.plugins.ksp) apply false
++    alias(libs.plugins.room3) apply false
++}
+Index: sqlJsWorker/src/wasmJsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.wasmJs.kt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/sqlJsWorker/src/wasmJsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.wasmJs.kt b/sqlJsWorker/src/wasmJsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.wasmJs.kt
+new file mode 100644
+--- /dev/null	(date 1776608214717)
++++ b/sqlJsWorker/src/wasmJsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.wasmJs.kt	(date 1776608214717)
+@@ -0,0 +1,10 @@
++package com.zhelenskiy.zheduler.worker
++
++import androidx.sqlite.driver.web.WebWorkerSQLiteDriver
++import org.w3c.dom.Worker
++
++actual fun createSQLiteWasmWorker() = WebWorkerSQLiteDriver(jsWorker())
++
++@OptIn(ExperimentalWasmJsInterop::class)
++private fun jsWorker(): Worker =
++    js("""new Worker(new URL("sqlite-wasm-worker/worker.js", import.meta.url))""")
+Index: settings.gradle.kts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+--- a/settings.gradle.kts	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/settings.gradle.kts	(date 1776173394483)
+@@ -35,4 +35,5 @@
+ 
+ include(":composeApp")
+ include(":server")
+-include(":shared")
+\ No newline at end of file
++include(":shared")
++include(":sqlJsWorker")
+\ No newline at end of file
+Index: gradle.properties
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/gradle.properties b/gradle.properties
+--- a/gradle.properties	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/gradle.properties	(date 1776171781412)
+@@ -8,4 +8,5 @@
+ org.gradle.caching=true
+ #Android
+ android.nonTransitiveRClass=true
+-android.useAndroidX=true
+\ No newline at end of file
++android.useAndroidX=true
++ksp.useKSP2=true
+Index: sqlJsWorker/src/commonMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.kt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/sqlJsWorker/src/commonMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.kt b/sqlJsWorker/src/commonMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.kt
+new file mode 100644
+--- /dev/null	(date 1776608204552)
++++ b/sqlJsWorker/src/commonMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.kt	(date 1776608204552)
+@@ -0,0 +1,5 @@
++package com.zhelenskiy.zheduler.worker
++
++import androidx.sqlite.driver.web.WebWorkerSQLiteDriver
++
++expect fun createSQLiteWasmWorker(): WebWorkerSQLiteDriver
+Index: composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/DatabaseProvider.android.kt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/DatabaseProvider.android.kt b/composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/DatabaseProvider.android.kt
+--- a/composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/DatabaseProvider.android.kt	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/DatabaseProvider.android.kt	(date 1776167665000)
+@@ -1,10 +1,12 @@
+ package com.zhelenskiy.zheduler.zheduler.di
+ 
+ import android.app.Application
+-import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
+-import com.zhelenskiy.zheduler.zheduler.db.DriverFactory
++import androidx.room3.Room
++import androidx.sqlite.driver.bundled.BundledSQLiteDriver
++import com.zhelenskiy.zheduler.zheduler.db.ZhedulerRoomDatabase
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Deferred
++import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.async
+ import kotlin.coroutines.EmptyCoroutineContext
+ 
+@@ -15,6 +17,16 @@
+ }
+ 
+ private val dbScope = CoroutineScope(EmptyCoroutineContext)
+-actual fun provideDeferredDatabase(): Deferred<ZhedulerDatabase> = dbScope.async {
+-    ZhedulerDatabase(DriverFactory(appContext).createDriver())
++actual fun provideDeferredDatabase(): Deferred<ZhedulerRoomDatabase> = dbScope.async {
++    // One-time cleanup: delete old SQLDelight database
++    appContext.deleteDatabase("zheduler.db")
++    val dbFile = appContext.getDatabasePath("zheduler_room.db")
++    Room.databaseBuilder<ZhedulerRoomDatabase>(
++        context = appContext,
++        name = dbFile.absolutePath
++    )
++        .setDriver(BundledSQLiteDriver())
++        .setQueryCoroutineContext(Dispatchers.IO)
++        .fallbackToDestructiveMigration(dropAllTables = true)
++        .build()
+ }
+Index: shared/build.gradle.kts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/shared/build.gradle.kts b/shared/build.gradle.kts
+--- a/shared/build.gradle.kts	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/shared/build.gradle.kts	(date 1776171769780)
+@@ -5,7 +5,8 @@
+     alias(libs.plugins.kotlinMultiplatform)
+     alias(libs.plugins.androidLibrary)
+     alias(libs.plugins.kotlinSerialization)
+-    alias(libs.plugins.sqldelight)
++    alias(libs.plugins.ksp)
++    alias(libs.plugins.room3)
+ }
+ 
+ kotlin {
+@@ -37,7 +38,7 @@
+             implementation(libs.kotlinx.serializationJson)
+             api(libs.kotlinx.datetime)
+             implementation(libs.kotlinx.coroutines.core)
+-            implementation(libs.sqldelight.runtime)
++            api(libs.room3.runtime)
+             api(libs.kotlinx.collections.immutable)
+         }
+ 
+@@ -46,36 +47,43 @@
+         }
+ 
+         androidMain.dependencies {
+-            implementation(libs.sqldelight.android)
+-            implementation(libs.sqlite.requery)  // SQLite with JSON1 extension support
++            implementation(libs.sqlite.bundled)
+         }
+ 
+         androidUnitTest.dependencies {
+             implementation(libs.core.ktx)
+             implementation(libs.robolectric)
+             implementation(libs.junit)
++            implementation(libs.sqlite.bundled)
+         }
+ 
+         iosMain.dependencies {
+-            implementation(libs.sqldelight.native)
++            implementation(libs.sqlite.bundled)
+         }
+ 
+         jvmMain.dependencies {
+-            implementation(libs.sqldelight.jvm)
++            implementation(libs.sqlite.bundled)
++        }
++
++        jvmTest.dependencies {
++            implementation(libs.sqlite.bundled)
+         }
+ 
+         // webMain is automatically created by default hierarchy template
+         // It's shared between jsMain and wasmJsMain
+         webMain.dependencies {
+-            implementation(libs.sqldelight.web)  // web-worker-driver used by both JS and WasmJS
+-            implementation(npm("sql.js", "1.12.0"))
+-            implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
+-            implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
+-            implementation(npm("@js-joda/timezone", "2.18.3"))
++            implementation(libs.room3.runtime)
++            implementation(libs.sqlite.web)
++        }
++
++        webTest.dependencies {
++            implementation(libs.sqlite.web)
+         }
+ 
+         wasmJsMain.dependencies {
+             implementation(libs.kotlinx.browser)
++            implementation(libs.room3.runtime)
++            implementation(libs.sqlite.web)
+         }
+ 
+         commonTest.dependencies {
+@@ -84,15 +92,19 @@
+     }
+ }
+ 
+-sqldelight {
+-    databases {
+-        create("ZhedulerDatabase") {
+-            packageName.set("com.zhelenskiy.zheduler.zheduler.db")
+-            generateAsync = true
+-        }
+-    }
+-    linkSqlite = true
++room3 {
++    schemaDirectory("$projectDir/schemas")
++}
++
++dependencies {
++    add("kspAndroid", libs.room3.compiler)
++    add("kspIosArm64", libs.room3.compiler)
++    add("kspIosSimulatorArm64", libs.room3.compiler)
++    add("kspJvm", libs.room3.compiler)
++    add("kspJs", libs.room3.compiler)
++    add("kspWasmJs", libs.room3.compiler)
+ }
++
+ 
+ android {
+     namespace = "com.zhelenskiy.zheduler.zheduler.shared"
+Index: composeApp/build.gradle.kts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/composeApp/build.gradle.kts b/composeApp/build.gradle.kts
+--- a/composeApp/build.gradle.kts	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/composeApp/build.gradle.kts	(date 1776608624654)
+@@ -27,9 +27,6 @@
+             baseName = "ComposeApp"
+             isStatic = true
+         }
+-        iosTarget.binaries.all {
+-            linkerOpts("-lsqlite3")
+-        }
+     }
+ 
+     jvm()
+@@ -74,6 +71,7 @@
+             implementation(libs.flowmvi.core)
+             implementation(libs.flowmvi.compose)
+             implementation(libs.kotlinx.collections.immutable)
++            implementation(libs.room3.runtime)
+         }
+         commonTest.dependencies {
+             implementation(libs.kotlin.test)
+@@ -87,22 +85,28 @@
+             implementation(libs.nucleus.decorated.window.material)
+             implementation(libs.kstore.file)
+             implementation(libs.appdirs)
++            implementation(libs.sqlite.bundled)
+         }
+         androidMain.dependencies {
+             implementation(libs.kstore.file)
+             implementation(libs.appdirs)
++            implementation(libs.sqlite.bundled)
+         }
+         iosMain.dependencies {
+             implementation(libs.kstore.file)
++            implementation(libs.sqlite.bundled)
++        }
++        webMain.dependencies {
++            implementation(libs.sqlite.web)
++            implementation(projects.sqlJsWorker)
+         }
+         jsMain.dependencies {
+             implementation(libs.kstore.storage)
++            implementation(npm("@js-joda/timezone", "2.18.3"))
+         }
+         wasmJsMain.dependencies {
+             implementation(libs.kstore.storage)
+-            implementation(npm("sql.js", "1.12.0"))
+-            implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
+-            implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
++            implementation(npm("@js-joda/timezone", "2.18.3"))
+         }
+     }
+ }
+Index: sqlJsWorker/src/jsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.js.kt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/sqlJsWorker/src/jsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.js.kt b/sqlJsWorker/src/jsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.js.kt
+new file mode 100644
+--- /dev/null	(date 1776608220936)
++++ b/sqlJsWorker/src/jsMain/kotlin/com/zhelenskiy/zheduler/worker/SQLiteWasmWorker.js.kt	(date 1776608220936)
+@@ -0,0 +1,7 @@
++package com.zhelenskiy.zheduler.worker
++
++import androidx.sqlite.driver.web.WebWorkerSQLiteDriver
++import org.w3c.dom.Worker
++
++actual fun createSQLiteWasmWorker() =
++    WebWorkerSQLiteDriver(Worker(js("""new URL("sqlite-wasm-worker/worker.js", import.meta.url)""")))
+Index: composeApp/webpack.config.d/webpack.config.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/composeApp/webpack.config.d/webpack.config.js b/composeApp/webpack.config.d/webpack.config.js
+new file mode 100644
+--- /dev/null	(date 1776608608751)
++++ b/composeApp/webpack.config.d/webpack.config.js	(date 1776608608751)
+@@ -0,0 +1,6 @@
++;(function(config) {
++  config.devServer.headers = [
++      { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
++      { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' }
++  ]
++})(config);
+Index: gradle/libs.versions.toml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+--- a/gradle/libs.versions.toml	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/gradle/libs.versions.toml	(date 1776172544087)
+@@ -17,13 +17,12 @@
+ androidx-lifecycle = "2.9.6"
+ androidx-testExt = "1.3.0"
+ composeHotReload = "1.0.0"
+-composeMultiplatform = "1.10.0"
++composeMultiplatform = "1.10.3"
+ junit = "4.13.2"
+ nucleus = "1.4.7"
+ robolectric = "4.14.1"
+-sqlite-requery = "3.49.0"
+-# 2.3.0 has https://youtrack.jetbrains.com/projects/KT/issues/KT-83372/compileDebugKotlinAndroid-hangs-in-2.3.0-with-SQLDelight
+-kotlin = "2.2.21"
++kotlin = "2.3.20"
++ksp = "2.3.6"
+ kotlinx-coroutines = "1.10.2"
+ kotlinx-datetime = "0.7.1"
+ kotlinx-serialization = "1.8.0"
+@@ -34,8 +33,8 @@
+ logback = "1.5.24"
+ material3 = "1.10.0-alpha05"
+ filekit = "0.12.0"
+-sqldelight = "2.1.0"
+-webPackPlugin = "9.1.0"
++room3 = "3.0.0-alpha03"
++sqlite = "2.7.0-alpha03"
+ flowmvi = "3.2.1"
+ kotlinx-collections-immutable = "0.3.8"
+ 
+@@ -55,7 +54,6 @@
+ nucleus-decorated-window-material = { module = "io.github.kdroidfilter:nucleus.decorated-window-material", version.ref = "nucleus" }
+ nucleus-system-color = { module = "io.github.kdroidfilter:nucleus.system-color", version.ref = "nucleus" }
+ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+-sqlite-requery = { module = "com.github.requery:sqlite-android", version.ref = "sqlite-requery" }
+ androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
+ androidx-testExt-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-testExt" }
+ androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-espresso" }
+@@ -88,12 +86,10 @@
+ ktor-serverTestHost = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktor" }
+ filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
+ filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
+-sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
+-sqldelight-coroutines = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
+-sqldelight-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
+-sqldelight-native = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
+-sqldelight-jvm = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+-sqldelight-web = { module = "app.cash.sqldelight:web-worker-driver", version.ref = "sqldelight" }
++room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room3" }
++room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3" }
++sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
++sqlite-web = { module = "androidx.sqlite:sqlite-web", version.ref = "sqlite" }
+ flowmvi-core = { module = "pro.respawn.flowmvi:core", version.ref = "flowmvi" }
+ flowmvi-compose = { module = "pro.respawn.flowmvi:compose", version.ref = "flowmvi" }
+ kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinx-collections-immutable" }
+@@ -109,4 +105,5 @@
+ kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
+ kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+-sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
++ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
++room3 = { id = "androidx.room3", version.ref = "room3" }
+Index: composeApp/src/webMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/AppGraph.web.kt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/composeApp/src/webMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/AppGraph.web.kt b/composeApp/src/webMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/AppGraph.web.kt
+--- a/composeApp/src/webMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/AppGraph.web.kt	(revision 6c57a036b96dd8f72120d29d8774d29ce378f4c5)
++++ b/composeApp/src/webMain/kotlin/com/zhelenskiy/zheduler/zheduler/di/AppGraph.web.kt	(date 1776608939616)
+@@ -1,14 +1,19 @@
+ package com.zhelenskiy.zheduler.zheduler.di
+ 
+-import com.zhelenskiy.zheduler.zheduler.db.DriverFactory
+-import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
++import androidx.room3.Room
++import com.zhelenskiy.zheduler.worker.createSQLiteWasmWorker
++import com.zhelenskiy.zheduler.zheduler.db.ZhedulerRoomDatabase
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Deferred
++import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.async
+ import kotlin.coroutines.EmptyCoroutineContext
+ 
+ private val dbScope = CoroutineScope(EmptyCoroutineContext)
+ 
+-actual fun provideDeferredDatabase(): Deferred<ZhedulerDatabase> = dbScope.async {
+-    ZhedulerDatabase(DriverFactory().createDriver())
+-}
+\ No newline at end of file
++actual fun provideDeferredDatabase(): Deferred<ZhedulerRoomDatabase> = dbScope.async {
++    Room.databaseBuilder<ZhedulerRoomDatabase>("Zheduler.db")
++        .setDriver(createSQLiteWasmWorker())
++        .setQueryCoroutineContext(Dispatchers.Default)
++        .build()
++}
