@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -7,6 +7,7 @@ import kotlinx.collections.immutable.persistentSetOf
 
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
+import kotlin.time.ExperimentalTime
 
 class InMemorySavedFilterRepositoryTest : SavedFilterRepositoryTest(), InMemoryRepositoryTest
 class DatabaseSavedFilterRepositoryTest : SavedFilterRepositoryTest(), DatabaseRepositoryTest

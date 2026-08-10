@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -10,6 +10,7 @@ import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.datetime.*
 import kotlin.test.*
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 class InMemoryRecurrenceEdgeCasesRepositoryTest: RecurrenceEdgeCasesRepositoryTest(), InMemoryRepositoryTest
@@ -76,7 +77,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         val jan31 = LocalDateTime(2024, 1, 31, 12, 0) // 2024 is leap year
         val result = period.addTo(jan31)
         // Result depends on kotlinx-datetime behavior - likely Feb 29 in leap year
-        assertEquals(2, result.monthNumber)
+        assertEquals(2, result.month.number)
     }
 
     @Test
@@ -85,8 +86,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         val nov15 = LocalDateTime(2024, 11, 15, 10, 0)
         val result = period.addTo(nov15)
         assertEquals(2025, result.year)
-        assertEquals(1, result.monthNumber)
-        assertEquals(15, result.date.dayOfMonth)
+        assertEquals(1, result.month.number)
+        assertEquals(15, result.date.day)
     }
 
     // ==================== TimeOfDay Edge Cases ====================
@@ -202,8 +203,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
 
         // 2025 is not a leap year, should clamp to Feb 28
         assertEquals(2025, nextDateTime.year)
-        assertEquals(2, nextDateTime.monthNumber)
-        assertEquals(28, nextDateTime.date.dayOfMonth)
+        assertEquals(2, nextDateTime.month.number)
+        assertEquals(28, nextDateTime.date.day)
     }
 
     private fun RecurrenceTrigger.TimeRecurrenceTrigger.toRule(): RecurrenceRule =
@@ -227,8 +228,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
 
         // April has 30 days, should clamp to 30
-        assertEquals(4, nextDateTime.monthNumber)
-        assertEquals(30, nextDateTime.date.dayOfMonth)
+        assertEquals(4, nextDateTime.month.number)
+        assertEquals(30, nextDateTime.date.day)
     }
 
     // ==================== RecurrenceDayOfWeek Conversion Tests ====================
@@ -300,8 +301,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         assertNotNull(next)
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
 
-        assertEquals(29, nextDateTime.date.dayOfMonth)
-        assertEquals(1, nextDateTime.monthNumber)
+        assertEquals(29, nextDateTime.date.day)
+        assertEquals(1, nextDateTime.month.number)
     }
 
     @Test
@@ -325,8 +326,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
 
         // July 2024 has 5 Mondays, the 5th is July 29
-        assertEquals(7, nextDateTime.monthNumber) // July
-        assertEquals(29, nextDateTime.date.dayOfMonth)
+        assertEquals(7, nextDateTime.month.number) // July
+        assertEquals(29, nextDateTime.date.day)
     }
 
     // ==================== FixedPointPattern Validation Tests ====================

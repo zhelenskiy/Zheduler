@@ -211,9 +211,9 @@ private fun SearchInFilterOptions(filterState: TaskFilterState) {
                 selected = field in filterState.textSearchFields,
                 onClick = {
                     filterState.textSearchFields = if (field in filterState.textSearchFields && filterState.textSearchFields.size > 1) {
-                        filterState.textSearchFields.remove(field)
+                        filterState.textSearchFields.removing(field)
                     } else {
-                        filterState.textSearchFields.add(field)
+                        filterState.textSearchFields.adding(field)
                     }
                 },
                 label = { Text(field.displayName, style = MaterialTheme.typography.labelSmall) },
@@ -249,10 +249,10 @@ private fun StatusFilterOptions(filterState: TaskFilterState, spaceIdPrefix: Str
                     onClick = {
                         filterState.statusFilters = if (isSelected) {
                             filterState.statusFilters.fold(filterState.statusFilters) { acc, s ->
-                                if (s::class == status::class) acc.remove(s) else acc
+                                if (s::class == status::class) acc.removing(s) else acc
                             }
                         } else {
-                            filterState.statusFilters.add(status)
+                            filterState.statusFilters.adding(status)
                         }
                     },
                     label = { Text(status.displayName, style = MaterialTheme.typography.labelSmall) },
@@ -581,9 +581,9 @@ private fun ConnectionsFilterOptions(filterState: TaskFilterState, spaceIdPrefix
                     selected = typeOption in filterState.connectionTypeFilters,
                     onClick = {
                         filterState.connectionTypeFilters = if (typeOption in filterState.connectionTypeFilters) {
-                            filterState.connectionTypeFilters.remove(typeOption)
+                            filterState.connectionTypeFilters.removing(typeOption)
                         } else {
-                            filterState.connectionTypeFilters.add(typeOption)
+                            filterState.connectionTypeFilters.adding(typeOption)
                         }
                     },
                     label = { Text(typeOption.displayName, style = MaterialTheme.typography.labelSmall) },
@@ -738,9 +738,9 @@ private fun TagChipsRow(filteredTags: List<String>, filterState: TaskFilterState
                 selected = tag in filterState.selectedTags,
                 onClick = {
                     filterState.selectedTags = if (tag in filterState.selectedTags) {
-                        filterState.selectedTags.remove(tag)
+                        filterState.selectedTags.removing(tag)
                     } else {
-                        filterState.selectedTags.add(tag)
+                        filterState.selectedTags.adding(tag)
                     }
                 },
                 label = { Text(tag, style = MaterialTheme.typography.labelSmall) },

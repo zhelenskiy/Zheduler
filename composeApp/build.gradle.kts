@@ -84,7 +84,7 @@ kotlin {
             implementation(libs.nucleus.system.color)
             implementation(libs.nucleus.core.runtime)
             implementation(libs.nucleus.decorated.window.jni)
-            implementation(libs.nucleus.decorated.window.material)
+            implementation(libs.nucleus.decorated.window.material3)
             implementation(libs.kstore.file)
             implementation(libs.appdirs)
         }
@@ -100,7 +100,7 @@ kotlin {
         }
         wasmJsMain.dependencies {
             implementation(libs.kstore.storage)
-            implementation(npm("sql.js", "1.12.0"))
+            implementation(npm("sql.js", "1.14.1"))
             implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
             implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
         }

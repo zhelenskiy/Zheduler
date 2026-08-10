@@ -311,7 +311,7 @@ private fun RecurrenceSection(
                                     rule = rule,
                                     onEdit = { editingRuleIndex = index },
                                     onDelete = {
-                                        formState.recurrenceRules = formState.recurrenceRules.removeAt(index)
+                                        formState.recurrenceRules = formState.recurrenceRules.removingAt(index)
                                     },
                                     index = index,
                                     onTaskClick = null,
@@ -340,9 +340,9 @@ private fun RecurrenceSection(
                     val nextOccurrence = RecurrenceCalculator.calculateNextOccurrence(rule, currentState)
                     val newEntry = rule to currentState.copy(nextOccurrenceDate = nextOccurrence)
                     formState.recurrenceRules = if (index < formState.recurrenceRules.size) {
-                        formState.recurrenceRules.set(index, newEntry)
+                        formState.recurrenceRules.replacingAt(index, newEntry)
                     } else {
-                        formState.recurrenceRules.add(newEntry)
+                        formState.recurrenceRules.adding(newEntry)
                     }
                 }
                 editingRuleIndex = null
@@ -519,7 +519,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { formState.notifications = formState.notifications.add("") }) {
+                    IconButton(onClick = { formState.notifications = formState.notifications.adding("") }) {
                         Icon(Icons.Default.Add, contentDescription = "Add notification")
                     }
                 }
@@ -541,7 +541,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                 OutlinedTextField(
                                     value = notification,
                                     onValueChange = { newValue ->
-                                        formState.notifications = formState.notifications.set(index, newValue)
+                                        formState.notifications = formState.notifications.replacingAt(index, newValue)
                                     },
                                     label = { Text("Time before deadline") },
                                     placeholder = { Text("e.g., 1d, 2h 30m") },
@@ -557,7 +557,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                     }
                                 )
                                 IconButton(onClick = {
-                                    formState.notifications = formState.notifications.removeAt(index)
+                                    formState.notifications = formState.notifications.removingAt(index)
                                 }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Remove notification")
                                 }
@@ -610,7 +610,7 @@ private fun TagsSection(
                         tags.forEach { tag ->
                             TagChip(
                                 tag = tag,
-                                onRemove = { formState.tags = formState.tags.remove(tag) }
+                                onRemove = { formState.tags = formState.tags.removing(tag) }
                             )
                         }
                     }
@@ -630,7 +630,7 @@ private fun TagsSection(
             onFilterTags = onFilterTags,
             onDismiss = { showTagDialog = false },
             onTagSelected = { tag ->
-                formState.tags = formState.tags.add(tag)
+                formState.tags = formState.tags.adding(tag)
                 showTagDialog = false
             }
         )
@@ -694,7 +694,7 @@ private fun ConnectionsSection(
                                     ConnectedTaskChip(
                                         task = connectedTask,
                                         taskId = connection.targetTaskId,
-                                        onRemove = { formState.connections = formState.connections.remove(connection) },
+                                        onRemove = { formState.connections = formState.connections.removing(connection) },
                                     )
                                 }
                             }
@@ -742,7 +742,7 @@ private fun ConnectionsSection(
             onSearchTasks = onSearchTasksForConnection,
             onDismiss = { showConnectionDialog = false },
             onConnectionAdded = { connection ->
-                formState.connections = formState.connections.add(connection)
+                formState.connections = formState.connections.adding(connection)
             },
             onCreateNewTask = onCreateNewTaskWithConnection?.let { callback ->
                 { connectionType ->

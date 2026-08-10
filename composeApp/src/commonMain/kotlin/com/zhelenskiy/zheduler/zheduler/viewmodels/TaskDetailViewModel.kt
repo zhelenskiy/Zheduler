@@ -105,7 +105,7 @@ class TaskDetailContainer(
     private suspend fun TaskDetailPipelineContext.loadTaskById(taskId: String) {
         val task = repository.getTaskById(taskId) ?: return
         updateState {
-            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks.put(taskId, task))
+            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks.putting(taskId, task))
         }
     }
 }

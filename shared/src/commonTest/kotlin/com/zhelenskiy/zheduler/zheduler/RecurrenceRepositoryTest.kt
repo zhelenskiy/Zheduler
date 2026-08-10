@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -15,6 +15,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 class InMemoryRecurrenceRepositoryTest: RecurrenceRepositoryTest(), InMemoryRepositoryTest
@@ -156,7 +157,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         assertEquals(DayOfWeek.MONDAY, nextDateTime.dayOfWeek)
         assertEquals(10, nextDateTime.hour)
         // Should return the same Monday (Jan 15) at 10:00 since we're before that time
-        assertEquals(15, nextDateTime.date.dayOfMonth)
+        assertEquals(15, nextDateTime.date.day)
     }
 
     @Test
@@ -175,7 +176,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         assertNotNull(next)
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
         assertEquals(DayOfWeek.TUESDAY, nextDateTime.dayOfWeek)
-        assertEquals(16, nextDateTime.date.dayOfMonth) // Jan 16, 2024
+        assertEquals(16, nextDateTime.date.day) // Jan 16, 2024
     }
 
     // ==================== AtFixedPoints - DayOfMonth Tests ====================
@@ -195,8 +196,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
         assertNotNull(next)
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
-        assertEquals(15, nextDateTime.date.dayOfMonth)
-        assertEquals(1, nextDateTime.monthNumber)
+        assertEquals(15, nextDateTime.date.day)
+        assertEquals(1, nextDateTime.month.number)
     }
 
     @Test
@@ -214,8 +215,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
         assertNotNull(next)
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
-        assertEquals(15, nextDateTime.date.dayOfMonth)
-        assertEquals(2, nextDateTime.monthNumber) // February
+        assertEquals(15, nextDateTime.date.day)
+        assertEquals(2, nextDateTime.month.number) // February
     }
 
     @Test
@@ -234,8 +235,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state, triggerTime = startFrom)
         assertNotNull(next)
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
-        assertEquals(2, nextDateTime.monthNumber) // February
-        assertEquals(29, nextDateTime.date.dayOfMonth) // 2024 is leap year
+        assertEquals(2, nextDateTime.month.number) // February
+        assertEquals(29, nextDateTime.date.day) // 2024 is leap year
     }
 
     // ==================== AtFixedPoints - NthDayOfWeekInMonth Tests ====================
@@ -258,7 +259,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
         assertEquals(DayOfWeek.MONDAY, nextDateTime.dayOfWeek)
         // First Monday of January 2024 is January 1st
-        assertEquals(1, nextDateTime.date.dayOfMonth)
+        assertEquals(1, nextDateTime.date.day)
     }
 
     @Test
@@ -279,7 +280,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
         assertEquals(DayOfWeek.FRIDAY, nextDateTime.dayOfWeek)
         // Last Friday of January 2024 is January 26th
-        assertEquals(26, nextDateTime.date.dayOfMonth)
+        assertEquals(26, nextDateTime.date.day)
     }
 
     // ==================== AtFixedPoints - YearlyOnDate Tests ====================
@@ -301,7 +302,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         assertNotNull(next)
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
         assertEquals(Month.MARCH, nextDateTime.month)
-        assertEquals(15, nextDateTime.date.dayOfMonth)
+        assertEquals(15, nextDateTime.date.day)
         assertEquals(2024, nextDateTime.year)
     }
 
@@ -322,7 +323,7 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
         assertNotNull(next)
         val nextDateTime = next.toLocalDateTime(TimeZone.UTC)
         assertEquals(Month.MARCH, nextDateTime.month)
-        assertEquals(15, nextDateTime.date.dayOfMonth)
+        assertEquals(15, nextDateTime.date.day)
         assertEquals(2025, nextDateTime.year)
     }
 

@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -9,6 +9,7 @@ import co.touchlab.sqliter.DatabaseConfiguration
 import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 private var index = 0
 

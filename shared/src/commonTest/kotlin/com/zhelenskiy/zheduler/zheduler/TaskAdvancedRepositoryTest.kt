@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -7,10 +7,13 @@ import kotlinx.collections.immutable.persistentSetOf
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlin.test.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 class InMemoryTaskAdvancedRepositoryTest: TaskAdvancedRepositoryTest(), InMemoryRepositoryTest
 class DatabaseTaskAdvancedRepositoryTest: TaskAdvancedRepositoryTest(), DatabaseRepositoryTest
@@ -292,10 +295,10 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
         repo.updateTask(repo.getTaskById(task.id)!!.copy(status = TaskStatus.Done))
 
         val now = Clock.System.now()
-        val nowKotlinx = kotlinx.datetime.Instant.fromEpochMilliseconds(now.toEpochMilliseconds())
+        val nowKotlinx = Instant.fromEpochMilliseconds(now.toEpochMilliseconds())
         val today = nowKotlinx.toLocalDateTime(TimeZone.currentSystemDefault()).date
 
-        val changes = repo.getStatusChangesByDate(spaceId, today.year, today.monthNumber)
+        val changes = repo.getStatusChangesByDate(spaceId, today.year, today.month.number)
 
         // Should have at least today's changes
         assertTrue(changes.isNotEmpty())

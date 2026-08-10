@@ -59,7 +59,7 @@ class CalendarContainer(
     private suspend fun CalendarPipelineContext.loadTask(taskId: String) {
         val task = repository.getTaskById(taskId) ?: return
         updateState {
-            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks.put(taskId, task))
+            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks.putting(taskId, task))
         }
     }
 

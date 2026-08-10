@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -9,6 +9,7 @@ import kotlin.test.*
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 class InMemoryIsMissedRepositoryTest : IsMissedRepositoryTest(), InMemoryRepositoryTest
 class DatabaseIsMissedRepositoryTest : IsMissedRepositoryTest(), DatabaseRepositoryTest

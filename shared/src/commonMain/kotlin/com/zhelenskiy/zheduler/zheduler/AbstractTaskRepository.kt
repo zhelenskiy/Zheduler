@@ -310,7 +310,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         getBlockedTasks().forEach { task ->
             val status = task.status
             if (status is TaskStatus.Blocked && deletedBlockerId in status.blockerTaskIds) {
-                val remainingBlockers = status.blockerTaskIds.remove(deletedBlockerId)
+                val remainingBlockers = status.blockerTaskIds.removing(deletedBlockerId)
 
                 val shouldUnblock = areAllBlockersResolved(remainingBlockers)
                 if (shouldUnblock) {
@@ -474,7 +474,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         visited: PersistentSet<String> = persistentSetOf()
     ): Instant? {
         if (task.id in visited) return null
-        val newVisited = visited.add(task.id)
+        val newVisited = visited.adding(task.id)
 
         val dependentDueDates = task.connections
             .filter { it.type == ConnectionType.IsDependencyOf }
@@ -785,7 +785,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 val connectionsToRemove = task.connections.filter { it.targetTaskId in taskIdsInDeletedSpace }
                 if (connectionsToRemove.isNotEmpty()) {
                     updatedTask = updatedTask.copy(
-                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.remove(conn) }
+                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.removing(conn) }
                     )
                     removeConnectionsToDeletedTasks(task.id, connectionsToRemove)
                     modified = true
@@ -794,7 +794,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 // Update blocked status if blocker is being deleted
                 val status = task.status
                 if (status is TaskStatus.Blocked) {
-                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.remove(id) }
+                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.removing(id) }
                     if (remainingBlockers != status.blockerTaskIds) {
                         val newStatus = if (remainingBlockers.isEmpty()) {
                             TaskStatus.InProgress

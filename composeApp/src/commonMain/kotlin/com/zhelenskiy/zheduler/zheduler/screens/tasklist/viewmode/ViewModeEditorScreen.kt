@@ -603,7 +603,7 @@ private fun AvailableValuesHint(level: GroupingLevelState) {
     if (level.field.requiresExhaustiveCoverage()) {
         val allValues = level.field.getAllPossibleValues()
         val usedValues = level.groups.flatMap { it.values }.toSet()
-        val availableValues = allValues.removeAll(usedValues)
+        val availableValues = allValues.removingAll(usedValues)
         if (availableValues.isNotEmpty()) {
             Text(
                 "Available values: ${availableValues.joinToString(", ")}",
@@ -926,7 +926,7 @@ private fun AddValueButton(
     onFilterTags: (String, Set<String>) -> Unit
 ) {
     if (field.requiresExhaustiveCoverage()) {
-        val availableValues = field.getAllPossibleValues().removeAll(group.values)
+        val availableValues = field.getAllPossibleValues().removingAll(group.values)
         if (availableValues.isNotEmpty()) {
             var showMenu by remember { mutableStateOf(false) }
             Box {
@@ -1155,7 +1155,7 @@ private fun OrderingRuleRow(
                     readOnly = true,
                     label = { Text("Field") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fieldExpanded) },
-                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryEditable)
+                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
                 )
                 ExposedDropdownMenu(
                     expanded = fieldExpanded,

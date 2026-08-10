@@ -773,8 +773,8 @@ object RecurrenceCalculator {
         
         // Try current month
         val targetDayThisMonth = minOf(pattern.dayOfMonth, currentDate.month.length(isLeapYear(currentDate.year)))
-        if (currentDate.dayOfMonth < targetDayThisMonth || 
-            (currentDate.dayOfMonth == targetDayThisMonth && isTimeBefore(fromDateTime.time, targetTime))) {
+        if (currentDate.day < targetDayThisMonth || 
+            (currentDate.day == targetDayThisMonth && isTimeBefore(fromDateTime.time, targetTime))) {
             val targetDate = LocalDate(currentDate.year, currentDate.month, targetDayThisMonth)
             return LocalDateTime(targetDate, targetTime).toInstant(tz)
         }
@@ -1013,12 +1013,12 @@ object RecurrenceService {
                 afterOccurrences = newAfterOccurrences?.let(::AfterOccurrences)
             )
         )
-        val newRules = rules.set(index, Pair(newRule, newState))
+        val newRules = rules.replacingAt(index, Pair(newRule, newState))
         val newStatus = rule.resetToStatus
         val newUsedRules = if (newRules.size == rules.size) {
-            usedRules.add(index)
+            usedRules.adding(index)
         } else {
-            usedRules.filterToPersistentSet { it < index }.addAll(usedRules.filter { it > index }.map(Int::dec))
+            usedRules.filterToPersistentSet { it < index }.addingAll(usedRules.filter { it > index }.map(Int::dec))
         }
         return processRecurrence(newRules, triggerEvent.copy(currentStatus = newStatus), newUsedRules) ?: Pair(newRules, newStatus)
     }

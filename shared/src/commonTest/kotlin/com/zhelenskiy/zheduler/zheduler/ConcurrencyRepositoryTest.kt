@@ -1,10 +1,11 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
+import kotlin.time.ExperimentalTime
 
 class InMemoryConcurrencyRepositoryTest : ConcurrencyRepositoryTest(), InMemoryRepositoryTest
 class DatabaseConcurrencyRepositoryTest : ConcurrencyRepositoryTest(), DatabaseRepositoryTest

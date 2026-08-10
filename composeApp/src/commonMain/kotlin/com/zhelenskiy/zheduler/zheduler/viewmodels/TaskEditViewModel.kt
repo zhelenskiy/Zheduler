@@ -162,7 +162,7 @@ class TaskEditContainer(
     private suspend fun TaskEditPipelineContext.loadTaskById(id: String) {
         val task = repository.getTaskById(id)
         if (task != null) {
-            updateState { copy(loadedTasks = loadedTasks.put(id, task)) }
+            updateState { copy(loadedTasks = loadedTasks.putting(id, task)) }
         }
     }
 

@@ -115,7 +115,7 @@ class TaskListContainer(
     private suspend fun TaskListPipelineContext.getFilteredTasks(criteria: TaskFilterCriteria) {
         val filtered = repository.getAllWithTotalsFiltered(spaceId, criteria)
         updateState {
-            copy(filteredTasks = filteredTasks.put(criteria, filtered))
+            copy(filteredTasks = filteredTasks.putting(criteria, filtered))
         }
     }
 

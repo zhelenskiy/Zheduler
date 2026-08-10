@@ -664,7 +664,7 @@ private fun ExportSpaceDialog(
                                 onExportSpace(space.id, prettyPrint)
                                 fileSaverLauncher.launch(
                                     suggestedName = fileName,
-                                    extension = "json"
+                                    defaultExtension = "json"
                                 )
                             },
                             modifier = Modifier.weight(1f)

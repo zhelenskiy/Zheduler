@@ -334,7 +334,7 @@ private fun DynamicTaskList(
 
     // Helper function to load a group's children
     suspend fun loadGroupChildren(groupData: LoadedGroupData): Pair<String, Any> {
-        val newFilters = groupData.groupInfo.filter?.let { groupData.parentFilters.add(it) } ?: groupData.parentFilters
+        val newFilters = groupData.groupInfo.filter?.let { groupData.parentFilters.adding(it) } ?: groupData.parentFilters
         val nextLevelIndex = groupData.level + 1
 
         return if (nextLevelIndex < viewMode.groupingLevels.size) {
@@ -418,10 +418,10 @@ private fun DynamicTaskList(
         when (val value = result.second) {
             is List<*> -> {
                 @Suppress("UNCHECKED_CAST")
-                loadedGroups = loadedGroups.put(result.first, value as List<LoadedGroupData>)
+                loadedGroups = loadedGroups.putting(result.first, value as List<LoadedGroupData>)
             }
             is LoadedTasksData -> {
-                loadedTasks = loadedTasks.put(result.first, value)
+                loadedTasks = loadedTasks.putting(result.first, value)
             }
         }
     }
@@ -469,16 +469,16 @@ private fun DynamicTaskList(
                     expandedUncategorized = expandedUncategorizedSet,
                     onToggleCollapse = { key ->
                         collapsedGroupsSet = if (key in collapsedGroupsSet) {
-                            collapsedGroupsSet.remove(key)
+                            collapsedGroupsSet.removing(key)
                         } else {
-                            collapsedGroupsSet.add(key)
+                            collapsedGroupsSet.adding(key)
                         }
                     },
                     onToggleUncategorized = { key ->
                         expandedUncategorizedSet = if (key in expandedUncategorizedSet) {
-                            expandedUncategorizedSet.remove(key)
+                            expandedUncategorizedSet.removing(key)
                         } else {
-                            expandedUncategorizedSet.add(key)
+                            expandedUncategorizedSet.adding(key)
                         }
                     },
                     onRequestLoad = loadSubgroups,

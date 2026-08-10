@@ -97,7 +97,7 @@ class TimeUtilsTest {
         val now = Clock.System.now()
         val result = formatCompactDateTime(now)
         val dateTime = now.toLocalDateTime(TimeZone.currentSystemDefault())
-        assertTrue(result.contains(dateTime.dayOfMonth.toString()))
+        assertTrue(result.contains(dateTime.day.toString()))
     }
 
     @Test

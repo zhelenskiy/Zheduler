@@ -1,43 +1,45 @@
 [versions]
-agp = "8.11.2"
+agp = "8.13.2"
 coreKtx = "1.7.0"
 kotlinxBrowser = "0.5.0"
-materialKolor = "4.0.5"
-colorpickerCompose = "1.1.3"
-kstore = "0.9.1"
+# 5.0.0 declares minCompileSdk=37
+materialKolor = "4.1.1"
+colorpickerCompose = "1.2.0"
+kstore = "1.1.0"
 appdirs = "2.0.0"
-metro = "0.10.2"
+metro = "1.4.1"
 android-compileSdk = "36"
 android-minSdk = "24"
 android-targetSdk = "36"
-androidx-activity = "1.12.2"
+androidx-activity = "1.13.0"
 androidx-appcompat = "1.7.1"
-androidx-core = "1.17.0"
+# 1.19.0 declares minCompileSdk=37 and minAndroidGradlePluginVersion=9.1.0
+androidx-core = "1.18.0"
 androidx-espresso = "3.7.0"
-androidx-lifecycle = "2.9.6"
+# 2.11.0 pulls androidx.lifecycle 2.11.0, which needs compileSdk 37 and AGP 9.1
+androidx-lifecycle = "2.10.0"
 androidx-testExt = "1.3.0"
-composeHotReload = "1.0.0"
-composeMultiplatform = "1.10.0"
+composeHotReload = "1.1.1"
+composeMultiplatform = "1.11.1"
 junit = "4.13.2"
-nucleus = "1.4.7"
-robolectric = "4.14.1"
+nucleus = "1.15.7"
+robolectric = "4.16.1"
 sqlite-requery = "3.49.0"
-# 2.3.0 has https://youtrack.jetbrains.com/projects/KT/issues/KT-83372/compileDebugKotlinAndroid-hangs-in-2.3.0-with-SQLDelight
-kotlin = "2.2.21"
-kotlinx-coroutines = "1.10.2"
-kotlinx-datetime = "0.7.1"
-kotlinx-serialization = "1.8.0"
-navigation = "2.9.1"
-reorderable = "3.0.0"
-richeditor = "1.0.0-rc13"
-ktor = "3.3.3"
-logback = "1.5.24"
-material3 = "1.10.0-alpha05"
-filekit = "0.12.0"
-sqldelight = "2.1.0"
-webPackPlugin = "9.1.0"
+kotlin = "2.4.10"
+kotlinx-coroutines = "1.11.0"
+kotlinx-datetime = "0.8.0"
+kotlinx-serialization = "1.11.0"
+navigation = "2.9.2"
+reorderable = "3.1.0"
+richeditor = "1.0.0"
+ktor = "3.5.2"
+logback = "1.6.1"
+material3 = "1.11.0-alpha07"
+filekit = "0.15.0"
+sqldelight = "2.3.2"
+webPackPlugin = "14.0.0"
 flowmvi = "3.2.1"
-kotlinx-collections-immutable = "0.3.8"
+kotlinx-collections-immutable = "0.5.1"
 
 [libraries]
 core-ktx = { module = "androidx.test:core-ktx", version.ref = "coreKtx" }
@@ -52,7 +54,7 @@ kstore-storage = { module = "io.github.xxfast:kstore-storage", version.ref = "ks
 appdirs = { module = "ca.gosyer:kotlin-multiplatform-appdirs", version.ref = "appdirs" }
 nucleus-core-runtime = { module = "io.github.kdroidfilter:nucleus.core-runtime", version.ref = "nucleus" }
 nucleus-decorated-window-jni = { module = "io.github.kdroidfilter:nucleus.decorated-window-jni", version.ref = "nucleus" }
-nucleus-decorated-window-material = { module = "io.github.kdroidfilter:nucleus.decorated-window-material", version.ref = "nucleus" }
+nucleus-decorated-window-material3 = { module = "io.github.kdroidfilter:nucleus.decorated-window-material3", version.ref = "nucleus" }
 nucleus-system-color = { module = "io.github.kdroidfilter:nucleus.system-color", version.ref = "nucleus" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 sqlite-requery = { module = "com.github.requery:sqlite-android", version.ref = "sqlite-requery" }
@@ -67,7 +69,6 @@ androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
-compose-materialIconsExtended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "composeMultiplatform" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }

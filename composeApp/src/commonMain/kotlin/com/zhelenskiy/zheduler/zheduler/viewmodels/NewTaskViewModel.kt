@@ -20,6 +20,7 @@ import pro.respawn.flowmvi.dsl.store
 import pro.respawn.flowmvi.plugins.reduce
 import pro.respawn.flowmvi.plugins.whileSubscribed
 import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 data class NewTaskState(
     val taskToCopy: Task? = null,
@@ -41,7 +42,7 @@ sealed interface NewTaskIntent : MVIIntent {
         val title: String,
         val description: String,
         val status: TaskStatus,
-        val dueDate: kotlin.time.Instant?,
+        val dueDate: Instant?,
         val priority: Priority?,
         val estimatedTime: RecurrencePeriod?,
         val tags: PersistentSet<String>,
@@ -142,7 +143,7 @@ class NewTaskContainer(
     private suspend fun NewTaskPipelineContext.loadTask(taskId: String) {
         val task = repository.getTaskById(taskId)
         if (task != null) {
-            updateState { copy(loadedTasks = loadedTasks.put(taskId, task)) }
+            updateState { copy(loadedTasks = loadedTasks.putting(taskId, task)) }
         }
     }
 

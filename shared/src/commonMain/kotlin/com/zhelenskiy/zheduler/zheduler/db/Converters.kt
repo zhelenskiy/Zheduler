@@ -13,6 +13,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.jvm.JvmName
 import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * JSON serializer for database type conversions
@@ -154,8 +155,8 @@ data class TaskFilterCriteriaSerializable(
         tagMatchMode = tagMatchMode,
         customPriorityMin = customPriorityMin,
         customPriorityMax = customPriorityMax,
-        customDueDateBefore = customDueDateBefore?.let { kotlin.time.Instant.fromEpochMilliseconds(it) },
-        customDueDateAfter = customDueDateAfter?.let { kotlin.time.Instant.fromEpochMilliseconds(it) },
+        customDueDateBefore = customDueDateBefore?.let { Instant.fromEpochMilliseconds(it) },
+        customDueDateAfter = customDueDateAfter?.let { Instant.fromEpochMilliseconds(it) },
         customEstimatedTimeMin = customEstimatedTimeMin,
         customEstimatedTimeMax = customEstimatedTimeMax,
         dependsOnTaskIds = dependsOnTaskIds,

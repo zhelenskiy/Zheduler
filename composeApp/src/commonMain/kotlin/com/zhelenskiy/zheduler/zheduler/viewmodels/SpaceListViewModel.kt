@@ -122,9 +122,9 @@ class SpaceListContainer(
     private suspend fun SpaceListPipelineContext.toggleSearchOption(option: SpaceSearchOption) {
         updateState {
             val newOptions = if (option in searchOptions && searchOptions.size > 1) {
-                searchOptions.remove(option)
+                searchOptions.removing(option)
             } else {
-                searchOptions.add(option)
+                searchOptions.adding(option)
             }
             copy(searchOptions = newOptions)
         }
@@ -183,7 +183,7 @@ class SpaceListContainer(
 
     private suspend fun SpaceListPipelineContext.loadTagsForSpace(spaceId: String) {
         val tags = repository.getAllTags(spaceId)
-        updateState { copy(tagsBySpace = tagsBySpace.put(spaceId, tags)) }
+        updateState { copy(tagsBySpace = tagsBySpace.putting(spaceId, tags)) }
     }
 
     private suspend fun SpaceListPipelineContext.addTagToSpace(spaceId: String, tag: String) {

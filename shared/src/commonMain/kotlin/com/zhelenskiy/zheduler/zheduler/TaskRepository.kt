@@ -213,7 +213,7 @@ interface TaskRepository {
         title: String,
         description: String = "",
         status: TaskStatus = TaskStatus.Open,
-        dueDate: kotlinx.datetime.Instant? = null,
+        dueDate: Instant? = null,
         priority: Priority? = null,
         estimatedTime: RecurrencePeriod? = null,
         tags: PersistentSet<String> = persistentSetOf(),

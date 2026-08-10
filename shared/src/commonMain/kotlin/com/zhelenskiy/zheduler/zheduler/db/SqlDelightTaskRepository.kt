@@ -174,7 +174,7 @@ class SqlDelightTaskRepository(
         val blockedTasks = getBlockedTasks()
         val neededTaskIds = collectNeededTaskIds(task, blockedTasks)
         // Batch fetch all necessary tasks in a single query
-        val tasksById = getTasksByIds(neededTaskIds).associateByToPersistentMap { it.id }.put(task.id, task)
+        val tasksById = getTasksByIds(neededTaskIds).associateByToPersistentMap { it.id }.putting(task.id, task)
         return TaskWithTotals(
             task = task,
             totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
@@ -329,13 +329,13 @@ class SqlDelightTaskRepository(
     override suspend fun updateTask(task: Task): Task? = mutex.withLock {
         val oldTask = getByIdUnsafe(task.id) ?: return@withLock null
 
-        val removedConnections = oldTask.connections.removeAll(task.connections)
+        val removedConnections = oldTask.connections.removingAll(task.connections)
         removedConnections.forEach { connection ->
             queries.deleteConnection(task.id, connection.targetTaskId, connection.type.name)
             queries.deleteConnection(connection.targetTaskId, task.id, connection.type.symmetric.name)
         }
 
-        val addedConnections = task.connections.removeAll(oldTask.connections)
+        val addedConnections = task.connections.removingAll(oldTask.connections)
         addedConnections.forEach { connection ->
             queries.insertConnection(task.id, connection.targetTaskId, connection.type.name)
             addSymmetricConnectionUnsafe(task.id, connection)
@@ -346,7 +346,7 @@ class SqlDelightTaskRepository(
 
         syncToDatabase(finalTask)
 
-        val newTags = finalTask.tags.removeAll(oldTask.tags)
+        val newTags = finalTask.tags.removingAll(oldTask.tags)
         newTags.forEach { queries.insertTagForSpace(finalTask.spaceId, it) }
 
         // Update task_tags junction table
@@ -529,7 +529,7 @@ class SqlDelightTaskRepository(
         val custom = queries.getAllCustomViewModes(spaceId).awaitAsList().map { row ->
             row.configJson.toViewMode(spaceId, row.id, row.name)
         }
-        return builtIn.toPersistentList().addAll(custom)
+        return builtIn.toPersistentList().addingAll(custom)
     }
 
     override suspend fun getViewModeById(spaceId: String, viewModeId: String): ViewMode? {
@@ -961,7 +961,7 @@ class SqlDelightTaskRepository(
         // For each group definition, count matching tasks using SQL
         for (group in level.groups) {
             val groupFilter = group.toFilter(level.field)
-            val combinedFilters = parentFilters.add(groupFilter)
+            val combinedFilters = parentFilters.adding(groupFilter)
 
             // Get tasks matching all filters
             val tasks = getTasksWithSqlFilters(spaceId, combinedFilters, filterParams)
@@ -991,7 +991,7 @@ class SqlDelightTaskRepository(
             // Get uncategorized tasks via SQL (Not filter is handled in getTasksWithSqlFilters)
             val uncategorizedTasks = getTasksWithSqlFilters(
                 spaceId,
-                parentFilters.add(uncategorizedFilter),
+                parentFilters.adding(uncategorizedFilter),
                 filterParams
             )
 
@@ -1449,7 +1449,7 @@ class SqlDelightTaskRepository(
                     else -> result.tagFilterTaskIds
                 },
                 excludeTaskIds = when {
-                    p.excludeTaskIds != null && result.excludeTaskIds != null -> p.excludeTaskIds.addAll(result.excludeTaskIds)
+                    p.excludeTaskIds != null && result.excludeTaskIds != null -> p.excludeTaskIds.addingAll(result.excludeTaskIds)
                     p.excludeTaskIds != null -> p.excludeTaskIds
                     else -> result.excludeTaskIds
                 }

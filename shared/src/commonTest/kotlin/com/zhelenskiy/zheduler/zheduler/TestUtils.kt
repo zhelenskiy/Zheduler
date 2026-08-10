@@ -1,8 +1,10 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlin.test.AfterTest
 import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 /**
  * Result of creating a repository with a test space.
@@ -51,7 +53,7 @@ expect fun cleanupDatabaseTest()
 interface DatabaseRepositoryTest : AbstractRepositoryTest {
     override suspend fun createEmptyRepository(clock: Clock): TaskRepository = createDatabaseRepository(clock)
 
-    @kotlin.test.AfterTest
+    @AfterTest
     fun afterEachTest()  {
         cleanupDatabaseTest()
     }

@@ -55,6 +55,7 @@ import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlinx.datetime.*
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 @Suppress("UnusedReceiverParameter")
 @Composable
@@ -628,7 +629,7 @@ private fun formatDateHeader(date: LocalDate, clock: Clock): String {
     }
 }
 
-private fun formatTimeOnly(instant: kotlin.time.Instant): String {
+private fun formatTimeOnly(instant: Instant): String {
     val dateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
     val hour = dateTime.hour.toString().padStart(2, '0')
     val minute = dateTime.minute.toString().padStart(2, '0')

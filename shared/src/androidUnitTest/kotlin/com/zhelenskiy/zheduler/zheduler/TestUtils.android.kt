@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -10,6 +10,7 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 actual suspend fun createDatabaseRepository(clock: Clock): TaskRepository {
     val context = ApplicationProvider.getApplicationContext<Context>()

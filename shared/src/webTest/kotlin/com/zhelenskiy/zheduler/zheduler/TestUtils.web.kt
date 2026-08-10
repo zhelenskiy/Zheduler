@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -10,6 +10,7 @@ import com.zhelenskiy.zheduler.zheduler.db.DriverFactory
 import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 // Track all drivers created for cleanup
 internal val webTestDrivers = mutableListOf<SqlDriver>()

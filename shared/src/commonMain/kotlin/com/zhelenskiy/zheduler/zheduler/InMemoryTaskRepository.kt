@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
@@ -254,7 +255,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                     val dateTime = statusChange.timestamp.toLocalDateTime(TimeZone.currentSystemDefault())
                     val date = dateTime.date
 
-                    if (date.year == year && date.monthNumber == month) {
+                    if (date.year == year && date.month.number == month) {
                         val event = StatusChangeEvent(task, statusChange)
                         changesByDate.getOrPut(date) { mutableListOf() }.add(event)
                     }
@@ -341,12 +342,12 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     override suspend fun updateTask(task: Task): Task? = mutex.withLock {
         val oldTask = tasks[task.id] ?: return@withLock null
 
-        val removedConnections = oldTask.connections.removeAll(task.connections)
+        val removedConnections = oldTask.connections.removingAll(task.connections)
         removedConnections.forEach { connection ->
             removeSymmetricConnectionUnsafe(task.id, connection)
         }
 
-        val addedConnections = task.connections.removeAll(oldTask.connections)
+        val addedConnections = task.connections.removingAll(oldTask.connections)
         addedConnections.forEach { connection ->
             addSymmetricConnectionUnsafe(task.id, connection)
         }
@@ -376,7 +377,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             return@withLock false
         }
 
-        val updatedTask = fromTask.copy(connections = fromTask.connections.add(connection))
+        val updatedTask = fromTask.copy(connections = fromTask.connections.adding(connection))
         tasks[fromTaskId] = updatedTask
 
         addSymmetricConnectionUnsafe(fromTaskId, connection)
@@ -390,7 +391,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         val connection = TaskConnection(toTaskId, type)
         if (connection !in fromTask.connections) return@withLock true
 
-        val updatedTask = fromTask.copy(connections = fromTask.connections.remove(connection))
+        val updatedTask = fromTask.copy(connections = fromTask.connections.removing(connection))
         tasks[fromTaskId] = updatedTask
 
         removeSymmetricConnectionUnsafe(fromTaskId, connection)
@@ -404,7 +405,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         if (symmetricConnection !in targetTask.connections) {
             val updatedTask = targetTask.copy(
-                connections = targetTask.connections.add(symmetricConnection)
+                connections = targetTask.connections.adding(symmetricConnection)
             )
             tasks[connection.targetTaskId] = updatedTask
 
@@ -421,7 +422,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         if (symmetricConnection in targetTask.connections) {
             val updatedTask = targetTask.copy(
-                connections = targetTask.connections.remove(symmetricConnection)
+                connections = targetTask.connections.removing(symmetricConnection)
             )
             tasks[connection.targetTaskId] = updatedTask
 
@@ -462,7 +463,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         automaticChangeReason: AutomaticChangeReason?
     ) {
         statusTimelines[taskId] = (statusTimelines[taskId]?.toPersistentList() ?: persistentListOf())
-            .add(
+            .adding(
                 StatusChange(
                     timestamp = clock.now(),
                     previousStatus = previousStatus,
@@ -561,7 +562,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     override suspend fun getAllViewModes(spaceId: String): List<ViewMode> = mutex.withLock {
         val builtIn = ViewMode.getBuiltInModes(spaceId)
         val custom = customViewModes[spaceId]?.values?.toList() ?: emptyList()
-        builtIn.toPersistentList().addAll(custom)
+        builtIn.toPersistentList().addingAll(custom)
     }
 
     override suspend fun getViewModeById(spaceId: String, viewModeId: String): ViewMode? = mutex.withLock {
@@ -693,14 +694,14 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 val connectionsToRemove = task.connections.filter { it.targetTaskId in taskIdsInDeletedSpace }
                 if (connectionsToRemove.isNotEmpty()) {
                     updatedTask = updatedTask.copy(
-                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.remove(conn) }
+                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.removing(conn) }
                     )
                     modified = true
                 }
 
                 val status = task.status
                 if (status is TaskStatus.Blocked) {
-                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.remove(id) }
+                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.removing(id) }
                     if (remainingBlockers != status.blockerTaskIds) {
                         val newStatus = if (remainingBlockers.isEmpty()) {
                             TaskStatus.InProgress

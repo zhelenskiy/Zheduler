@@ -68,10 +68,10 @@ kotlin {
         // It's shared between jsMain and wasmJsMain
         webMain.dependencies {
             implementation(libs.sqldelight.web)  // web-worker-driver used by both JS and WasmJS
-            implementation(npm("sql.js", "1.12.0"))
+            implementation(npm("sql.js", "1.14.1"))
             implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
             implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
-            implementation(npm("@js-joda/timezone", "2.18.3"))
+            implementation(npm("@js-joda/timezone", "2.25.2"))
         }
 
         wasmJsMain.dependencies {

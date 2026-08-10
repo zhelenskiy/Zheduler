@@ -563,7 +563,7 @@ private fun FixedDaysOfWeekConfiguration(
                     FilterChip(
                         selected = day in selectedDays,
                         onClick = {
-                            selectedDays = if (day in selectedDays) selectedDays.remove(day) else selectedDays.add(day)
+                            selectedDays = if (day in selectedDays) selectedDays.removing(day) else selectedDays.adding(day)
                         },
                         label = { Text(day.name.take(3)) }
                     )
@@ -882,9 +882,9 @@ private fun MonthSelector(
                             onClick = {
                                 onSelectedMonthsChange(
                                     if (month in selectedMonths && selectedMonths.size > 1) {
-                                        selectedMonths.remove(month)
+                                        selectedMonths.removing(month)
                                     } else {
-                                        selectedMonths.add(month)
+                                        selectedMonths.adding(month)
                                     }
                                 )
                             },
@@ -1111,10 +1111,10 @@ private fun StatusChangesSelector(
                                 StatusChange(
                                     if (isSelected && currentStatuses.size > 1) {
                                         currentStatuses.fold(currentStatuses) { acc, s ->
-                                            if (s::class == status::class) acc.remove(s) else acc
+                                            if (s::class == status::class) acc.removing(s) else acc
                                         }
                                     } else if (!isSelected) {
-                                        currentStatuses.add(status)
+                                        currentStatuses.adding(status)
                                     } else {
                                         currentStatuses
                                     }

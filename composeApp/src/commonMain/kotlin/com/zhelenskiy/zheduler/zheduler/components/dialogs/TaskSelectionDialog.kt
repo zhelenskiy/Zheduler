@@ -60,9 +60,9 @@ fun TaskSelectionDialog(
                                 .fillMaxWidth()
                                 .clickable {
                                     currentSelection = if (task.id in currentSelection) {
-                                        currentSelection.remove(task.id)
+                                        currentSelection.removing(task.id)
                                     } else {
-                                        currentSelection.add(task.id)
+                                        currentSelection.adding(task.id)
                                     }
                                 }
                                 .padding(vertical = 4.dp),
@@ -72,9 +72,9 @@ fun TaskSelectionDialog(
                                 checked = task.id in currentSelection,
                                 onCheckedChange = {
                                     currentSelection = if (it) {
-                                        currentSelection.add(task.id)
+                                        currentSelection.adding(task.id)
                                     } else {
-                                        currentSelection.remove(task.id)
+                                        currentSelection.removing(task.id)
                                     }
                                 }
                             )

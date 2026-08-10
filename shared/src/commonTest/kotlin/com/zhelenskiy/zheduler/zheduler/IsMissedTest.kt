@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -7,6 +7,7 @@ import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.*
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 class IsMissedTest {

@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class)
 
 package com.zhelenskiy.zheduler.zheduler
 
@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.time.ExperimentalTime
 
 class InMemoryCalculateStatusFromSubtasksRepositoryTest: CalculateStatusFromSubtasksRepositoryTest(), InMemoryRepositoryTest
 class DatabaseCalculateStatusFromSubtasksRepositoryTest: CalculateStatusFromSubtasksRepositoryTest(), DatabaseRepositoryTest

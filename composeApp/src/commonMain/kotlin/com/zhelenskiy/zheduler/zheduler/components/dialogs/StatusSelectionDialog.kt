@@ -228,7 +228,7 @@ private fun BlockedStatusDetails(
                 loadedTasks = loadedTasks,
                 onLoadTask = onLoadTask,
                 onRemoveTask = { taskId ->
-                    onBlockerTaskIdsChange(blockerTaskIds.remove(taskId))
+                    onBlockerTaskIdsChange(blockerTaskIds.removing(taskId))
                 }
             )
         }
