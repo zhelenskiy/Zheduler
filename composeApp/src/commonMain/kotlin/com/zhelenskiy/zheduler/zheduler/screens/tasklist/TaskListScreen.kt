@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
@@ -49,9 +50,11 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListIntent
 import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentSet
 import kotlin.time.ExperimentalTime
 
 private data class TaskListUiData(
@@ -307,6 +310,15 @@ private data class LoadedTasksData(
 )
 
 /**
+ * A [PersistentSet] is not one of the types a platform state registry can persist on its own (on
+ * Android it has to fit in a Bundle), so [rememberSaveable] needs to be told how to flatten it.
+ */
+private val persistentStringSetSaver = listSaver<PersistentSet<String>, String>(
+    save = { it.toList() },
+    restore = { it.toPersistentSet() },
+)
+
+/**
  * Displays tasks according to the view mode's grouping and ordering configuration.
  * Groups are loaded lazily when expanded.
  */
@@ -323,9 +335,13 @@ private fun DynamicTaskList(
     onCopy: (String) -> Unit,
 ) {
     // Track collapsed state for each group by its key (survives configuration changes)
-    var collapsedGroupsSet by rememberSaveable { mutableStateOf(persistentSetOf<String>()) }
+    var collapsedGroupsSet by rememberSaveable(stateSaver = persistentStringSetSaver) {
+        mutableStateOf(persistentSetOf<String>())
+    }
     // Track expanded state for uncategorized groups (collapsed by default)
-    var expandedUncategorizedSet by rememberSaveable { mutableStateOf(persistentSetOf<String>()) }
+    var expandedUncategorizedSet by rememberSaveable(stateSaver = persistentStringSetSaver) {
+        mutableStateOf(persistentSetOf<String>())
+    }
 
     // Cache for loaded groups at each level, keyed by parentKey
     var loadedGroups by remember { mutableStateOf<PersistentMap<String, List<LoadedGroupData>>>(persistentMapOf()) }

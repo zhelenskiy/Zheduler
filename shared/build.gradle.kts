@@ -3,15 +3,27 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.sqldelight)
 }
 
 kotlin {
-    androidTarget {
+    android {
+        namespace = "com.zhelenskiy.zheduler.zheduler.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
+        }
+
+        androidResources {
+            enable = true
+        }
+
+        withHostTest {
+            isIncludeAndroidResources = true
         }
     }
 
@@ -50,7 +62,7 @@ kotlin {
             implementation(libs.sqlite.requery)  // SQLite with JSON1 extension support
         }
 
-        androidUnitTest.dependencies {
+        getByName("androidHostTest").dependencies {
             implementation(libs.core.ktx)
             implementation(libs.robolectric)
             implementation(libs.junit)
@@ -94,35 +106,19 @@ sqldelight {
     linkSqlite = true
 }
 
-android {
-    namespace = "com.zhelenskiy.zheduler.zheduler.shared"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+tasks.withType<Test>().matching { it.name.contains("AndroidHostTest", ignoreCase = true) }
+    .configureEach {
+        systemProperty("robolectric.logging", "stdout")
+        exclude("**/DatabaseTaskRepositoryTest.class")
+        exclude("**/DatabaseTaskAdvancedRepositoryTest.class")
+        exclude("**/DatabaseTaskAutomationRepositoryTest.class")
+        exclude("**/DatabaseTaskFiltersRepositoryTest.class")
+        exclude("**/DatabaseRecurrenceRepositoryTest.class")
+        exclude("**/DatabaseRecurrenceEdgeCasesRepositoryTest.class")
+        exclude("**/DatabaseConcurrencyRepositoryTest.class")
+        exclude("**/DatabaseCalculateStatusFromSubtasksRepositoryTest.class")
+        exclude("**/DatabaseIsMissedRepositoryTest.class")
+        exclude("**/DatabaseSearchTasksForConnectionTest.class")
+        exclude("**/DatabaseSavedFilterRepositoryTest.class")
+        exclude("**/GroupedTaskQueriesComparisonTest.class")
     }
-    defaultConfig {
-        minSdk = libs.versions.android.minSdk.get().toInt()
-    }
-    testOptions {
-        unitTests {
-            isIncludeAndroidResources = true
-            all {
-                it.systemProperty("robolectric.logging", "stdout")
-                // Exclude commonTest Database*Test classes since we have Android-specific versions with Robolectric
-                it.exclude("**/DatabaseTaskRepositoryTest.class")
-                it.exclude("**/DatabaseTaskAdvancedRepositoryTest.class")
-                it.exclude("**/DatabaseTaskAutomationRepositoryTest.class")
-                it.exclude("**/DatabaseTaskFiltersRepositoryTest.class")
-                it.exclude("**/DatabaseRecurrenceRepositoryTest.class")
-                it.exclude("**/DatabaseRecurrenceEdgeCasesRepositoryTest.class")
-                it.exclude("**/DatabaseConcurrencyRepositoryTest.class")
-                it.exclude("**/DatabaseCalculateStatusFromSubtasksRepositoryTest.class")
-                it.exclude("**/DatabaseIsMissedRepositoryTest.class")
-                it.exclude("**/DatabaseSearchTasksForConnectionTest.class")
-                it.exclude("**/DatabaseSavedFilterRepositoryTest.class")
-                it.exclude("**/GroupedTaskQueriesComparisonTest.class")
-            }
-        }
-    }
-}
