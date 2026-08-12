@@ -32,7 +32,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.PriorityBadge
 import com.zhelenskiy.zheduler.zheduler.components.common.TagChip
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.form.RecurrenceRuleItem
-import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
+import com.zhelenskiy.zheduler.zheduler.components.markdown.TaskDescriptionView
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
@@ -621,8 +621,9 @@ private fun TaskDescriptionSection(
 ) {
     if (task.description.isEmpty()) return
 
-    SimpleMarkdownText(
+    TaskDescriptionView(
         markdown = task.description,
+        taskId = task.id,
         allSpacePrefixes = allSpacePrefixes,
         getTaskById = { taskId -> connectedTasks[taskId] },
         onTaskClick = onTaskClick

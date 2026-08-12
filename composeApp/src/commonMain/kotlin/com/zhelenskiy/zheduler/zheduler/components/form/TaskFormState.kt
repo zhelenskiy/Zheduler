@@ -24,8 +24,7 @@ class TaskFormState(
     initialConnections: PersistentSet<TaskConnection>,
     initialNotifications: PersistentList<String>, // Compact time strings (e.g., "1d", "2h 30m")
     initialRecurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
-    initialAutoUpdateStatusFromSubtasks: Boolean,
-    initialAnimateVisibilityChanges: Boolean = false
+    initialAutoUpdateStatusFromSubtasks: Boolean
 ) {
     var title by mutableStateOf(initialTitle)
     var description by mutableStateOf(initialDescription)
@@ -38,7 +37,6 @@ class TaskFormState(
     var notifications by mutableStateOf(initialNotifications)
     var recurrenceRules by mutableStateOf(initialRecurrenceRules)
     var autoUpdateStatusFromSubtasks by mutableStateOf(initialAutoUpdateStatusFromSubtasks)
-    var animateVisibilityChanges by mutableStateOf(initialAnimateVisibilityChanges)
 
     val isFormValid: Boolean
         get() = title.isNotBlank() &&

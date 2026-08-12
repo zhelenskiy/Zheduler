@@ -1,6 +1,8 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -13,6 +15,23 @@ plugins {
 }
 
 kotlin {
+    // A `cascadeMain` source set shared by every target cascade-editor publishes for.
+    // Extending the template rather than calling dependsOn() by hand is what keeps the
+    // default hierarchy — and with it webMain, iosMain, ... — in place.
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    applyDefaultHierarchyTemplate {
+        common {
+            group("cascade") {
+                withJvm()
+                withIos()
+                withWasmJs()
+                // This module's android target comes from the AGP KMP library plugin, so
+                // it is not a KotlinAndroidTarget and withAndroidTarget() misses it.
+                withCompilations { it.target.platformType == KotlinPlatformType.androidJvm }
+            }
+        }
+    }
+
     android {
         namespace = "com.zhelenskiy.zheduler.zheduler.composeapp"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -52,6 +71,14 @@ kotlin {
     }
 
     sourceSets {
+        // cascade-editor has no Kotlin/JS variant, so the block editor lives here and js
+        // falls back to a raw Markdown field.
+        getByName("cascadeMain") {
+            dependencies {
+                implementation(libs.cascade.editor)
+            }
+        }
+
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
         }
@@ -82,6 +109,10 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+        }
+        jvmTest.dependencies {
+            implementation(libs.compose.uiTest)
+            implementation(compose.desktop.currentOs)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)

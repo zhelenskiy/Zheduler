@@ -123,7 +123,9 @@ fun NewTaskScreen(
                         container.store.intent(NewTaskIntent.SearchTasksForConnection(query, excludeIds, type, existing))
                     },
                     currentSpaceIdPrefix = state.currentSpaceIdPrefix,
-                    allSpacePrefixes = state.allSpacePrefixes
+                    allSpacePrefixes = state.allSpacePrefixes,
+                    // No id until it is created, so the choice applies to this form only.
+                    taskId = null
                 )
             }
         }

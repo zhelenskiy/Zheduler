@@ -3,7 +3,6 @@
 package com.zhelenskiy.zheduler.zheduler.components.form
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -19,8 +18,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -31,7 +28,6 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.*
 import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
-import kotlin.math.roundToInt
 import kotlin.time.ExperimentalTime
 
 @Composable
@@ -755,38 +751,52 @@ private fun ConnectionsSection(
 }
 
 @Composable
-private fun ColumnScope.DescriptionSection(
+private fun DescriptionSection(
     formState: TaskFormState,
+    taskId: String?,
     currentSpaceIdPrefix: String?,
     allSpacePrefixes: List<String>,
     connectedTasks: Map<String, Task>,
-    onTaskClick: (String) -> Unit,
-    scrollState: ScrollState
+    onTaskClick: (String) -> Unit
 ) {
+    // No longer says "Markdown": the format is named by the editor picker, and the rich
+    // editor is WYSIWYG even though Markdown is still what gets stored.
     val descriptionLabel = currentSpaceIdPrefix
-        ?.let { "Description (Markdown, use $it-# to reference)" }
-        ?: "Description (Markdown)"
+        ?.let { "Description (use $it-# to reference)" }
+        ?: "Description"
 
-    OutlinedTextField(
-        value = formState.description,
-        onValueChange = { formState.description = it },
-        label = { Text(descriptionLabel) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 150.dp),
-        minLines = 5
+    TaskDescriptionField(
+        markdown = formState.description,
+        onMarkdownChange = { formState.description = it },
+        label = descriptionLabel,
+        taskId = taskId,
+        modifier = Modifier.fillMaxWidth(),
+        preview = {
+            DescriptionPreview(
+                markdown = formState.description,
+                allSpacePrefixes = allSpacePrefixes,
+                connectedTasks = connectedTasks,
+                onTaskClick = onTaskClick
+            )
+        }
     )
+}
 
-    var scrollToPosition by remember { mutableStateOf<Float?>(null) }
-    val animate = formState.animateVisibilityChanges
-
+/**
+ * How the description will render once saved — including `ZH-12` references as links,
+ * which only the read-only renderer resolves.
+ */
+@Composable
+private fun DescriptionPreview(
+    markdown: String,
+    allSpacePrefixes: List<String>,
+    connectedTasks: Map<String, Task>,
+    onTaskClick: (String) -> Unit
+) {
     AnimatedVisibility(
-        visible = formState.description.isNotBlank(),
-        modifier = Modifier.onGloballyPositioned { coordinates ->
-            scrollToPosition = coordinates.positionInParent().y
-        },
-        enter = if (animate) fadeIn() + expandVertically() else EnterTransition.None,
-        exit = if (animate) fadeOut() + shrinkVertically() else ExitTransition.None,
+        visible = markdown.isNotBlank(),
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically(),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -795,17 +805,11 @@ private fun ColumnScope.DescriptionSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             SimpleMarkdownText(
-                markdown = formState.description,
+                markdown = markdown,
                 allSpacePrefixes = allSpacePrefixes,
                 getTaskById = { taskId -> connectedTasks[taskId] },
                 onTaskClick = onTaskClick,
             )
-            LaunchedEffect(Unit) {
-                if (formState.animateVisibilityChanges) {
-                    scrollToPosition?.let { scrollState.animateScrollTo(it.roundToInt()) }
-                }
-                formState.animateVisibilityChanges = true
-            }
         }
     }
 }
@@ -832,7 +836,9 @@ fun TaskFormContent(
     onFilterTasksForSelection: (String) -> Unit,
     onSearchTasksForConnection: (String, Set<String>, ConnectionType, Set<TaskConnection>) -> Unit,
     currentSpaceIdPrefix: String?,
-    allSpacePrefixes: List<String>
+    allSpacePrefixes: List<String>,
+    /** Null for a task that does not exist yet; its editor choice is not remembered. */
+    taskId: String?
 ) {
     // Load connected tasks when connections change
     LaunchedEffect(formState.connections) {
@@ -882,6 +888,6 @@ fun TaskFormContent(
             onSearchTasksForConnection,
             onCreateNewTaskWithConnection
         )
-        DescriptionSection(formState, currentSpaceIdPrefix, allSpacePrefixes, loadedTasks, onTaskClick, scrollState)
+        DescriptionSection(formState, taskId, currentSpaceIdPrefix, allSpacePrefixes, loadedTasks, onTaskClick)
     }
 }
