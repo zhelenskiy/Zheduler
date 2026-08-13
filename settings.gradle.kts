@@ -25,7 +25,7 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
-        maven("https://jitpack.io")  // For requery
+        maven("https://jitpack.io")
     }
 }
 
@@ -37,3 +37,4 @@ include(":androidApp")
 include(":composeApp")
 include(":server")
 include(":shared")
+include(":sqliteWasmWorker")

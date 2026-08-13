@@ -4,6 +4,17 @@ package com.zhelenskiy.zheduler.zheduler.components.markdown
 internal val TaskReferencePattern = Regex("[A-Za-z][A-Za-z0-9]*-\\d+")
 
 /**
+ * A literal `]`, spelled as a one-character class.
+ *
+ * Kotlin/JS and Kotlin/Wasm compile [Regex] to a `RegExp` carrying the `u` flag, and in unicode
+ * mode an unescaped `]` outside a character class is a syntax error — the pattern throws while the
+ * file's properties initialize, so every description in the web app fails to render. The obvious
+ * spelling, `\]`, is redundant on the JVM, which makes IDE inspections offer to strip it and
+ * quietly bring the crash back; inside a class the escape is required, so nothing rewrites it.
+ */
+private const val LiteralCloseBracket = "[\\]]"
+
+/**
  * A Markdown link whose target is a task reference the link chrome has turned into a URL.
  *
  * The block editor's link entry prepends `https://` to anything without a scheme
@@ -12,7 +23,7 @@ internal val TaskReferencePattern = Regex("[A-Za-z][A-Za-z0-9]*-\\d+")
  * prefix away does not stick either, because the next link edit re-applies it.
  */
 private val SchemedTaskLink =
-    Regex("]\\(\\s*https?://(${TaskReferencePattern.pattern})\\s*\\)")
+    Regex("$LiteralCloseBracket\\(\\s*https?://(${TaskReferencePattern.pattern})\\s*\\)")
 
 /** Rewrites `[ZH-12](https://ZH-12)` back to `[ZH-12](ZH-12)`. */
 internal fun withBareTaskReferenceLinks(markdown: String): String =
@@ -30,7 +41,8 @@ internal fun taskIdPattern(allSpacePrefixes: List<String>): Regex =
  * Spans that already carry their own meaning and must be left alone: links, images,
  * inline code, and autolinks.
  */
-private val NonLinkifiableSpan = Regex("!?\\[[^\\]]*]\\([^)]*\\)|`[^`]*`|<[^<>\\s]*>")
+private val NonLinkifiableSpan =
+    Regex("!?\\[[^\\]]*$LiteralCloseBracket\\([^)]*\\)|`[^`]*`|<[^<>\\s]*>")
 
 /**
  * Turns bare `ZH-12` references into Markdown links, skipping text that is already one.

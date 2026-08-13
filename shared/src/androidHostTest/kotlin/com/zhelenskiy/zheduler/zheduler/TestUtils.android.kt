@@ -2,24 +2,22 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
-import android.content.Context
-import androidx.test.core.app.ApplicationProvider
-import app.cash.sqldelight.async.coroutines.synchronous
-import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.android.AndroidSqliteDriver
-import com.zhelenskiy.zheduler.zheduler.db.SqlDelightTaskRepository
+import androidx.room3.Room
+import androidx.sqlite.driver.AndroidSQLiteDriver
+import com.zhelenskiy.zheduler.zheduler.db.RoomTaskRepository
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 actual suspend fun createDatabaseRepository(clock: Clock): TaskRepository {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    val driver: SqlDriver = AndroidSqliteDriver(ZhedulerDatabase.Schema.synchronous(), context, null)
-    // Enable foreign key constraints (disabled by default in SQLite)
-    driver.execute(null, "PRAGMA foreign_keys = ON;", 0)
-    return SqlDelightTaskRepository(ZhedulerDatabase(driver), clock)
+    // The framework driver rather than the bundled one: these tests run under Robolectric on the
+    // host JVM, which cannot load the bundled driver's Android native library.
+    val database = Room.inMemoryDatabaseBuilder<ZhedulerDatabase>()
+        .setDriver(AndroidSQLiteDriver())
+        .build()
+    return RoomTaskRepository(database, clock)
 }
 
 actual fun cleanupDatabaseTest() {
-    // No cleanup needed for Android - drivers are garbage collected
+    // No cleanup needed for Android - in-memory databases die with their connection
 }

@@ -199,7 +199,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     // Note: getById does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
-    // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
+    // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun getTaskById(id: String): Task? = tasks[id]
 
     override suspend fun getTasksByIds(ids: Set<String>): List<Task> = ids.mapNotNull { tasks[it] }
@@ -434,7 +434,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     // Note: getParentTasks does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
-    // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
+    // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun getParentTasks(taskId: String): List<Task> {
         val task = tasks[taskId] ?: return emptyList()
         return task.connections
@@ -443,7 +443,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     // Note: getSubtasks does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
-    // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
+    // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun getSubtasks(taskId: String): List<Task> {
         val task = tasks[taskId] ?: return emptyList()
         return task.connections
@@ -455,7 +455,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tasks[taskId]?.connections
 
     // Note: recordStatusChange does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
-    // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
+    // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun recordStatusChange(
         taskId: String,
         previousStatus: TaskStatus?,
@@ -474,18 +474,18 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     // Note: persistTaskUpdate does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
-    // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
+    // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun persistTaskUpdate(task: Task) {
         tasks[task.id] = task
     }
 
     // Note: getBlockedTasks does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
-    // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
+    // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun getBlockedTasks(): List<Task> =
         tasks.values.filter { it.status is TaskStatus.Blocked }
 
     // Note: getRecurringTasksDueBefore does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
-    // This design matches SqlDelightTaskRepository and allows AbstractTaskRepository's internal methods to work.
+    // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun getRecurringTasksDueBefore(time: Instant): List<Task> =
         tasks.values.filter { task ->
             task.isRecurring && task.dueDate?.let { it <= time } == true

@@ -2,7 +2,7 @@ package com.zhelenskiy.zheduler.zheduler.di
 
 import android.app.Application
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
-import com.zhelenskiy.zheduler.zheduler.db.DriverFactory
+import com.zhelenskiy.zheduler.zheduler.db.DatabaseFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -16,5 +16,5 @@ fun initAndroidDependencies(application: Application) {
 
 private val dbScope = CoroutineScope(EmptyCoroutineContext)
 actual fun provideDeferredDatabase(): Deferred<ZhedulerDatabase> = dbScope.async {
-    ZhedulerDatabase(DriverFactory(appContext).createDriver())
+    DatabaseFactory(appContext).createDatabase()
 }

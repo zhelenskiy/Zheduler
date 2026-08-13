@@ -5,7 +5,8 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.kotlinSerialization)
-    alias(libs.plugins.sqldelight)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.room3)
 }
 
 kotlin {
@@ -49,7 +50,7 @@ kotlin {
             implementation(libs.kotlinx.serializationJson)
             api(libs.kotlinx.datetime)
             implementation(libs.kotlinx.coroutines.core)
-            implementation(libs.sqldelight.runtime)
+            implementation(libs.room3.runtime)
             api(libs.kotlinx.collections.immutable)
         }
 
@@ -57,32 +58,36 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
         }
 
+        // sqlite-bundled ships SQLite compiled from source (with the JSON1 extension the filter
+        // queries need) for every non-web target. It has no js/wasmJs variant, hence per-target
+        // declarations rather than a shared parent source set.
         androidMain.dependencies {
-            implementation(libs.sqldelight.android)
-            implementation(libs.sqlite.requery)  // SQLite with JSON1 extension support
+            implementation(libs.androidx.sqlite.bundled)
         }
 
         getByName("androidHostTest").dependencies {
             implementation(libs.core.ktx)
             implementation(libs.robolectric)
             implementation(libs.junit)
+            // Robolectric runs on the host JVM, where the bundled driver's Android JNI cannot
+            // load, so these tests go through the framework SQLite Robolectric emulates.
+            implementation(libs.androidx.sqlite.framework)
         }
 
         iosMain.dependencies {
-            implementation(libs.sqldelight.native)
+            implementation(libs.androidx.sqlite.bundled)
         }
 
         jvmMain.dependencies {
-            implementation(libs.sqldelight.jvm)
+            implementation(libs.androidx.sqlite.bundled)
         }
 
         // webMain is automatically created by default hierarchy template
         // It's shared between jsMain and wasmJsMain
         webMain.dependencies {
-            implementation(libs.sqldelight.web)  // web-worker-driver used by both JS and WasmJS
-            implementation(npm("sql.js", "1.14.1"))
-            implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
-            implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
+            // WebWorkerSQLiteDriver plus the worker that backs it with SQLite WASM + OPFS.
+            implementation(libs.androidx.sqlite.web)
+            implementation(projects.sqliteWasmWorker)
             implementation(npm("@js-joda/timezone", "2.25.2"))
         }
 
@@ -96,14 +101,18 @@ kotlin {
     }
 }
 
-sqldelight {
-    databases {
-        create("ZhedulerDatabase") {
-            packageName.set("com.zhelenskiy.zheduler.zheduler.db")
-            generateAsync = true
-        }
-    }
-    linkSqlite = true
+// Room's KSP processor runs per target; there is no metadata compilation for it to hook into.
+dependencies {
+    add("kspAndroid", libs.room3.compiler)
+    add("kspIosArm64", libs.room3.compiler)
+    add("kspIosSimulatorArm64", libs.room3.compiler)
+    add("kspJvm", libs.room3.compiler)
+    add("kspJs", libs.room3.compiler)
+    add("kspWasmJs", libs.room3.compiler)
+}
+
+room3 {
+    schemaDirectory(layout.projectDirectory.dir("schemas"))
 }
 
 tasks.withType<Test>().matching { it.name.contains("AndroidHostTest", ignoreCase = true) }

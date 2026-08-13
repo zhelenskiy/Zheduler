@@ -1,0 +1,44 @@
+package com.zhelenskiy.zheduler.zheduler.db
+
+import androidx.room3.ConstructedBy
+import androidx.room3.Database
+import androidx.room3.RoomDatabase
+import androidx.room3.RoomDatabaseConstructor
+
+/**
+ * Version 1 is deliberate: it is the version SQLDelight stamped into every database this app has
+ * ever written, and [Entities.kt] mirrors that schema exactly, so Room adopts existing files
+ * without a migration. Any future schema change needs a version bump plus a `Migration`.
+ */
+@Database(
+    entities = [
+        Spaces::class,
+        Tasks::class,
+        TaskTags::class,
+        TaskConnections::class,
+        StatusChanges::class,
+        SpaceNextIds::class,
+        Tags::class,
+        FilterStates::class,
+        ViewModes::class,
+        FilterPanelStates::class,
+        CustomViewModes::class,
+        ActiveViewModes::class,
+        SavedFilters::class,
+    ],
+    version = 1,
+    exportSchema = true,
+)
+@ConstructedBy(ZhedulerDatabaseConstructor::class)
+abstract class ZhedulerDatabase : RoomDatabase() {
+    abstract fun dao(): ZhedulerDao
+}
+
+// The Room compiler generates the actual implementations.
+@Suppress("KotlinNoActualForExpect")
+expect object ZhedulerDatabaseConstructor : RoomDatabaseConstructor<ZhedulerDatabase> {
+    override fun initialize(): ZhedulerDatabase
+}
+
+/** Name of the database file, unchanged from the SQLDelight setup. */
+internal const val DATABASE_FILE_NAME = "zheduler.db"

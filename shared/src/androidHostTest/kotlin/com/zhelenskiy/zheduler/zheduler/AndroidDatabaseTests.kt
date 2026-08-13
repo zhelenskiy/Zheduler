@@ -63,5 +63,6 @@ class AndroidDatabaseSavedFilterRepositoryTest : SavedFilterRepositoryTest(), Da
 
 // Note: GroupedTaskQueriesComparisonTest is excluded from Android unit tests because the SQL queries
 // for getTaskGroups/getTasksForGroup use json_extract which is not supported by Robolectric's SQLite.
-// The requery sqlite-android library provides JSON1 support but uses native code that can't be loaded
-// in the Robolectric JVM environment. The test runs on JVM which has full SQLite JSON1 extension support.
+// BundledSQLiteDriver, which the app itself uses on Android, does provide JSON1, but its native code
+// cannot be loaded in the Robolectric JVM environment. The test runs on JVM instead, where the
+// bundled SQLite has full JSON1 extension support.

@@ -14,6 +14,19 @@ plugins {
     alias(libs.plugins.metro)
 }
 
+// `org.w3c.dom` is declared twice on the Kotlin/JS path: by kotlin-dom-api-compat (which Compose
+// UI and androidx.sqlite's web artifacts use) and by kotlinx-browser (also a Compose UI
+// dependency). The app executable links fine, but the *test* executable reaches both copies and
+// the IR linker fails with "IrClassSymbolImpl is already bound: org.w3c.dom.events/EventListener".
+//
+// Scoped to jsTest* on purpose: these configurations do not contribute to the app bundle, so the
+// app keeps both artifacts exactly as before. kotlin-dom-api-compat is the copy that must stay —
+// Compose Foundation calls its `EventListener(...)` factory, and dropping it links an
+// IrLinkageError stub that throws as soon as a text field is clicked.
+configurations.matching { it.name.startsWith("jsTest") }.configureEach {
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-browser")
+}
+
 kotlin {
     // A `cascadeMain` source set shared by every target cascade-editor publishes for.
     // Extending the template rather than calling dependsOn() by hand is what keeps the
@@ -136,9 +149,6 @@ kotlin {
         }
         wasmJsMain.dependencies {
             implementation(libs.kstore.storage)
-            implementation(npm("sql.js", "1.14.1"))
-            implementation(npm("@cashapp/sqldelight-sqljs-worker", libs.versions.sqldelight.get()))
-            implementation(devNpm("copy-webpack-plugin", libs.versions.webPackPlugin.get()))
         }
     }
 }
