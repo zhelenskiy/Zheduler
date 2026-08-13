@@ -1,13 +1,9 @@
 package com.zhelenskiy.zheduler.zheduler.components.dialogs
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,11 +19,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.itemKey
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
 
 @Composable
 fun TagSelectionDialog(
     selectedTags: Set<String>,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit,
     onDismiss: () -> Unit,
     onTagSelected: (String) -> Unit
@@ -73,7 +72,7 @@ fun TagSelectionDialog(
 private fun TagSelectionContent(
     tagText: String,
     onTagTextChange: (String) -> Unit,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onTagSelected: (String) -> Unit
 ) {
     Column(
@@ -83,7 +82,7 @@ private fun TagSelectionContent(
         TagSearchTextField(
             value = tagText,
             onValueChange = onTagTextChange,
-            hasFilteredTags = filteredTags.isNotEmpty(),
+            hasFilteredTags = filteredTags.itemCount > 0,
             onDone = {
                 if (tagText.isNotBlank()) {
                     onTagSelected(tagText.trim())
@@ -138,14 +137,14 @@ private fun TagSearchTextField(
 
 @Composable
 private fun FilteredTagsList(
-    tags: List<String>,
+    tags: LazyPagingItems<String>,
     onTagSelected: (String) -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         HorizontalDivider()
-        AnimatedContent(tags.isNotEmpty()) {
+        AnimatedContent(tags.itemCount > 0) {
             Text(
                 text = if (it) "Select existing tag:" else "No existing tags found",
                 style = MaterialTheme.typography.labelMedium,
@@ -153,12 +152,14 @@ private fun FilteredTagsList(
             )
         }
 
-        AnimatedContent(tags, transitionSpec = { EnterTransition.None togetherWith ExitTransition.None }) {
-            LazyColumn(
-                modifier = Modifier.sizeIn(maxHeight = 200.dp).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(tags) { tag ->
+        // Tags stream in a page at a time, so the list animates per item rather than as a whole.
+        LazyColumn(
+            modifier = Modifier.sizeIn(maxHeight = 200.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(count = tags.itemCount, key = tags.itemKey { it }) { index ->
+                val tag = tags[index]
+                if (tag != null) {
                     TagListItem(
                         tag = tag,
                         modifier = Modifier.animateItem(),
@@ -166,6 +167,7 @@ private fun FilteredTagsList(
                     )
                 }
             }
+            pagingAppendStatus(tags)
         }
     }
 }

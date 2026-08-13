@@ -13,7 +13,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
@@ -32,7 +31,12 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.paging.PagingData
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskCard
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptyState
@@ -40,6 +44,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.EmptySearchResults
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.common.ScreenState
 import com.zhelenskiy.zheduler.zheduler.components.common.mapData
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
 import com.zhelenskiy.zheduler.zheduler.components.common.dataOrNull
 import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
@@ -47,6 +52,7 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListIntent
+import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
@@ -61,7 +67,6 @@ private data class TaskListUiData(
     val activeViewMode: ViewMode,
     val viewModes: List<ViewMode>,
     val isFilterPanelOpen: Boolean,
-    val filteredTasks: List<TaskWithTotals>,
 )
 
 @Composable
@@ -96,12 +101,9 @@ private fun rememberPersistedFilterState(
 
 @Composable
 private fun rememberTaskListUiState(
-    hasAnyTasks: Boolean,
     onLoadInitialData: () -> TaskListUiData?,
     onSaveActiveViewMode: (String) -> Unit,
     onSaveFilterPanelOpen: (Boolean) -> Unit,
-    onGetFilteredTasks: (TaskFilterCriteria) -> List<TaskWithTotals>,
-    filterState: TaskFilterState
 ): MutableState<ScreenState<TaskListUiData>> {
     val uiState = remember { mutableStateOf<ScreenState<TaskListUiData>>(ScreenState.Loading) }
 
@@ -133,21 +135,6 @@ private fun rememberTaskListUiState(
         val state = uiState.value
         if (state is ScreenState.Ready) {
             onSaveFilterPanelOpen(state.data.isFilterPanelOpen)
-        }
-    }
-
-    LaunchedEffect(filterState.toCriteria(), hasAnyTasks, uiState.value) {
-        if (uiState.value.dataOrNull == null) return@LaunchedEffect
-        val criteria = filterState.toCriteria()
-        val filtered = onGetFilteredTasks(criteria)
-        when (val state = uiState.value) {
-            is ScreenState.Loading -> {}
-            is ScreenState.InitiallyLoaded -> uiState.value = ScreenState.InitiallyLoaded(
-                state.data.copy(filteredTasks = filtered)
-            )
-            is ScreenState.Ready -> uiState.value = ScreenState.Ready(
-                state.data.copy(filteredTasks = filtered)
-            )
         }
     }
 
@@ -265,7 +252,7 @@ private fun TaskListSearchAndFilter(
 @Composable
 private fun TaskListEmptyStates(
     hasAnyTasks: Boolean,
-    filteredTasks: List<TaskWithTotals>,
+    matchingTaskCount: Int?,
     shouldAnimate: Boolean,
     onClearFilters: () -> Unit,
 ) {
@@ -278,7 +265,7 @@ private fun TaskListEmptyStates(
     }
 
     AnimatedVisibility(
-        visible = hasAnyTasks && filteredTasks.isEmpty(),
+        visible = hasAnyTasks && matchingTaskCount == 0,
         enter = if (shouldAnimate) fadeIn() else EnterTransition.None,
         exit = if (shouldAnimate) fadeOut() else ExitTransition.None
     ) {
@@ -301,12 +288,13 @@ private data class LoadedGroupData(
 )
 
 /**
- * Wrapper to hold loaded tasks with metadata.
+ * An expanded leaf group: everything needed to page through its tasks.
+ * The tasks themselves are not held here — they arrive through [LazyPagingItems].
  */
-private data class LoadedTasksData(
-    val tasks: List<TaskWithTotals>,
+private data class OpenLeafGroup(
     val groupKey: String,
-    val level: Int
+    val level: Int,
+    val filters: PersistentList<GroupFilter>
 )
 
 /**
@@ -320,16 +308,20 @@ private val persistentStringSetSaver = listSaver<PersistentSet<String>, String>(
 
 /**
  * Displays tasks according to the view mode's grouping and ordering configuration.
- * Groups are loaded lazily when expanded.
+ *
+ * Groups are loaded lazily when expanded, and each expanded leaf group pages its own tasks: the
+ * group tree holds counts and filters only, never task lists.
  */
 @Composable
 private fun DynamicTaskList(
     viewMode: ViewMode,
     filterCriteria: TaskFilterCriteria,
-    hasAnyFilteredTasks: Boolean,
+    dataVersion: Long,
     shouldAnimate: Boolean,
     onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
-    onGetTasksForGroup: suspend (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
+    onCountTasks: suspend (PersistentList<GroupFilter>, TaskFilterCriteria) -> Int,
+    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> Flow<PagingData<TaskWithTotals>>,
+    onMatchingCountChange: (Int) -> Unit,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
@@ -345,8 +337,8 @@ private fun DynamicTaskList(
 
     // Cache for loaded groups at each level, keyed by parentKey
     var loadedGroups by remember { mutableStateOf<PersistentMap<String, List<LoadedGroupData>>>(persistentMapOf()) }
-    // Cache for loaded tasks, keyed by groupKey
-    var loadedTasks by remember { mutableStateOf<PersistentMap<String, LoadedTasksData>>(persistentMapOf()) }
+    // Leaf groups whose tasks are currently on screen, keyed by groupKey
+    var openLeaves by remember { mutableStateOf<PersistentMap<String, OpenLeafGroup>>(persistentMapOf()) }
 
     // Helper function to load a group's children
     suspend fun loadGroupChildren(groupData: LoadedGroupData): Pair<String, Any> {
@@ -366,17 +358,18 @@ private fun DynamicTaskList(
                 )
             }
         } else {
-            // Leaf level - load tasks
-            val tasks = onGetTasksForGroup(newFilters, viewMode.defaultOrderingRules, filterCriteria)
-            groupData.groupKey to LoadedTasksData(tasks, groupData.groupKey, nextLevelIndex)
+            // Leaf level - its tasks are paged in, so only the filters that select them are kept
+            groupData.groupKey to OpenLeafGroup(groupData.groupKey, nextLevelIndex, newFilters)
         }
     }
 
-    // Load root level groups and reload all expanded groups when filter changes
-    LaunchedEffect(viewMode, filterCriteria) {
+    // Load root level groups and reload all expanded groups when the filter, the view mode or the
+    // stored data changes
+    LaunchedEffect(viewMode, filterCriteria, dataVersion) {
         if (viewMode.groupingLevels.isNotEmpty()) {
             // Load root level
             val groups = onGetTaskGroups(viewMode, 0, persistentListOf(), filterCriteria)
+            onMatchingCountChange(groups.sumOf { it.taskCount })
             val rootGroups = groups.map { groupInfo ->
                 val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
                 LoadedGroupData(
@@ -389,18 +382,18 @@ private fun DynamicTaskList(
 
             // Collect keys that were previously expanded (had loaded children)
             val previouslyExpandedGroupKeys = loadedGroups.keys.filter { it.isNotEmpty() }.toSet()
-            val previouslyLoadedTaskKeys = loadedTasks.keys.filter { it.isNotEmpty() }.toSet()
+            val previouslyOpenLeafKeys = openLeaves.keys.filter { it.isNotEmpty() }.toSet()
 
             // Start with root groups and use builders
             val newLoadedGroupsBuilder = persistentMapOf("" to rootGroups).builder()
-            val newLoadedTasksBuilder = persistentMapOf<String, LoadedTasksData>().builder()
+            val newOpenLeavesBuilder = persistentMapOf<String, OpenLeafGroup>().builder()
 
             // BFS to reload expanded groups in order
             val groupsToProcess = ArrayDeque(rootGroups)
             while (groupsToProcess.isNotEmpty()) {
                 val groupData = groupsToProcess.removeFirst()
                 val wasExpanded = groupData.groupKey in previouslyExpandedGroupKeys ||
-                                  groupData.groupKey in previouslyLoadedTaskKeys
+                                  groupData.groupKey in previouslyOpenLeafKeys
 
                 if (wasExpanded) {
                     val result = loadGroupChildren(groupData)
@@ -411,19 +404,19 @@ private fun DynamicTaskList(
                             newLoadedGroupsBuilder[result.first] = subgroups
                             groupsToProcess.addAll(subgroups)
                         }
-                        is LoadedTasksData -> {
-                            newLoadedTasksBuilder[result.first] = value
+                        is OpenLeafGroup -> {
+                            newOpenLeavesBuilder[result.first] = value
                         }
                     }
                 }
             }
 
             loadedGroups = newLoadedGroupsBuilder.build()
-            loadedTasks = newLoadedTasksBuilder.build()
+            openLeaves = newOpenLeavesBuilder.build()
         } else {
-            // No grouping levels - load all tasks directly
-            val tasks = onGetTasksForGroup(persistentListOf(), viewMode.defaultOrderingRules, filterCriteria)
-            loadedTasks = persistentMapOf("" to LoadedTasksData(tasks, "", 0))
+            // No grouping levels - every matching task is shown in one paged list
+            onMatchingCountChange(onCountTasks(persistentListOf(), filterCriteria))
+            openLeaves = persistentMapOf("" to OpenLeafGroup("", 0, persistentListOf()))
             loadedGroups = persistentMapOf()
         }
     }
@@ -436,18 +429,30 @@ private fun DynamicTaskList(
                 @Suppress("UNCHECKED_CAST")
                 loadedGroups = loadedGroups.putting(result.first, value as List<LoadedGroupData>)
             }
-            is LoadedTasksData -> {
-                loadedTasks = loadedTasks.putting(result.first, value)
+            is OpenLeafGroup -> {
+                openLeaves = openLeaves.putting(result.first, value)
             }
         }
     }
 
+    // One paged stream per open leaf group. Collected here rather than inside the LazyColumn so a
+    // group keeps its loaded pages while it scrolls in and out of the viewport.
+    val leafItems = mutableMapOf<String, LazyPagingItems<TaskWithTotals>>()
+    for (leaf in openLeaves.values) {
+        key(leaf.groupKey) {
+            val pages = remember(leaf, filterCriteria, viewMode) {
+                onGetTaskPages(leaf.filters, viewMode.defaultOrderingRules, filterCriteria)
+            }
+            leafItems[leaf.groupKey] = pages.collectAsLazyPagingItems()
+        }
+    }
+
     // Only show the list when data is loaded to avoid animation glitches on initial render
-    val hasLoadedData = loadedGroups.isNotEmpty() || loadedTasks.isNotEmpty()
+    val hasLoadedData = loadedGroups.isNotEmpty() || openLeaves.isNotEmpty()
     var shouldAnimateInner by remember { mutableStateOf(true) }
 
     AnimatedVisibility(
-        visible = hasAnyFilteredTasks && hasLoadedData,
+        visible = hasLoadedData,
         enter = if (shouldAnimate) fadeIn() else EnterTransition.None,
         exit = if (shouldAnimate) fadeOut() else ExitTransition.None,
     ) {
@@ -463,23 +468,23 @@ private fun DynamicTaskList(
         ) {
             // If no grouping levels, show tasks directly
             if (viewMode.groupingLevels.isEmpty()) {
-                val tasksData = loadedTasks[""]
-                if (tasksData != null) {
-                    items(tasksData.tasks, key = { it.task.id }) { taskWithTotals ->
-                        TaskCard(
-                            taskWithTotals = taskWithTotals,
-                            onClick = { onTaskClick(taskWithTotals.task.id) },
-                            onDelete = { onDelete(taskWithTotals) },
-                            onCopy = { onCopy(taskWithTotals.task.id) },
-                            modifier = Modifier.animateItem(),
-                        )
-                    }
+                val tasks = leafItems[""]
+                if (tasks != null) {
+                    taskCards(
+                        tasks = tasks,
+                        groupKey = "",
+                        indent = 0.dp,
+                        onTaskClick = onTaskClick,
+                        onDelete = onDelete,
+                        onCopy = onCopy,
+                    )
                 }
             } else {
                 // Render groups recursively
                 TaskGroupItems(
                     loadedGroups = loadedGroups,
-                    loadedTasks = loadedTasks,
+                    openLeaves = openLeaves,
+                    leafItems = leafItems,
                     parentKey = "",
                     collapsedGroups = collapsedGroupsSet,
                     expandedUncategorized = expandedUncategorizedSet,
@@ -509,12 +514,43 @@ private fun DynamicTaskList(
     }
 }
 
+/** Task cards of one (possibly nested) group, appended to the surrounding list. */
+private fun LazyListScope.taskCards(
+    tasks: LazyPagingItems<TaskWithTotals>,
+    groupKey: String,
+    indent: Dp,
+    onTaskClick: (String) -> Unit,
+    onDelete: (TaskWithTotals) -> Unit,
+    onCopy: (String) -> Unit,
+) {
+    items(
+        count = tasks.itemCount,
+        // Keys carry the group so the same task can appear under two groups without colliding.
+        key = tasks.itemKey { "${groupKey}_${it.task.id}" },
+    ) { index ->
+        val taskWithTotals = tasks[index]
+        if (taskWithTotals != null) {
+            TaskCard(
+                taskWithTotals = taskWithTotals,
+                onClick = { onTaskClick(taskWithTotals.task.id) },
+                onDelete = { onDelete(taskWithTotals) },
+                onCopy = { onCopy(taskWithTotals.task.id) },
+                modifier = Modifier
+                    .animateItem()
+                    .padding(start = indent),
+            )
+        }
+    }
+    pagingAppendStatus(tasks, keyPrefix = "${groupKey}_")
+}
+
 /**
  * Recursively renders task groups with proper LazyColumn item animations.
  */
 private fun LazyListScope.TaskGroupItems(
     loadedGroups: Map<String, List<LoadedGroupData>>,
-    loadedTasks: Map<String, LoadedTasksData>,
+    openLeaves: Map<String, OpenLeafGroup>,
+    leafItems: Map<String, LazyPagingItems<TaskWithTotals>>,
     parentKey: String,
     collapsedGroups: Set<String>,
     expandedUncategorized: Set<String>,
@@ -554,7 +590,7 @@ private fun LazyListScope.TaskGroupItems(
                 LaunchedEffect(isCollapsed) {
                     if (!isCollapsed) {
                         val hasSubgroups = groupKey in loadedGroups
-                        val hasTasks = groupKey in loadedTasks
+                        val hasTasks = groupKey in openLeaves
                         if (!hasSubgroups && !hasTasks) {
                             onRequestLoad(groupData)
                         }
@@ -619,7 +655,8 @@ private fun LazyListScope.TaskGroupItems(
                 // Recurse into subgroups
                 TaskGroupItems(
                     loadedGroups = loadedGroups,
-                    loadedTasks = loadedTasks,
+                    openLeaves = openLeaves,
+                    leafItems = leafItems,
                     parentKey = groupKey,
                     collapsedGroups = collapsedGroups,
                     expandedUncategorized = expandedUncategorized,
@@ -634,19 +671,16 @@ private fun LazyListScope.TaskGroupItems(
                 )
             } else {
                 // Leaf level - render tasks (tasks always animate for smooth expand/collapse)
-                val tasksData = loadedTasks[groupKey]
-                if (tasksData != null) {
-                    items(tasksData.tasks, key = { "${groupKey}_${it.task.id}" }) { taskWithTotals ->
-                        TaskCard(
-                            taskWithTotals = taskWithTotals,
-                            onClick = { onTaskClick(taskWithTotals.task.id) },
-                            onDelete = { onDelete(taskWithTotals) },
-                            onCopy = { onCopy(taskWithTotals.task.id) },
-                            modifier = Modifier
-                                .animateItem()
-                                .padding(start = (nextLevelIndex * 16).dp),
-                        )
-                    }
+                val tasks = leafItems[groupKey]
+                if (tasks != null) {
+                    taskCards(
+                        tasks = tasks,
+                        groupKey = groupKey,
+                        indent = (nextLevelIndex * 16).dp,
+                        onTaskClick = onTaskClick,
+                        onDelete = onDelete,
+                        onCopy = onCopy,
+                    )
                 }
             }
         }
@@ -657,7 +691,7 @@ private fun LazyListScope.TaskGroupItems(
 private fun TaskListContent(
     viewMode: ViewMode,
     hasAnyTasks: Boolean,
-    filteredTasks: List<TaskWithTotals>,
+    dataVersion: Long,
     filterState: TaskFilterState,
     allTags: Set<String>,
     spaceIdPrefix: String?,
@@ -666,11 +700,16 @@ private fun TaskListContent(
     onSaveFilter: () -> Unit,
     shouldAnimate: Boolean,
     onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
-    onGetTasksForGroup: suspend (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> List<TaskWithTotals>,
+    onCountTasks: suspend (PersistentList<GroupFilter>, TaskFilterCriteria) -> Int,
+    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> Flow<PagingData<TaskWithTotals>>,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
 ) {
+    // How many tasks the current filters match, reported by the group query that also fills the
+    // list. Null until the first load, so the empty state does not flash.
+    var matchingTaskCount by remember { mutableStateOf<Int?>(null) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         if (hasAnyTasks) {
             TaskListSearchAndFilter(
@@ -687,7 +726,7 @@ private fun TaskListContent(
         Box(modifier = Modifier.fillMaxSize()) {
             TaskListEmptyStates(
                 hasAnyTasks = hasAnyTasks,
-                filteredTasks = filteredTasks,
+                matchingTaskCount = matchingTaskCount,
                 shouldAnimate = shouldAnimate,
                 onClearFilters = { filterState.clearAll() }
             )
@@ -695,10 +734,12 @@ private fun TaskListContent(
             DynamicTaskList(
                 viewMode = viewMode,
                 filterCriteria = filterState.toCriteria(),
-                hasAnyFilteredTasks = filteredTasks.isNotEmpty(),
+                dataVersion = dataVersion,
                 shouldAnimate = shouldAnimate,
                 onGetTaskGroups = onGetTaskGroups,
-                onGetTasksForGroup = onGetTasksForGroup,
+                onCountTasks = onCountTasks,
+                onGetTaskPages = onGetTaskPages,
+                onMatchingCountChange = { matchingTaskCount = it },
                 onTaskClick = onTaskClick,
                 onDelete = onDelete,
                 onCopy = onCopy
@@ -735,7 +776,9 @@ fun TaskListScreen(
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
     var showSaveFilterDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(refreshTrigger) {
+    val dataVersion by container.dataVersion.collectAsState()
+
+    LaunchedEffect(refreshTrigger, dataVersion) {
         container.store.intent(TaskListIntent.LoadTasks)
     }
 
@@ -747,13 +790,11 @@ fun TaskListScreen(
     )
 
     val uiState = rememberTaskListUiState(
-        hasAnyTasks = hasAnyTasks,
         onLoadInitialData = {
             TaskListUiData(
                 activeViewMode = state.activeViewMode ?: return@rememberTaskListUiState null,
                 viewModes = state.viewModes.takeIf { it.isNotEmpty() } ?: return@rememberTaskListUiState null,
                 isFilterPanelOpen = state.filterPanelOpen ?: return@rememberTaskListUiState null,
-                filteredTasks = emptyList(),
             )
         },
         onSaveActiveViewMode = { viewModeId ->
@@ -762,13 +803,6 @@ fun TaskListScreen(
         onSaveFilterPanelOpen = { isOpen ->
             container.store.intent(TaskListIntent.SaveFilterPanelOpen(isOpen))
         },
-        onGetFilteredTasks = { criteria ->
-            state.filteredTasks[criteria] ?: run {
-                container.store.intent(TaskListIntent.GetFilteredTasks(criteria))
-                emptyList()
-            }
-        },
-        filterState = filterState
     )
 
     val currentUiState = uiState.value
@@ -779,15 +813,6 @@ fun TaskListScreen(
     LaunchedEffect(needsTags) {
         if (needsTags && state.allTags == null) {
             container.store.intent(TaskListIntent.LoadAllTags)
-        }
-    }
-
-    // Sync filtered tasks from state
-    LaunchedEffect(state.filteredTasks, filterState.toCriteria()) {
-        val criteria = filterState.toCriteria()
-        val filtered = state.filteredTasks[criteria]
-        if (filtered != null) {
-            uiState.value = uiState.value.mapData { it.copy(filteredTasks = filtered) }
         }
     }
 
@@ -837,7 +862,7 @@ fun TaskListScreen(
                 TaskListContent(
                     viewMode = uiData.activeViewMode,
                     hasAnyTasks = hasAnyTasks,
-                    filteredTasks = uiData.filteredTasks,
+                    dataVersion = dataVersion,
                     filterState = filterState,
                     allTags = allTags,
                     spaceIdPrefix = currentSpace.idPrefix,
@@ -852,7 +877,8 @@ fun TaskListScreen(
                     onSaveFilter = { showSaveFilterDialog = true },
                     shouldAnimate = currentUiState.shouldAnimate,
                     onGetTaskGroups = container::getTaskGroups,
-                    onGetTasksForGroup = container::getTasksForGroup,
+                    onCountTasks = container::countTasksForGroup,
+                    onGetTaskPages = container::tasksForGroupPages,
                     onTaskClick = onTaskClick,
                     onDelete = { taskToDelete = it },
                     onCopy = onCopyTask

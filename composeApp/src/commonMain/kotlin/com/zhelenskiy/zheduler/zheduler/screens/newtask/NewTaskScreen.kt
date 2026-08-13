@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
@@ -39,6 +40,10 @@ fun NewTaskScreen(
             is NewTaskAction.TaskCreated -> onTaskCreated(action.task.id)
         }
     }
+
+    val filteredTags = container.filteredTags.collectAsLazyPagingItems()
+    val filteredTasksForSelection = container.filteredTasksForSelection.collectAsLazyPagingItems()
+    val searchedTasksForConnection = container.searchedTasksForConnection.collectAsLazyPagingItems()
 
     val initialConnections = state.initialConnections
     val formState = rememberFormStateFromData(state.taskToCopy, initialConnections)
@@ -113,9 +118,9 @@ fun NewTaskScreen(
                     onTaskClick = onTaskClick,
                     onCreateNewTaskWithConnection = null,
                     loadedTasks = state.loadedTasks,
-                    filteredTags = state.filteredTags,
-                    filteredTasksForSelection = state.filteredTasksForSelection,
-                    searchedTasksForConnection = state.searchedTasksForConnection,
+                    filteredTags = filteredTags,
+                    filteredTasksForSelection = filteredTasksForSelection,
+                    searchedTasksForConnection = searchedTasksForConnection,
                     onLoadTask = { taskId -> container.store.intent(NewTaskIntent.LoadTask(taskId)) },
                     onFilterTags = { query, excludeTags -> container.store.intent(NewTaskIntent.FilterTags(query, excludeTags)) },
                     onFilterTasksForSelection = { query -> container.store.intent(NewTaskIntent.FilterTasksForSelection(query)) },

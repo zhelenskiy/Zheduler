@@ -1,7 +1,9 @@
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
+import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.Space
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
+import com.zhelenskiy.zheduler.zheduler.paging.spacesPagingSource
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
@@ -9,6 +11,7 @@ import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
 import pro.respawn.flowmvi.api.MVIIntent
@@ -36,11 +39,17 @@ data class SpaceListState(
     val searchQuery: String = "",
     val searchOptions: PersistentSet<SpaceSearchOption> = persistentSetOf(SpaceSearchOption.Name, SpaceSearchOption.Prefix),
     val showSearchOptions: Boolean = false,
-    val filteredSpaces: List<Space>? = null,
     val tagsBySpace: PersistentMap<String, Set<String>> = persistentMapOf(),
     val lastExportResult: ExportResult? = null,
     val lastImportResult: ImportResult? = null
 ) : MVIState
+
+/** What the space list is currently searching for. */
+private data class SpaceQuery(
+    val query: String = "",
+    val searchInName: Boolean = true,
+    val searchInPrefix: Boolean = true,
+)
 
 sealed interface SpaceListIntent : MVIIntent {
     data object LoadSpaces : SpaceListIntent
@@ -108,6 +117,17 @@ class SpaceListContainer(
         }
     }
 
+    private val spaceSearch = PagedQuery(
+        scope = scope,
+        initialQuery = SpaceQuery(),
+        changes = repository.changes,
+    ) { query ->
+        repository.spacesPagingSource(query.query, query.searchInName, query.searchInPrefix)
+    }
+
+    /** The space list itself, one page at a time. */
+    val spaces: Flow<PagingData<Space>> get() = spaceSearch.pages
+
     private suspend fun SpaceListPipelineContext.loadSpaces() {
         val hasSpaces = repository.hasSpaces()
         updateState { copy(hasSpaces = hasSpaces) }
@@ -133,12 +153,13 @@ class SpaceListContainer(
 
     private suspend fun SpaceListPipelineContext.filterSpaces() {
         withState {
-            val filteredSpaces = repository.filterSpaces(
-                query = searchQuery,
-                searchInName = SpaceSearchOption.Name in searchOptions,
-                searchInPrefix = SpaceSearchOption.Prefix in searchOptions
+            spaceSearch.setQuery(
+                SpaceQuery(
+                    query = searchQuery,
+                    searchInName = SpaceSearchOption.Name in searchOptions,
+                    searchInPrefix = SpaceSearchOption.Prefix in searchOptions,
+                )
             )
-            updateState { copy(filteredSpaces = filteredSpaces) }
         }
     }
 

@@ -23,6 +23,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
@@ -98,6 +100,8 @@ fun ViewModeEditorScreen(
         )
     }
 
+    val filteredTags = container.filteredTags.collectAsLazyPagingItems()
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -163,7 +167,7 @@ fun ViewModeEditorScreen(
             item {
                 GroupingLevelsSection(
                     state = editorState,
-                    filteredTags = state.filteredTags,
+                    filteredTags = filteredTags,
                     onFilterTags = { query, excludeTags ->
                         container.store.intent(ViewModeIntent.FilterTags(query, excludeTags))
                     }
@@ -264,7 +268,7 @@ private sealed class LevelEditorMode {
 @Composable
 private fun GroupingLevelsSection(
     state: ViewModeEditorState,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit
 ) {
     val lazyListState = rememberLazyListState()
@@ -438,7 +442,7 @@ private fun GroupingLevelSummaryCard(
 private fun GroupingLevelEditorDialog(
     level: GroupingLevelState,
     levelIndex: Int,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit,
     onDone: () -> Unit,
     onCancel: () -> Unit
@@ -654,7 +658,7 @@ private fun GroupableFieldSelector(
 private fun GroupDefinitionCard(
     group: GroupDefinitionState,
     field: GroupableField,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit,
     onRemove: () -> Unit,
     dragModifier: Modifier = Modifier,
@@ -728,7 +732,7 @@ private fun GroupDefinitionCardHeader(
 private fun GroupDefinitionCardFieldEditor(
     group: GroupDefinitionState,
     field: GroupableField,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit
 ) {
     when (field) {
@@ -895,7 +899,7 @@ private fun DueDateRangeEditor(group: GroupDefinitionState) {
 private fun PredefinedValuesEditor(
     group: GroupDefinitionState,
     field: GroupableField,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit
 ) {
     Text("Values:", style = MaterialTheme.typography.labelMedium)
@@ -922,7 +926,7 @@ private fun PredefinedValuesEditor(
 private fun AddValueButton(
     group: GroupDefinitionState,
     field: GroupableField,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit
 ) {
     if (field.requiresExhaustiveCoverage()) {

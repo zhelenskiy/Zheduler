@@ -19,6 +19,16 @@ interface ZhedulerDao {
     @Query("SELECT * FROM spaces")
     suspend fun getAllSpaces(): List<Spaces>
 
+    /**
+     * One window of the space list. Ordered by `rowid`, i.e. by creation order, which is the order
+     * the unpaged queries happen to return and the one the screen showed before it was paged.
+     */
+    @Query("SELECT * FROM spaces ORDER BY rowid LIMIT :limit OFFSET :offset")
+    suspend fun getAllSpacesPaged(limit: Int, offset: Int): List<Spaces>
+
+    @Query("SELECT COUNT(*) FROM spaces")
+    suspend fun countSpaces(): Int
+
     @Query("SELECT * FROM spaces WHERE id = :id")
     suspend fun getSpaceById(id: String): Spaces?
 
@@ -46,6 +56,32 @@ interface ZhedulerDao {
     )
     suspend fun filterSpaces(searchInName: Long, query: String, searchInPrefix: Long): List<Spaces>
 
+    @Query(
+        """
+        SELECT * FROM spaces
+        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%')
+           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%')
+        ORDER BY rowid
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun filterSpacesPaged(
+        searchInName: Long,
+        query: String,
+        searchInPrefix: Long,
+        limit: Int,
+        offset: Int,
+    ): List<Spaces>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM spaces
+        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%')
+           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%')
+        """
+    )
+    suspend fun countFilteredSpaces(searchInName: Long, query: String, searchInPrefix: Long): Int
+
     // ============ Task queries ============
 
     @Query("SELECT EXISTS(SELECT 1 FROM tasks WHERE spaceId = :spaceId)")
@@ -65,6 +101,33 @@ interface ZhedulerDao {
         """
     )
     suspend fun searchTasksForConnection(spaceId: String, id: String?, searchQuery: String): List<Tasks>
+
+    /** One window of [searchTasksForConnection], in creation order so paging is stable. */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE spaceId = :spaceId AND (:id IS NULL OR id != :id)
+          AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%')
+        ORDER BY rowid
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun searchTasksForConnectionPaged(
+        spaceId: String,
+        id: String?,
+        searchQuery: String,
+        limit: Int,
+        offset: Int,
+    ): List<Tasks>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM tasks
+        WHERE spaceId = :spaceId AND (:id IS NULL OR id != :id)
+          AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%')
+        """
+    )
+    suspend fun countTasksForConnection(spaceId: String, id: String?, searchQuery: String): Int
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: String): Tasks?
@@ -153,6 +216,47 @@ interface ZhedulerDao {
 
     @Query("SELECT * FROM task_connections WHERE sourceTaskId = :sourceTaskId")
     suspend fun getConnectionsForTask(sourceTaskId: String): List<TaskConnections>
+
+    /**
+     * Connections of several tasks at once, so loading a page of tasks costs one query instead of
+     * one per task. Keep the id list within SQLite's bound-parameter limit; the repository falls
+     * back to [getConnectionsBySpace] for larger sets.
+     */
+    @Query("SELECT * FROM task_connections WHERE sourceTaskId IN (:sourceTaskIds)")
+    suspend fun getConnectionsForTasks(sourceTaskIds: Collection<String>): List<TaskConnections>
+
+    /** Every connection whose source task lives in the given space. */
+    @Query(
+        """
+        SELECT c.* FROM task_connections c
+        INNER JOIN tasks t ON t.id = c.sourceTaskId
+        WHERE t.spaceId = :spaceId
+        """
+    )
+    suspend fun getConnectionsBySpace(spaceId: String): List<TaskConnections>
+
+    /** As [getConnectionsBySpace], restricted to one connection type (totals only need one). */
+    @Query(
+        """
+        SELECT c.* FROM task_connections c
+        INNER JOIN tasks t ON t.id = c.sourceTaskId
+        WHERE t.spaceId = :spaceId AND c.type = :type
+        """
+    )
+    suspend fun getConnectionsBySpaceAndType(spaceId: String, type: String): List<TaskConnections>
+
+    /**
+     * Connections of the currently blocked tasks, of one type. Blocked tasks pull on the totals of
+     * their blockers regardless of which space they are in, which is why this is not space-scoped.
+     */
+    @Query(
+        """
+        SELECT c.* FROM task_connections c
+        INNER JOIN tasks t ON t.id = c.sourceTaskId
+        WHERE t.isBlocked = 1 AND c.type = :type
+        """
+    )
+    suspend fun getConnectionsForBlockedTasks(type: String): List<TaskConnections>
 
     @Query(
         """
@@ -245,6 +349,38 @@ interface ZhedulerDao {
         """
     )
     suspend fun filterTagsForSpace(spaceId: String, searchQuery: String): List<String>
+
+    /**
+     * One window of [filterTagsForSpace]. Tags the caller already picked are excluded in SQL so the
+     * window size is exact — filtering them out afterwards would leave short pages.
+     */
+    @Query(
+        """
+        SELECT name FROM tags
+        WHERE spaceId = :spaceId
+          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%')
+          AND name NOT IN (:excludeTags)
+        ORDER BY name ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun filterTagsForSpacePaged(
+        spaceId: String,
+        searchQuery: String,
+        excludeTags: Collection<String>,
+        limit: Int,
+        offset: Int,
+    ): List<String>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM tags
+        WHERE spaceId = :spaceId
+          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%')
+          AND name NOT IN (:excludeTags)
+        """
+    )
+    suspend fun countFilteredTagsForSpace(spaceId: String, searchQuery: String, excludeTags: Collection<String>): Int
 
     @Query("INSERT OR IGNORE INTO tags(spaceId, name) VALUES (:spaceId, :name)")
     suspend fun insertTagForSpace(spaceId: String, name: String)

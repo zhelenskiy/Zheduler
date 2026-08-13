@@ -1,11 +1,14 @@
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
+import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import com.zhelenskiy.zheduler.zheduler.ViewMode
+import com.zhelenskiy.zheduler.zheduler.paging.tagsPagingSource
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
 import pro.respawn.flowmvi.api.MVIIntent
@@ -19,7 +22,6 @@ data class ViewModeState(
     val viewModes: List<ViewMode> = emptyList(),
     val activeViewMode: ViewMode? = null,
     val allTags: Set<String> = emptySet(),
-    val filteredTags: List<String> = emptyList(),
     val loadedViewMode: ViewMode? = null
 ) : MVIState
 
@@ -103,9 +105,15 @@ class ViewModeContainer(
         updateState { copy(loadedViewMode = viewMode) }
     }
 
-    private suspend fun ViewModePipelineContext.filterTags(searchQuery: String, excludeTags: Set<String>) {
-        val filteredTags = repository.filterTags(spaceId, searchQuery, excludeTags)
-        updateState { copy(filteredTags = filteredTags) }
+    private val tagSearch = PagedQuery(scope, TagQuery(), repository.changes) { query ->
+        repository.tagsPagingSource(spaceId, query.searchQuery, query.excludeTags)
+    }
+
+    /** Tags offered by the tag pickers in the view mode editor, one page at a time. */
+    val filteredTags: Flow<PagingData<String>> get() = tagSearch.pages
+
+    private fun filterTags(searchQuery: String, excludeTags: Set<String>) {
+        tagSearch.setQuery(TagQuery(searchQuery, excludeTags))
     }
 
     fun copyViewMode(viewMode: ViewMode): ViewMode {

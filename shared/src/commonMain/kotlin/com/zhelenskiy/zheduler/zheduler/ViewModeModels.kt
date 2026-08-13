@@ -349,20 +349,29 @@ fun TaskWithTotals.getFieldValue(field: GroupableField): String = when (field) {
  * Returns a Comparable that can be used for ordering.
  */
 fun TaskWithTotals.getOrderableValue(field: OrderableField): Comparable<*>? = when (field) {
-    OrderableField.Id -> task.id.takeLastWhile { it.isDigit() }.toIntOrNull() ?: 0
+    OrderableField.Id -> taskIdOrderValue(task.id)
     OrderableField.Title -> task.title
-    OrderableField.Status -> when (task.status) {
-        is TaskStatus.Open -> 0
-        is TaskStatus.InProgress -> 1
-        is TaskStatus.Blocked -> 2
-        is TaskStatus.Done -> 3
-        is TaskStatus.Declined -> 4
-    }
+    OrderableField.Status -> task.status.orderRank()
     OrderableField.Priority -> task.priority?.value
     OrderableField.TotalPriority -> totalPriority?.value
     OrderableField.DueDate -> task.dueDate?.toEpochMilliseconds()
     OrderableField.TotalDueDate -> totalDueDate?.toEpochMilliseconds()
     OrderableField.EstimatedTime -> task.estimatedTime?.toApproximateSeconds()
+}
+
+/**
+ * The trailing number of a task id ("TEST-12" -> 12), which is what [OrderableField.Id] orders by
+ * so that TEST-2 comes before TEST-10.
+ */
+fun taskIdOrderValue(id: String): Int = id.takeLastWhile { it.isDigit() }.toIntOrNull() ?: 0
+
+/** Workflow position of a status, used when ordering by [OrderableField.Status]. */
+fun TaskStatus.orderRank(): Int = when (this) {
+    is TaskStatus.Open -> 0
+    is TaskStatus.InProgress -> 1
+    is TaskStatus.Blocked -> 2
+    is TaskStatus.Done -> 3
+    is TaskStatus.Declined -> 4
 }
 
 /**
@@ -662,12 +671,23 @@ internal fun TaskWithTotals.matchesGroupFilter(filter: GroupFilter): Boolean {
 /**
  * Creates a comparator from ordering rules.
  */
+internal fun createComparator(rules: List<OrderingRule>): Comparator<TaskWithTotals> =
+    createComparator(rules) { task, field -> task.getOrderableValue(field) }
+
+/**
+ * Creates a comparator from ordering rules for anything that can produce a value per
+ * [OrderableField] — the database repository orders lightweight rows this way, before it loads the
+ * page the user is actually looking at.
+ */
 @Suppress("UNCHECKED_CAST")
-internal fun createComparator(rules: List<OrderingRule>): Comparator<TaskWithTotals> {
+internal fun <T> createComparator(
+    rules: List<OrderingRule>,
+    orderableValue: (T, OrderableField) -> Comparable<*>?,
+): Comparator<T> {
     return Comparator { a, b ->
         for (rule in rules) {
-            val valueA = a.getOrderableValue(rule.field)
-            val valueB = b.getOrderableValue(rule.field)
+            val valueA = orderableValue(a, rule.field)
+            val valueB = orderableValue(b, rule.field)
 
             // Handle nulls - null position is absolute and not affected by order direction
             when {

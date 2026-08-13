@@ -106,6 +106,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.navigation.compose)
+            implementation(libs.androidx.paging.compose)
             implementation(libs.reorderable)
             implementation(libs.richeditor.compose)
             implementation(libs.kotlinx.datetime)

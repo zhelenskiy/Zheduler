@@ -8,6 +8,10 @@ import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AfterTimeout
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -20,6 +24,20 @@ import kotlin.time.Instant
  * Concrete implementations must provide data access methods.
  */
 abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System) : TaskRepository {
+
+    // ============ Change notifications ============
+
+    private val changeNotifier = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    override val changes: Flow<Unit> = changeNotifier.asSharedFlow()
+
+    /**
+     * Announce that stored data changed, so paged views reload.
+     * Called by subclasses at the end of every mutating operation that actually changed something.
+     */
+    protected fun notifyChanged() {
+        changeNotifier.tryEmit(Unit)
+    }
 
     // ============ Shared JSON configuration ============
 
@@ -460,6 +478,66 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     // ============ Total calculations (due date and priority) ============
 
     /**
+     * The slice of a task the total calculations actually read.
+     *
+     * Paging needs totals for every task matching a query, but only loads the current window in
+     * full; a [TotalsNode] can be built straight from a database row plus one batched connection
+     * query, without parsing descriptions, tags or recurrence rules.
+     */
+    protected data class TotalsNode(
+        val id: String,
+        val dueDate: Instant?,
+        val priority: Priority?,
+        /** Targets of this task's `IsDependencyOf` connections. */
+        val dependentIds: List<String>,
+        /** Blockers of this task when its status is [TaskStatus.Blocked], empty otherwise. */
+        val blockerIds: Set<String>,
+    )
+
+    /** Adapts a fully loaded [Task] to the totals view of it. */
+    protected fun Task.toTotalsNode(): TotalsNode = TotalsNode(
+        id = id,
+        dueDate = dueDate,
+        priority = priority,
+        dependentIds = connections.filter { it.type == ConnectionType.IsDependencyOf }.map { it.targetTaskId },
+        blockerIds = (status as? TaskStatus.Blocked)?.blockerTaskIds.orEmpty(),
+    )
+
+    /** The pair of computed values that turn a [Task] into a [TaskWithTotals]. */
+    protected data class TaskTotals(val totalDueDate: Instant?, val totalPriority: Priority?)
+
+    /**
+     * Totals for a whole result set at once, keyed by task ID.
+     *
+     * As in the single-task calls, dependents are only followed within [nodes]: a task's totals
+     * depend on which other tasks the surrounding query matched.
+     */
+    protected fun calculateTotals(
+        nodes: List<TotalsNode>,
+        blockedNodes: List<TotalsNode>,
+    ): Map<String, TaskTotals> {
+        val nodesById = nodes.associateBy { it.id }
+        return nodes.associate { node ->
+            node.id to TaskTotals(
+                totalDueDate = calculateTotalDueDate(node, blockedNodes, nodesById),
+                totalPriority = calculateTotalPriority(node, blockedNodes, nodesById),
+            )
+        }
+    }
+
+    /** [calculateTotals] for already loaded tasks, paired back up into [TaskWithTotals]. */
+    protected fun calculateTotals(tasks: List<Task>, blockedTasks: List<Task>): List<TaskWithTotals> {
+        val totals = calculateTotals(tasks.map { it.toTotalsNode() }, blockedTasks.map { it.toTotalsNode() })
+        return tasks.map { task ->
+            TaskWithTotals(
+                task = task,
+                totalDueDate = totals[task.id]?.totalDueDate,
+                totalPriority = totals[task.id]?.totalPriority,
+            )
+        }
+    }
+
+    /**
      * Calculate the total (effective) due date for a task.
      * Takes into account tasks that depend on this task and tasks blocked by this task.
      * @param task The task to calculate the total due date for
@@ -472,31 +550,12 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         blockedTasks: List<Task>,
         tasksById: Map<String, Task>,
         visited: PersistentSet<String> = persistentSetOf()
-    ): Instant? {
-        if (task.id in visited) return null
-        val newVisited = visited.adding(task.id)
-
-        val dependentDueDates = task.connections
-            .filter { it.type == ConnectionType.IsDependencyOf }
-            .mapNotNull { connection ->
-                tasksById[connection.targetTaskId]?.let {
-                    calculateTotalDueDate(it, blockedTasks, tasksById, newVisited)
-                }
-            }
-
-        val blockedTaskDueDates = blockedTasks
-            .mapNotNull { blockedTask ->
-                val status = blockedTask.status
-                if (blockedTask.id !in newVisited &&
-                    status is TaskStatus.Blocked &&
-                    task.id in status.blockerTaskIds
-                ) {
-                    calculateTotalDueDate(blockedTask, blockedTasks, tasksById, newVisited)
-                } else null
-            }
-
-        return (listOfNotNull(task.dueDate) + dependentDueDates + blockedTaskDueDates).minOrNull()
-    }
+    ): Instant? = calculateTotalDueDate(
+        node = task.toTotalsNode(),
+        blockedNodes = blockedTasks.map { it.toTotalsNode() },
+        nodesById = tasksById.mapValues { (_, value) -> value.toTotalsNode() },
+        visited = visited
+    )
 
     /**
      * Calculate the total (effective) priority for a task.
@@ -511,29 +570,64 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         blockedTasks: List<Task>,
         tasksById: Map<String, Task>,
         visited: MutableSet<String> = mutableSetOf()
-    ): Priority? {
-        if (!visited.add(task.id)) return null
+    ): Priority? = calculateTotalPriority(
+        node = task.toTotalsNode(),
+        blockedNodes = blockedTasks.map { it.toTotalsNode() },
+        nodesById = tasksById.mapValues { (_, value) -> value.toTotalsNode() },
+        visited = visited
+    )
 
-        val dependentPriorities = task.connections
-            .filter { it.type == ConnectionType.IsDependencyOf }
-            .mapNotNull { connection ->
-                tasksById[connection.targetTaskId]?.let {
-                    calculateTotalPriority(it, blockedTasks, tasksById, visited)
+    /** [calculateTotalDueDate] over the minimal task view; see [TotalsNode]. */
+    protected fun calculateTotalDueDate(
+        node: TotalsNode,
+        blockedNodes: List<TotalsNode>,
+        nodesById: Map<String, TotalsNode>,
+        visited: PersistentSet<String> = persistentSetOf()
+    ): Instant? {
+        if (node.id in visited) return null
+        val newVisited = visited.adding(node.id)
+
+        val dependentDueDates = node.dependentIds
+            .mapNotNull { targetTaskId ->
+                nodesById[targetTaskId]?.let {
+                    calculateTotalDueDate(it, blockedNodes, nodesById, newVisited)
                 }
             }
 
-        val blockedTaskPriorities = blockedTasks
-            .mapNotNull { blockedTask ->
-                val status = blockedTask.status
-                if (blockedTask.id !in visited &&
-                    status is TaskStatus.Blocked &&
-                    task.id in status.blockerTaskIds
-                ) {
-                    calculateTotalPriority(blockedTask, blockedTasks, tasksById, visited)
+        val blockedTaskDueDates = blockedNodes
+            .mapNotNull { blockedNode ->
+                if (blockedNode.id !in newVisited && node.id in blockedNode.blockerIds) {
+                    calculateTotalDueDate(blockedNode, blockedNodes, nodesById, newVisited)
                 } else null
             }
 
-        return (listOfNotNull(task.priority) + dependentPriorities + blockedTaskPriorities).maxOrNull()
+        return (listOfNotNull(node.dueDate) + dependentDueDates + blockedTaskDueDates).minOrNull()
+    }
+
+    /** [calculateTotalPriority] over the minimal task view; see [TotalsNode]. */
+    protected fun calculateTotalPriority(
+        node: TotalsNode,
+        blockedNodes: List<TotalsNode>,
+        nodesById: Map<String, TotalsNode>,
+        visited: MutableSet<String> = mutableSetOf()
+    ): Priority? {
+        if (!visited.add(node.id)) return null
+
+        val dependentPriorities = node.dependentIds
+            .mapNotNull { targetTaskId ->
+                nodesById[targetTaskId]?.let {
+                    calculateTotalPriority(it, blockedNodes, nodesById, visited)
+                }
+            }
+
+        val blockedTaskPriorities = blockedNodes
+            .mapNotNull { blockedNode ->
+                if (blockedNode.id !in visited && node.id in blockedNode.blockerIds) {
+                    calculateTotalPriority(blockedNode, blockedNodes, nodesById, visited)
+                } else null
+            }
+
+        return (listOfNotNull(node.priority) + dependentPriorities + blockedTaskPriorities).maxOrNull()
     }
 
     // ============ Task update business logic ============

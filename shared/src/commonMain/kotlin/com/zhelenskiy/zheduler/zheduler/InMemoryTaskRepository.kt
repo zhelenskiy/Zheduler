@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.paging.Page
+import com.zhelenskiy.zheduler.zheduler.paging.toPage
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentListOf
@@ -60,18 +62,20 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun getSpaceById(id: String): Space? = mutex.withLock { spaces[id] }
 
-    override suspend fun filterSpaces(
+    override suspend fun filterSpacesPage(
         query: String,
         searchInName: Boolean,
-        searchInPrefix: Boolean
-    ): List<Space> {
-        if (query.isBlank()) return spaces.values.toList()
+        searchInPrefix: Boolean,
+        offset: Int,
+        limit: Int
+    ): Page<Space> {
+        if (query.isBlank()) return spaces.values.toList().toPage(offset, limit)
 
         return spaces.values.filter { space ->
             val matchesName = searchInName && space.name.contains(query, ignoreCase = true)
             val matchesPrefix = searchInPrefix && space.idPrefix.contains(query, ignoreCase = true)
             matchesName || matchesPrefix
-        }
+        }.toPage(offset, limit)
     }
 
     override suspend fun createSpace(name: String, idPrefix: String): Space? = mutex.withLock {
@@ -89,6 +93,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         )
         spaces[spaceId] = space
         nextIdBySpace[spaceId] = 1
+        notifyChanged()
         space
     }
 
@@ -98,6 +103,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         val updatedSpace = space.copy(name = newName)
         spaces[spaceId] = updatedSpace
+        notifyChanged()
         true
     }
 
@@ -122,6 +128,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         viewModeBySpaceId.remove(spaceId)
         filterPanelOpenBySpaceId.remove(spaceId)
         savedFilters.remove(spaceId)
+        notifyChanged()
 
         true
     }
@@ -143,29 +150,33 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tasks.values.filter { it.spaceId == spaceId }.toList()
     }
 
-    override suspend fun filterTasksForSelection(
+    override suspend fun filterTasksForSelectionPage(
         spaceId: String,
         excludeTaskId: String?,
-        searchQuery: String
-    ): List<Task> = mutex.withLock {
+        searchQuery: String,
+        offset: Int,
+        limit: Int
+    ): Page<Task> = mutex.withLock {
         tasks.values.filter { task ->
             task.spaceId == spaceId &&
             (excludeTaskId == null || task.id != excludeTaskId) &&
             (searchQuery.isBlank() ||
              task.id.contains(searchQuery, ignoreCase = true) ||
              task.title.contains(searchQuery, ignoreCase = true))
-        }
+        }.toPage(offset, limit)
     }
 
-    override suspend fun searchTasksForConnection(
+    override suspend fun searchTasksForConnectionPage(
         spaceId: String,
         excludeTaskId: String?,
         searchQuery: String,
         excludeTaskIds: Set<String>,
         connectionType: ConnectionType,
-        existingConnections: Set<TaskConnection>
-    ): List<Task> = mutex.withLock {
-        tasks.values.filter { task ->
+        existingConnections: Set<TaskConnection>,
+        offset: Int,
+        limit: Int
+    ): Page<Task> = mutex.withLock {
+        val matching = tasks.values.filter { task ->
             // Filter by space
             task.spaceId == spaceId &&
             // Exclude current task
@@ -179,6 +190,16 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             // Check for cycles - this is done in the repository layer
             !wouldCreateCycle(excludeTaskId, task.id, connectionType, existingConnections)
         }
+        val from = offset.coerceIn(0, matching.size)
+        val to = (from.toLong() + limit.coerceAtLeast(0)).coerceAtMost(matching.size.toLong()).toInt()
+        // Total left unknown to match the database repository, which cannot count cycle-free
+        // candidates without walking the whole space.
+        Page(
+            items = matching.subList(from, to).toList(),
+            offset = offset.coerceAtLeast(0),
+            totalCount = null,
+            hasMore = to < matching.size,
+        )
     }
 
     override suspend fun getAllSpacePrefixes(): List<String> = mutex.withLock {
@@ -186,16 +207,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     override suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals> = mutex.withLock {
-        val spaceTasks = tasks.values.filter { it.spaceId == spaceId }
-        val blockedTasks = getBlockedTasks()
-        val tasksById = spaceTasks.associateBy { it.id }
-        spaceTasks.map { task ->
-            TaskWithTotals(
-                task = task,
-                totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
-                totalPriority = calculateTotalPriority(task, blockedTasks, tasksById)
-            )
-        }
+        calculateTotals(tasks.values.filter { it.spaceId == spaceId }, getBlockedTasks())
     }
 
     // Note: getById does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
@@ -220,25 +232,35 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tagsBySpace[spaceId]?.toPersistentSet() ?: persistentSetOf()
     }
 
-    override suspend fun filterTags(spaceId: String, searchQuery: String, excludeTags: Set<String>): List<String> = mutex.withLock {
+    override suspend fun filterTagsPage(
+        spaceId: String,
+        searchQuery: String,
+        excludeTags: Set<String>,
+        offset: Int,
+        limit: Int
+    ): Page<String> = mutex.withLock {
         val spaceTags = tagsBySpace[spaceId] ?: emptySet()
         val availableTags = spaceTags.filter { it !in excludeTags }
-        if (searchQuery.isBlank()) {
+        val matching = if (searchQuery.isBlank()) {
             availableTags.sorted()
         } else {
             availableTags.filter { it.contains(searchQuery, ignoreCase = true) }.sorted()
         }
+        matching.toPage(offset, limit)
     }
 
     override suspend fun addTag(spaceId: String, tag: String): Boolean = mutex.withLock {
         if (tag.isBlank()) return@withLock false
         tagsBySpace.getOrPut(spaceId) { mutableSetOf() }.add(tag.trim())
+        notifyChanged()
         true
     }
 
     override suspend fun deleteTag(spaceId: String, tag: String): Boolean = mutex.withLock {
         if (tag.isBlank()) return@withLock false
-        tagsBySpace[spaceId]?.remove(tag.trim()) ?: false
+        val removed = tagsBySpace[spaceId]?.remove(tag.trim()) ?: false
+        if (removed) notifyChanged()
+        removed
     }
 
     override suspend fun getStatusTimeline(taskId: String): List<StatusChange> = mutex.withLock {
@@ -335,6 +357,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         connections.forEach { connection ->
             addSymmetricConnectionUnsafe(task.id, connection)
         }
+        notifyChanged()
 
         task
     }
@@ -362,6 +385,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tagsBySpace.getOrPut(finalTask.spaceId) { mutableSetOf() }.addAll(finalTask.tags)
 
         handleStatusCascadeOnUpdate(finalTask.id, oldTask.status, finalTask.status)
+        notifyChanged()
 
         finalTask
     }
@@ -381,6 +405,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tasks[fromTaskId] = updatedTask
 
         addSymmetricConnectionUnsafe(fromTaskId, connection)
+        notifyChanged()
 
         true
     }
@@ -395,6 +420,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         tasks[fromTaskId] = updatedTask
 
         removeSymmetricConnectionUnsafe(fromTaskId, connection)
+        notifyChanged()
 
         true
     }
@@ -508,12 +534,22 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         // Update parent tasks' statuses after subtask deletion
         updateParentStatuses(parentTasks)
+        notifyChanged()
 
         true
     }
 
-    override suspend fun getAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals> = mutex.withLock {
-        getAllWithTotalsFilteredUnsafe(spaceId, criteria)
+    override suspend fun getAllWithTotalsFilteredPage(
+        spaceId: String,
+        criteria: TaskFilterCriteria,
+        offset: Int,
+        limit: Int
+    ): Page<TaskWithTotals> = mutex.withLock {
+        getAllWithTotalsFilteredUnsafe(spaceId, criteria).toPage(offset, limit)
+    }
+
+    override suspend fun countAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): Int = mutex.withLock {
+        getAllWithTotalsFilteredUnsafe(spaceId, criteria).size
     }
 
     /**
@@ -521,15 +557,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
      */
     private suspend fun getAllWithTotalsFilteredUnsafe(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals> {
         val spaceTasks = tasks.values.filter { it.spaceId == spaceId }
-        val blockedTasks = getBlockedTasks()
-        val tasksById = spaceTasks.associateBy { it.id }
-        val tasksWithTotals = spaceTasks.map { task ->
-            TaskWithTotals(
-                task = task,
-                totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
-                totalPriority = calculateTotalPriority(task, blockedTasks, tasksById)
-            )
-        }
+        val tasksWithTotals = calculateTotals(spaceTasks, getBlockedTasks())
         return filterTasksWithCriteria(tasksWithTotals, criteria)
     }
 
@@ -674,6 +702,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             }
 
             tagsBySpace.getOrPut(newSpace.id) { mutableSetOf() }.addAll(exportData.tags)
+            notifyChanged()
 
             newSpace
         }
@@ -729,11 +758,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         taskId: String,
         triggerEvent: RecurrenceTriggerEvent
     ): Task? = mutex.withLock {
-        processRecurrenceTriggerInternal(taskId, triggerEvent)
+        processRecurrenceTriggerInternal(taskId, triggerEvent)?.also { notifyChanged() }
     }
 
     override suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task> = mutex.withLock {
-        processDateBasedRecurrencesInternal(currentTime)
+        processDateBasedRecurrencesInternal(currentTime).also { if (it.isNotEmpty()) notifyChanged() }
     }
 
     override suspend fun clearAllData() = mutex.withLock {
@@ -748,6 +777,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         customViewModes.clear()
         activeViewModeBySpaceId.clear()
         savedFilters.clear()
+        notifyChanged()
     }
 
     // ============ Grouped task queries ============
@@ -821,12 +851,38 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         result
     }
 
-    override suspend fun getTasksForGroup(
+    override suspend fun getTasksForGroupPage(
+        spaceId: String,
+        filters: PersistentList<GroupFilter>,
+        orderingRules: PersistentList<OrderingRule>,
+        filterCriteria: TaskFilterCriteria,
+        offset: Int,
+        limit: Int
+    ): Page<TaskWithTotals> = mutex.withLock {
+        orderedTasksForGroupUnsafe(spaceId, filters, orderingRules, filterCriteria).toPage(offset, limit)
+    }
+
+    override suspend fun countTasksForGroup(
+        spaceId: String,
+        filters: PersistentList<GroupFilter>,
+        filterCriteria: TaskFilterCriteria
+    ): Int = mutex.withLock {
+        // Note: use internal method without mutex since we already hold it
+        getAllWithTotalsFilteredUnsafe(spaceId, filterCriteria).count { task ->
+            filters.all { filter -> task.matchesGroupFilter(filter) }
+        }
+    }
+
+    /**
+     * Everything a group matches, in display order. In-memory storage has nothing cheaper to page
+     * against, so windows are cut from this list.
+     */
+    private suspend fun orderedTasksForGroupUnsafe(
         spaceId: String,
         filters: PersistentList<GroupFilter>,
         orderingRules: PersistentList<OrderingRule>,
         filterCriteria: TaskFilterCriteria
-    ): List<TaskWithTotals> = mutex.withLock {
+    ): List<TaskWithTotals> {
         // Note: use internal method without mutex since we already hold it
         val allTasks = getAllWithTotalsFilteredUnsafe(spaceId, filterCriteria)
 
@@ -834,7 +890,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             filters.all { filter -> task.matchesGroupFilter(filter) }
         }
 
-        filteredTasks.sortedWith(createComparator(orderingRules))
+        return filteredTasks.sortedWith(createComparator(orderingRules))
     }
 
     // ============ Saved filter management ============

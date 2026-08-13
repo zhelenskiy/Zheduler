@@ -52,6 +52,8 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.room3.runtime)
             api(libs.kotlinx.collections.immutable)
+            // PagingSource/PagingData surface in TaskRepository, so consumers need it on their compile path.
+            api(libs.androidx.paging.common)
         }
 
         commonTest.dependencies {
@@ -130,4 +132,7 @@ tasks.withType<Test>().matching { it.name.contains("AndroidHostTest", ignoreCase
         exclude("**/DatabaseSearchTasksForConnectionTest.class")
         exclude("**/DatabaseSavedFilterRepositoryTest.class")
         exclude("**/GroupedTaskQueriesComparisonTest.class")
+        // Pages of the task list come from the same json_extract queries Robolectric's SQLite
+        // cannot run; the JVM variant of this suite covers the database implementation.
+        exclude("**/DatabasePaginationRepositoryTest.class")
     }

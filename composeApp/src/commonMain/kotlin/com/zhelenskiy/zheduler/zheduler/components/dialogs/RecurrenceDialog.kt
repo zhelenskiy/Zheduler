@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.paging.compose.LazyPagingItems
 import androidx.compose.ui.unit.times
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.*
@@ -158,7 +159,7 @@ private fun TimeBasedTypeSelector(
 @Composable
 fun SingleRecurrenceRuleDialog(
     currentRule: RecurrenceRule?,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     loadedTasks: Map<String, Task>,
     onFilterTasks: (String) -> Unit,
     onLoadTask: (String) -> Unit,
@@ -911,7 +912,7 @@ val allStatusDefaultValues = listOf(
 @Composable
 private fun ResetToStatusButton(
     selectedStatus: TaskStatus,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     loadedTasks: Map<String, Task>,
     onFilterTasks: (String) -> Unit,
     onLoadTask: (String) -> Unit,

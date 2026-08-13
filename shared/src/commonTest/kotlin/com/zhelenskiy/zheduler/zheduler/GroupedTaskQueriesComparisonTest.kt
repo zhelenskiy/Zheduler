@@ -84,6 +84,44 @@ class GroupedTaskQueriesComparisonTest {
 
             return inMemoryTasks to dbTasks
         }
+
+        /**
+         * Compare paged reads between both implementations: same windows, same totals, and the
+         * same result as reading the group in one go.
+         */
+        suspend fun comparePagedTasks(
+            filters: PersistentList<GroupFilter>,
+            orderingRules: PersistentList<OrderingRule> = persistentListOf(),
+            filterCriteria: TaskFilterCriteria = TaskFilterCriteria(),
+            pageSize: Int = 2,
+        ) {
+            suspend fun TaskRepository.readPages(spaceId: String): List<String> {
+                val ids = mutableListOf<String>()
+                var offset = 0
+                while (true) {
+                    val page = getTasksForGroupPage(spaceId, filters, orderingRules, filterCriteria, offset, pageSize)
+                    ids += page.items.map { it.task.id }
+                    if (!page.hasMore || page.items.isEmpty()) break
+                    offset += page.items.size
+                }
+                return ids
+            }
+
+            val inMemoryPaged = inMemoryRepo.readPages(inMemorySpaceId)
+            val dbPaged = dbRepo.readPages(dbSpaceId)
+            assertEquals(inMemoryPaged.size, dbPaged.size, "Paged task count should match")
+
+            val inMemoryWhole = inMemoryRepo.getTasksForGroup(inMemorySpaceId, filters, orderingRules, filterCriteria)
+            val dbWhole = dbRepo.getTasksForGroup(dbSpaceId, filters, orderingRules, filterCriteria)
+            assertEquals(inMemoryWhole.map { it.task.id }, inMemoryPaged, "In-memory pages should match the whole list")
+            assertEquals(dbWhole.map { it.task.id }, dbPaged, "Database pages should match the whole list")
+
+            assertEquals(
+                inMemoryRepo.countTasksForGroup(inMemorySpaceId, filters, filterCriteria),
+                dbRepo.countTasksForGroup(dbSpaceId, filters, filterCriteria),
+                "Group counts should match"
+            )
+        }
     }
 
     private suspend fun withTestContext(
@@ -1463,6 +1501,62 @@ class GroupedTaskQueriesComparisonTest {
             assertTrue("Tag6 only" in dbTitles)
             assertTrue("Tag7 only" in dbTitles)
             assertFalse("Other tags" in dbTitles)
+        }
+    }
+
+    // ==================== Paged reads ====================
+
+    @Test
+    fun `compare paged tasks with ordering`() = runTest {
+        withTestContext {
+            setupTasks { spaceId ->
+                val now = Clock.System.now()
+                repeat(9) { index ->
+                    addTask(
+                        spaceId,
+                        title = "Task $index",
+                        status = if (index % 3 == 0) TaskStatus.Done else TaskStatus.Open,
+                        dueDate = if (index % 4 == 0) null else now + index.days,
+                        priority = if (index % 5 == 0) null else Priority(index * 10),
+                    )
+                }
+            }
+
+            val ordering = persistentListOf(
+                OrderingRule(OrderableField.TotalDueDate, OrderDirection.Ascending, NullPosition.Last),
+                OrderingRule(OrderableField.TotalPriority, OrderDirection.Descending, NullPosition.Last),
+                OrderingRule(OrderableField.Id, OrderDirection.Ascending),
+            )
+
+            comparePagedTasks(persistentListOf(), ordering, pageSize = 2)
+            comparePagedTasks(persistentListOf(), ordering, pageSize = 4)
+            comparePagedTasks(
+                filters = persistentListOf(GroupFilter.Values(GroupableField.Status, persistentSetOf("Open"))),
+                orderingRules = ordering,
+                pageSize = 3,
+            )
+        }
+    }
+
+    @Test
+    fun `compare paged tasks with filter criteria`() = runTest {
+        withTestContext {
+            setupTasks { spaceId ->
+                addTask(spaceId, title = "Alpha one", priority = Priority(80))
+                addTask(spaceId, title = "Alpha two", priority = Priority(60))
+                addTask(spaceId, title = "Alpha three")
+                addTask(spaceId, title = "Beta one", priority = Priority(90))
+            }
+
+            comparePagedTasks(
+                filters = persistentListOf(),
+                orderingRules = persistentListOf(OrderingRule(OrderableField.Id, OrderDirection.Ascending)),
+                filterCriteria = TaskFilterCriteria(
+                    searchQuery = "alpha",
+                    textSearchFields = persistentSetOf(TaskTextSearchField.Title),
+                ),
+                pageSize = 1,
+            )
         }
     }
 }

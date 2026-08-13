@@ -3,6 +3,8 @@
 package com.zhelenskiy.zheduler.zheduler.db
 
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.paging.Page
+import com.zhelenskiy.zheduler.zheduler.paging.toPage
 import kotlinx.collections.immutable.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -10,6 +12,16 @@ import kotlinx.datetime.*
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+
+/**
+ * Upper bound on ids passed to an `IN (...)` clause. SQLite's own limit is higher, but reading a
+ * space's rows in one statement beats binding thousands of parameters, so the repository switches
+ * strategy here.
+ */
+private const val MAX_SQL_PARAMETERS = 500
+
+/** How many candidate rows to pull per round when a query post-filters what SQL returned. */
+private const val CANDIDATE_SCAN_SIZE = 100
 
 /**
  * Room-based implementation of TaskRepository
@@ -35,17 +47,37 @@ class RoomTaskRepository(
     override suspend fun getSpaceById(id: String): Space? =
         dao.getSpaceById(id)?.toModel()
 
-    override suspend fun filterSpaces(
+    override suspend fun filterSpacesPage(
         query: String,
         searchInName: Boolean,
-        searchInPrefix: Boolean
-    ): List<Space> {
-        if (query.isBlank()) return dao.getAllSpaces().map { it.toModel() }
-        return dao.filterSpaces(
-            searchInName = if (searchInName) 1L else 0L,
-            query = query,
-            searchInPrefix = if (searchInPrefix) 1L else 0L
-        ).map { it.toModel() }
+        searchInPrefix: Boolean,
+        offset: Int,
+        limit: Int
+    ): Page<Space> {
+        if (query.isBlank()) {
+            return Page(
+                items = dao.getAllSpacesPaged(limit = limit, offset = offset).map { it.toModel() },
+                offset = offset,
+                totalCount = dao.countSpaces(),
+            )
+        }
+        val searchInNameFlag = if (searchInName) 1L else 0L
+        val searchInPrefixFlag = if (searchInPrefix) 1L else 0L
+        return Page(
+            items = dao.filterSpacesPaged(
+                searchInName = searchInNameFlag,
+                query = query,
+                searchInPrefix = searchInPrefixFlag,
+                limit = limit,
+                offset = offset,
+            ).map { it.toModel() },
+            offset = offset,
+            totalCount = dao.countFilteredSpaces(
+                searchInName = searchInNameFlag,
+                query = query,
+                searchInPrefix = searchInPrefixFlag,
+            ),
+        )
     }
 
     override suspend fun createSpace(name: String, idPrefix: String): Space? = mutex.withLock {
@@ -58,6 +90,7 @@ class RoomTaskRepository(
 
         dao.insertSpace(spaceId, name, idPrefix)
         dao.setNextId(spaceId, 1)
+        notifyChanged()
 
         space
     }
@@ -67,6 +100,7 @@ class RoomTaskRepository(
         if (newName.isBlank()) return@withLock false
 
         dao.updateSpace(newName, spaceId)
+        notifyChanged()
         true
     }
 
@@ -78,6 +112,7 @@ class RoomTaskRepository(
         handleCrossSpaceRelationshipsOnSpaceDeletion(taskIdsInSpace)
 
         dao.deleteSpace(spaceId)
+        notifyChanged()
 
         true
     }
@@ -97,21 +132,36 @@ class RoomTaskRepository(
     override suspend fun getAllTasks(spaceId: String): List<Task> =
         dao.getTasksBySpace(spaceId).map { loadTaskWithConnections(it) }
 
-    override suspend fun filterTasksForSelection(
+    override suspend fun filterTasksForSelectionPage(
         spaceId: String,
         excludeTaskId: String?,
-        searchQuery: String
-    ): List<Task> =
-        dao.searchTasksForConnection(
+        searchQuery: String,
+        offset: Int,
+        limit: Int
+    ): Page<Task> {
+        val rows = dao.searchTasksForConnectionPaged(
             spaceId = spaceId,
             id = excludeTaskId,
-            searchQuery = searchQuery
-        ).map { loadTaskWithConnections(it) }
+            searchQuery = searchQuery,
+            limit = limit,
+            offset = offset,
+        )
+        return Page(
+            items = hydrateTasks(spaceId, rows),
+            offset = offset,
+            totalCount = dao.countTasksForConnection(spaceId, excludeTaskId, searchQuery),
+        )
+    }
 
     /**
      * Search tasks for connection dialog with SQL filtering and cycle detection.
      * Filters by spaceId, excludes current task, optionally filters by search query,
      * and checks for cycles. Uses SQL indexes for efficient search on id and title fields.
+     *
+     * SQL cannot express the cycle check, so candidate rows are scanned in chunks and rejected
+     * ones are simply skipped: only the ids that survive reach the window, and only that window is
+     * loaded with its connections. The total is unknown until the whole table has been scanned,
+     * which is why the returned page reports `totalCount == null`.
      *
      * @param spaceId The space to search in
      * @param excludeTaskId The current task ID to exclude
@@ -119,45 +169,69 @@ class RoomTaskRepository(
      * @param excludeTaskIds Additional task IDs to exclude (e.g., already connected tasks)
      * @param connectionType The type of connection being created (for cycle detection)
      * @param existingConnections Existing connections to check for cycles
-     * @return List of tasks matching the criteria that won't create cycles
+     * @param offset Number of accepted tasks to skip
+     * @param limit Maximum number of tasks to return
+     * @return One window of tasks matching the criteria that won't create cycles
      */
-    override suspend fun searchTasksForConnection(
+    override suspend fun searchTasksForConnectionPage(
         spaceId: String,
         excludeTaskId: String?,
         searchQuery: String,
         excludeTaskIds: Set<String>,
         connectionType: ConnectionType,
-        existingConnections: Set<TaskConnection>
-    ): List<Task> {
-        // First, use SQL to filter by space, search query, and excluded task
-        val sqlResults = dao.searchTasksForConnection(
-            spaceId = spaceId,
-            id = excludeTaskId,
-            searchQuery = searchQuery
-        ).map { loadTaskWithConnections(it) }
+        existingConnections: Set<TaskConnection>,
+        offset: Int,
+        limit: Int
+    ): Page<Task> {
+        val windowStart = offset.coerceAtLeast(0)
+        val windowSize = limit.coerceAtLeast(0)
+        // One extra accepted row tells us whether a further page exists without counting them all.
+        val wanted = if (windowSize >= Int.MAX_VALUE - 1) Int.MAX_VALUE else windowSize + 1
+        val scanSize = maxOf(windowSize, CANDIDATE_SCAN_SIZE)
 
-        // Then filter in memory for: additional excluded IDs and cycle detection
-        return sqlResults.filter { task ->
-            task.id !in excludeTaskIds &&
-            !wouldCreateCycle(excludeTaskId, task.id, connectionType, existingConnections)
+        val acceptedRows = mutableListOf<Tasks>()
+        var skipped = 0
+        var scanOffset = 0
+        while (acceptedRows.size < wanted) {
+            val rows = dao.searchTasksForConnectionPaged(
+                spaceId = spaceId,
+                id = excludeTaskId,
+                searchQuery = searchQuery,
+                limit = scanSize,
+                offset = scanOffset,
+            )
+            if (rows.isEmpty()) break
+            scanOffset += rows.size
+
+            for (row in rows) {
+                if (row.id in excludeTaskIds) continue
+                if (wouldCreateCycle(excludeTaskId, row.id, connectionType, existingConnections)) continue
+                if (skipped < windowStart) {
+                    skipped++
+                    continue
+                }
+                acceptedRows.add(row)
+                if (acceptedRows.size == wanted) break
+            }
+
+            if (rows.size < scanSize) break
         }
+
+        val hasMore = acceptedRows.size > windowSize
+        val windowRows = if (hasMore) acceptedRows.subList(0, windowSize) else acceptedRows
+        return Page(
+            items = hydrateTasks(spaceId, windowRows),
+            offset = windowStart,
+            totalCount = null,
+            hasMore = hasMore,
+        )
     }
 
     override suspend fun getAllSpacePrefixes(): List<String> =
         dao.getAllPrefixes()
 
-    override suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals> {
-        val tasks = getAllTasks(spaceId)
-        val blockedTasks = getBlockedTasks()
-        val tasksById = tasks.associateBy { it.id }
-        return tasks.map { task ->
-            TaskWithTotals(
-                task = task,
-                totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
-                totalPriority = calculateTotalPriority(task, blockedTasks, tasksById)
-            )
-        }
-    }
+    override suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals> =
+        calculateTotals(getAllTasks(spaceId), getBlockedTasks())
 
     override suspend fun getTaskById(id: String): Task? = getByIdUnsafe(id)
 
@@ -224,48 +298,104 @@ class RoomTaskRepository(
         return needed
     }
 
-    private suspend fun loadTaskWithConnections(entity: Tasks): Task {
-        val connections = dao.getConnectionsForTask(entity.id)
+    private suspend fun loadTaskWithConnections(entity: Tasks): Task = entity.toTask(
+        dao.getConnectionsForTask(entity.id)
             .mapToPersistentSet { TaskConnection(it.targetTaskId, ConnectionType.valueOf(it.type)) }
+    )
 
-        return Task(
-            id = entity.id,
-            title = entity.title,
-            description = entity.description,
-            status = entity.status.toTaskStatus(),
-            dueDate = entity.dueDate?.let { Instant.fromEpochMilliseconds(it) },
-            priority = entity.priority?.let { Priority(it.toInt()) },
-            estimatedTime = entity.estimatedTimeJson.toRecurrencePeriodOrNull(),
-            tags = entity.tagsJson.toStringSet(),
-            connections = connections,
-            notifications = entity.notificationsJson.toNotificationList(),
-            spaceId = entity.spaceId,
-            recurrenceRules = entity.recurrenceRulesJson.toRecurrenceRuleList(),
-            autoUpdateStatusFromSubtasks = entity.autoUpdateStatusFromSubtasks != 0L
-        )
+    private fun Tasks.toTask(connections: PersistentSet<TaskConnection>): Task = Task(
+        id = id,
+        title = title,
+        description = description,
+        status = status.toTaskStatus(),
+        dueDate = dueDate?.let { Instant.fromEpochMilliseconds(it) },
+        priority = priority?.let { Priority(it.toInt()) },
+        estimatedTime = estimatedTimeJson.toRecurrencePeriodOrNull(),
+        tags = tagsJson.toStringSet(),
+        connections = connections,
+        notifications = notificationsJson.toNotificationList(),
+        spaceId = spaceId,
+        recurrenceRules = recurrenceRulesJson.toRecurrenceRuleList(),
+        autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks != 0L
+    )
+
+    /**
+     * Load a set of rows of one space into tasks, fetching their connections in a single query.
+     * This is what keeps the cost of a page proportional to the page size rather than to the number
+     * of tasks the query matched.
+     */
+    private suspend fun hydrateTasks(spaceId: String, rows: List<Tasks>): List<Task> {
+        if (rows.isEmpty()) return emptyList()
+        val connectionsBySource = connectionsForTasksInSpace(spaceId, rows.map { it.id })
+        return rows.map { row -> row.toTask(connectionsBySource[row.id] ?: persistentSetOf()) }
     }
+
+    /**
+     * Connections of [ids], which must all belong to [spaceId]: past SQLite's bound-parameter
+     * limit it is cheaper (and safer) to read the space's connections in one go than to chunk the
+     * id list.
+     */
+    private suspend fun connectionsForTasksInSpace(
+        spaceId: String,
+        ids: List<String>,
+    ): Map<String, PersistentSet<TaskConnection>> {
+        val rows = if (ids.size <= MAX_SQL_PARAMETERS) {
+            dao.getConnectionsForTasks(ids)
+        } else {
+            dao.getConnectionsBySpace(spaceId)
+        }
+        return rows.groupBy { it.sourceTaskId }
+            .mapValues { (_, connections) ->
+                connections.mapToPersistentSet { TaskConnection(it.targetTaskId, ConnectionType.valueOf(it.type)) }
+            }
+    }
+
+    /** The totals view of a row; see [TotalsNode]. */
+    private fun Tasks.toTotalsNode(dependentIds: List<String>): TotalsNode = TotalsNode(
+        id = id,
+        dueDate = dueDate?.let { Instant.fromEpochMilliseconds(it) },
+        priority = priority?.let { Priority(it.toInt()) },
+        dependentIds = dependentIds,
+        // Only blocked rows carry blocker ids, and only those need their status parsed.
+        blockerIds = if (isBlocked != 0L) {
+            (status.toTaskStatus() as? TaskStatus.Blocked)?.blockerTaskIds.orEmpty()
+        } else {
+            emptySet()
+        },
+    )
 
     override suspend fun getAllTags(spaceId: String): PersistentSet<String> =
         dao.getAllTagsForSpace(spaceId).toPersistentSet()
 
-    override suspend fun filterTags(spaceId: String, searchQuery: String, excludeTags: Set<String>): List<String> {
-        val filteredTags = dao.filterTagsForSpace(spaceId, searchQuery)
-        return if (excludeTags.isEmpty()) {
-            filteredTags
-        } else {
-            filteredTags.filter { it !in excludeTags }
-        }
-    }
+    override suspend fun filterTagsPage(
+        spaceId: String,
+        searchQuery: String,
+        excludeTags: Set<String>,
+        offset: Int,
+        limit: Int
+    ): Page<String> = Page(
+        items = dao.filterTagsForSpacePaged(
+            spaceId = spaceId,
+            searchQuery = searchQuery,
+            excludeTags = excludeTags,
+            limit = limit,
+            offset = offset,
+        ),
+        offset = offset,
+        totalCount = dao.countFilteredTagsForSpace(spaceId, searchQuery, excludeTags),
+    )
 
     override suspend fun addTag(spaceId: String, tag: String): Boolean {
         if (tag.isBlank()) return false
         dao.insertTagForSpace(spaceId, tag.trim())
+        notifyChanged()
         return true
     }
 
     override suspend fun deleteTag(spaceId: String, tag: String): Boolean {
         if (tag.isBlank()) return false
         dao.deleteTagForSpace(spaceId, tag.trim())
+        notifyChanged()
         return true
     }
 
@@ -301,7 +431,7 @@ class RoomTaskRepository(
         addTaskUnsafe(
             spaceId, title, description, status, dueDate, priority, estimatedTime,
             tags, connections, notifications, customId, recurrenceRules, autoUpdateStatusFromSubtasks
-        )
+        )?.also { notifyChanged() }
     }
 
     private suspend fun syncToDatabase(task: Task) {
@@ -353,6 +483,7 @@ class RoomTaskRepository(
         }
 
         handleStatusCascadeOnUpdate(finalTask.id, oldTask.status, finalTask.status)
+        notifyChanged()
 
         finalTask
     }
@@ -393,7 +524,7 @@ class RoomTaskRepository(
     }
 
     override suspend fun addConnection(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean = mutex.withLock {
-        addConnectionUnsafe(fromTaskId, toTaskId, type)
+        addConnectionUnsafe(fromTaskId, toTaskId, type).also { added -> if (added) notifyChanged() }
     }
 
     override suspend fun removeConnection(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean = mutex.withLock {
@@ -407,6 +538,7 @@ class RoomTaskRepository(
         if (type == ConnectionType.SubtaskOf) {
             updateParentStatusIfNeeded(toTaskId)
         }
+        notifyChanged()
 
         true
     }
@@ -441,6 +573,7 @@ class RoomTaskRepository(
 
         // Update parent tasks' statuses after subtask deletion
         updateParentStatuses(parentTasks)
+        notifyChanged()
 
         true
     }
@@ -472,8 +605,9 @@ class RoomTaskRepository(
             monthEnd.toEpochMilliseconds()
         )
 
-        // Fetch all tasks for this space in a single query to avoid N+1 queries
-        val tasksById = getAllTasks(spaceId).associateBy { it.id }
+        // Only the tasks the month's changes actually refer to, loaded in two queries
+        val taskIds = statusChanges.mapTo(mutableSetOf()) { it.taskId }
+        val tasksById = hydrateTasks(spaceId, dao.getTasksByIds(taskIds)).associateBy { it.id }
 
         statusChanges.forEach { changeEntity ->
             val task = tasksById[changeEntity.taskId] ?: return@forEach
@@ -495,8 +629,22 @@ class RoomTaskRepository(
         }
     }
 
-    override suspend fun getAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals> =
-        filterTasksWithCriteria(getAllTasksWithTotals(spaceId), criteria)
+    /**
+     * Unlike the grouped queries, [TaskFilterCriteria] here is matched in Kotlin against whole
+     * tasks (descriptions, tags, recurrence rules, connections), so the set has to be built before
+     * a window can be cut. The task list itself pages through [getTasksForGroupPage]; this stays
+     * for callers that want the criteria applied verbatim.
+     */
+    override suspend fun getAllWithTotalsFilteredPage(
+        spaceId: String,
+        criteria: TaskFilterCriteria,
+        offset: Int,
+        limit: Int
+    ): Page<TaskWithTotals> =
+        filterTasksWithCriteria(getAllTasksWithTotals(spaceId), criteria).toPage(offset, limit)
+
+    override suspend fun countAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): Int =
+        filterTasksWithCriteria(getAllTasksWithTotals(spaceId), criteria).size
 
     override suspend fun getFilterState(spaceId: String): TaskFilterCriteria =
         dao.getFilterState(spaceId)?.toTaskFilterCriteria() ?: TaskFilterCriteria()
@@ -676,6 +824,7 @@ class RoomTaskRepository(
             }
 
             exportData.tags.forEach { dao.insertTagForSpace(newSpaceId, it) }
+            notifyChanged()
 
             newSpace
         }
@@ -782,6 +931,7 @@ class RoomTaskRepository(
         dao.getAllSpaces().forEach { space ->
             dao.deleteSpace(space.id)
         }
+        notifyChanged()
     }
 
     override suspend fun getRecurringTasksDueBefore(time: Instant): List<Task> =
@@ -797,11 +947,11 @@ class RoomTaskRepository(
         taskId: String,
         triggerEvent: RecurrenceTriggerEvent
     ): Task? = mutex.withLock {
-        processRecurrenceTriggerInternal(taskId, triggerEvent)
+        processRecurrenceTriggerInternal(taskId, triggerEvent)?.also { notifyChanged() }
     }
 
     override suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task> = mutex.withLock {
-        processDateBasedRecurrencesInternal(currentTime)
+        processDateBasedRecurrencesInternal(currentTime).also { if (it.isNotEmpty()) notifyChanged() }
     }
 
     // ============ SQL-based grouped task queries ============
@@ -960,8 +1110,8 @@ class RoomTaskRepository(
             val groupFilter = group.toFilter(level.field)
             val combinedFilters = parentFilters.adding(groupFilter)
 
-            // Get tasks matching all filters
-            val tasks = getTasksWithSqlFilters(spaceId, combinedFilters, filterParams)
+            // Counting stops at the row level: headers never need the tasks themselves.
+            val tasks = queryCandidateRows(spaceId, combinedFilters, filterParams)
 
             if (tasks.isNotEmpty() || level.showEmptyGroups) {
                 result.add(
@@ -985,8 +1135,8 @@ class RoomTaskRepository(
                 filters = allGroupFilters
             )
 
-            // Get uncategorized tasks via SQL (Not filter is handled in getTasksWithSqlFilters)
-            val uncategorizedTasks = getTasksWithSqlFilters(
+            // Get uncategorized tasks via SQL (Not filter is handled in queryCandidateRows)
+            val uncategorizedTasks = queryCandidateRows(
                 spaceId,
                 parentFilters.adding(uncategorizedFilter),
                 filterParams
@@ -1005,7 +1155,7 @@ class RoomTaskRepository(
             }
         } else {
             // No groups defined - all tasks are uncategorized
-            val allTasks = getTasksWithSqlFilters(spaceId, parentFilters, filterParams)
+            val allTasks = queryCandidateRows(spaceId, parentFilters, filterParams)
             if (allTasks.isNotEmpty()) {
                 result.add(
                     TaskGroupInfo(
@@ -1023,14 +1173,17 @@ class RoomTaskRepository(
     }
 
     /**
-     * Get tasks matching filters using SQL.
-     * Builds a single SQL query with all filter conditions.
+     * Rows matching a group's filters, straight from SQL.
+     *
+     * Deliberately stops at the row level: counting a group, ordering a result set and loading the
+     * page the user is looking at all start here, and only the last of those needs connections or
+     * parsed JSON.
      */
-    private suspend fun getTasksWithSqlFilters(
+    private suspend fun queryCandidateRows(
         spaceId: String,
         groupFilters: List<GroupFilter>,
         filterParams: FilterParams
-    ): List<Task> {
+    ): List<Tasks> {
         // Build combined group filter params from all group filters
         val groupFilterParamsList = mutableListOf<GroupFilterParams>()
         val hasTagsFilters = mutableListOf<GroupFilter.HasTags>()
@@ -1047,7 +1200,7 @@ class RoomTaskRepository(
         val groupParams = mergeGroupFilterParams(groupFilterParamsList)
 
         // Execute main SQL query with all group filters
-        var tasks = dao.getTasksFilteredWithGroupFilter(
+        var rows = dao.getTasksFilteredWithGroupFilter(
             spaceId = spaceId,
             searchQuery = filterParams.searchQuery,
             searchInId = filterParams.searchInId,
@@ -1106,51 +1259,127 @@ class RoomTaskRepository(
             requireSubtaskOf = filterParams.requireSubtaskOf,
             requireParentOf = filterParams.requireParentOf,
             requireNotSubtask = filterParams.requireNotSubtask
-        ).map { loadTaskWithConnections(it) }
+        )
 
         // Handle HasTags filters (from group filters) - get matching task IDs via SQL
         for (tagsFilter in hasTagsFilters) {
-            tasks = filterTasksByTagsAny(spaceId, tasks, tagsFilter.tags)
+            rows = filterRowsByTagsAny(spaceId, rows, tagsFilter.tags)
         }
 
         // Handle Not filters - compute excluded task IDs
         for (notFilter in notFilters) {
             // For each inner filter, get matching tasks and exclude them
             for (innerFilter in notFilter.filters) {
-                val innerTasks = getTasksWithSqlFilters(spaceId, listOf(innerFilter), filterParams)
-                val innerTaskIds = innerTasks.map { it.id }.toSet()
-                tasks = tasks.filter { it.id !in innerTaskIds }
+                val innerTaskIds = queryCandidateRows(spaceId, listOf(innerFilter), filterParams)
+                    .mapTo(mutableSetOf()) { it.id }
+                rows = rows.filter { it.id !in innerTaskIds }
             }
         }
 
         // Handle selectedTags from TaskFilterCriteria
         if (filterParams.selectedTags.isNotEmpty()) {
-            tasks = when (filterParams.tagMatchMode) {
-                TagMatchMode.Any -> filterTasksByTagsAny(spaceId, tasks, filterParams.selectedTags)
-                TagMatchMode.All -> tasks.filter { task ->
-                    filterParams.selectedTags.all { it in task.tags }
+            rows = when (filterParams.tagMatchMode) {
+                TagMatchMode.Any -> filterRowsByTagsAny(spaceId, rows, filterParams.selectedTags)
+                TagMatchMode.All -> rows.filter { row ->
+                    val tags = row.tagsJson.toStringSet()
+                    filterParams.selectedTags.all { it in tags }
                 }
             }
         }
 
-        return tasks
+        return rows
     }
 
     /**
-     * Filter tasks to only those having at least one of the specified tags.
+     * Filter rows to only those having at least one of the specified tags.
      * Uses SQL with normalized task_tags junction table.
      */
-    private suspend fun filterTasksByTagsAny(
+    private suspend fun filterRowsByTagsAny(
         spaceId: String,
-        tasks: List<Task>,
+        rows: List<Tasks>,
         tags: Set<String>
-    ): List<Task> {
+    ): List<Tasks> {
         if (tags.isEmpty()) return emptyList()
         val matchingIds = dao.getTaskIdsByTags(
             spaceId = spaceId,
             tags = tags
         ).toSet()
-        return tasks.filter { it.id in matchingIds }
+        return rows.filter { it.id in matchingIds }
+    }
+
+    /** A candidate row with the totals it will be ordered and displayed by. */
+    private data class OrderedCandidate(
+        val row: Tasks,
+        val totals: TaskTotals,
+        /** Ordering values, precomputed for the fields the current rules mention. */
+        val orderValues: Map<OrderableField, Comparable<*>?>,
+    )
+
+    /**
+     * Put candidate rows in the order the view mode asks for.
+     *
+     * The ordering rules can reference totals, which are derived from the dependency graph rather
+     * than stored, so the whole matching set has to be ranked before a window can be cut. Doing it
+     * on rows keeps that phase to three queries no matter how many tasks match.
+     */
+    private suspend fun orderCandidates(
+        spaceId: String,
+        rows: List<Tasks>,
+        orderingRules: List<OrderingRule>
+    ): List<OrderedCandidate> {
+        if (rows.isEmpty()) return emptyList()
+
+        val totals = calculateCandidateTotals(spaceId, rows)
+        val orderedFields = orderingRules.map { it.field }.distinct()
+        val candidates = rows.map { row ->
+            val rowTotals = totals[row.id] ?: TaskTotals(null, null)
+            OrderedCandidate(
+                row = row,
+                totals = rowTotals,
+                orderValues = orderedFields.associateWith { field -> orderableValue(row, rowTotals, field) },
+            )
+        }
+
+        if (orderingRules.isEmpty()) return candidates
+        return candidates.sortedWith(
+            createComparator(orderingRules) { candidate: OrderedCandidate, field -> candidate.orderValues[field] }
+        )
+    }
+
+    /**
+     * Totals for every candidate, computed from rows plus two connection queries instead of the
+     * per-task lookups a fully loaded task list would need.
+     *
+     * Like the task-level calculation, dependents are only followed within the candidate set, and
+     * blocked tasks are considered across all spaces.
+     */
+    private suspend fun calculateCandidateTotals(
+        spaceId: String,
+        rows: List<Tasks>
+    ): Map<String, TaskTotals> {
+        val dependentType = ConnectionType.IsDependencyOf.name
+
+        val dependentsBySource = dao.getConnectionsBySpaceAndType(spaceId, dependentType)
+            .groupBy({ it.sourceTaskId }, { it.targetTaskId })
+        val nodes = rows.map { it.toTotalsNode(dependentsBySource[it.id].orEmpty()) }
+
+        val blockedDependentsBySource = dao.getConnectionsForBlockedTasks(dependentType)
+            .groupBy({ it.sourceTaskId }, { it.targetTaskId })
+        val blockedNodes = dao.getBlockedTasks().map { it.toTotalsNode(blockedDependentsBySource[it.id].orEmpty()) }
+
+        return calculateTotals(nodes, blockedNodes)
+    }
+
+    /** [getOrderableValue] for a row that has not been loaded into a [Task] yet. */
+    private fun orderableValue(row: Tasks, totals: TaskTotals, field: OrderableField): Comparable<*>? = when (field) {
+        OrderableField.Id -> taskIdOrderValue(row.id)
+        OrderableField.Title -> row.title
+        OrderableField.Status -> row.status.toTaskStatus().orderRank()
+        OrderableField.Priority -> row.priority?.toInt()
+        OrderableField.TotalPriority -> totals.totalPriority?.value
+        OrderableField.DueDate -> row.dueDate
+        OrderableField.TotalDueDate -> totals.totalDueDate?.toEpochMilliseconds()
+        OrderableField.EstimatedTime -> row.estimatedTimeJson.toRecurrencePeriodOrNull()?.toApproximateSeconds()
     }
 
     /**
@@ -1219,31 +1448,49 @@ class RoomTaskRepository(
     }
 
     /**
-     * Get tasks for a specific group using SQL-optimized dao.
+     * Get one page of a group's tasks using SQL-optimized dao.
+     *
+     * Filtering and ordering cover every matching task — that is what makes the window meaningful —
+     * but only the window itself is loaded with connections and decoded JSON.
      */
-    override suspend fun getTasksForGroup(
+    override suspend fun getTasksForGroupPage(
         spaceId: String,
         filters: PersistentList<GroupFilter>,
         orderingRules: PersistentList<OrderingRule>,
-        filterCriteria: TaskFilterCriteria
-    ): List<TaskWithTotals> = mutex.withLock {
+        filterCriteria: TaskFilterCriteria,
+        offset: Int,
+        limit: Int
+    ): Page<TaskWithTotals> = mutex.withLock {
         val filterParams = buildFilterParams(filterCriteria)
 
-        // Get tasks using SQL filters - all filtering is now done in SQL
-        val tasks = getTasksWithSqlFilters(spaceId, filters, filterParams)
+        // Get rows using SQL filters - all filtering is now done in SQL
+        val rows = queryCandidateRows(spaceId, filters, filterParams)
+        val ordered = orderCandidates(spaceId, rows, orderingRules)
 
-        // Calculate totals
-        val blockedTasks = getBlockedTasks()
-        val tasksById = tasks.associateBy { it.id }
-        val tasksWithTotals = tasks.map { task ->
-            TaskWithTotals(
-                task = task,
-                totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
-                totalPriority = calculateTotalPriority(task, blockedTasks, tasksById)
-            )
-        }
+        val from = offset.coerceIn(0, ordered.size)
+        val to = (from.toLong() + limit.coerceAtLeast(0)).coerceAtMost(ordered.size.toLong()).toInt()
+        val window = ordered.subList(from, to)
 
-        tasksWithTotals.sortedWith(createComparator(orderingRules))
+        val tasks = hydrateTasks(spaceId, window.map { it.row })
+        Page(
+            items = tasks.mapIndexed { index, task ->
+                TaskWithTotals(
+                    task = task,
+                    totalDueDate = window[index].totals.totalDueDate,
+                    totalPriority = window[index].totals.totalPriority,
+                )
+            },
+            offset = from,
+            totalCount = ordered.size,
+        )
+    }
+
+    override suspend fun countTasksForGroup(
+        spaceId: String,
+        filters: PersistentList<GroupFilter>,
+        filterCriteria: TaskFilterCriteria
+    ): Int = mutex.withLock {
+        queryCandidateRows(spaceId, filters, buildFilterParams(filterCriteria)).size
     }
 
     /**

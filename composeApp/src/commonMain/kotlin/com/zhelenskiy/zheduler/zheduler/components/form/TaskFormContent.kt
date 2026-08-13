@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.paging.compose.LazyPagingItems
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.common.ConnectedTaskChip
@@ -76,7 +77,7 @@ private fun TitleField(formState: TaskFormState) {
 @Composable
 private fun StatusSection(
     formState: TaskFormState,
-    filteredTasksForSelection: List<Task>,
+    filteredTasksForSelection: LazyPagingItems<Task>,
     loadedTasks: Map<String, Task>,
     onFilterTasksForSelection: (String) -> Unit,
     onLoadTask: (String) -> Unit
@@ -222,7 +223,7 @@ private fun DueDatePicker(formState: TaskFormState) {
 @Composable
 private fun RecurrenceSection(
     formState: TaskFormState,
-    filteredTasksForSelection: List<Task>,
+    filteredTasksForSelection: LazyPagingItems<Task>,
     loadedTasks: Map<String, Task>,
     onFilterTasksForSelection: (String) -> Unit,
     onLoadTask: (String) -> Unit
@@ -569,7 +570,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
 @Composable
 private fun TagsSection(
     formState: TaskFormState,
-    filteredTags: List<String>,
+    filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit
 ) {
     var showTagDialog by remember { mutableStateOf(false) }
@@ -637,7 +638,7 @@ private fun TagsSection(
 private fun ConnectionsSection(
     formState: TaskFormState,
     loadedTasks: Map<String, Task>,
-    searchedTasksForConnection: List<Task>,
+    searchedTasksForConnection: LazyPagingItems<Task>,
     onSearchTasksForConnection: (String, Set<String>, ConnectionType, Set<TaskConnection>) -> Unit,
     onCreateNewTaskWithConnection: ((ConnectionType) -> Unit)?
 ) {
@@ -827,9 +828,9 @@ fun TaskFormContent(
     onCreateNewTaskWithConnection: ((ConnectionType) -> Unit)?,
     // State-based data from container
     loadedTasks: Map<String, Task>,
-    filteredTags: List<String>,
-    filteredTasksForSelection: List<Task>,
-    searchedTasksForConnection: List<Task>,
+    filteredTags: LazyPagingItems<String>,
+    filteredTasksForSelection: LazyPagingItems<Task>,
+    searchedTasksForConnection: LazyPagingItems<Task>,
     // Callbacks to trigger intents
     onLoadTask: (String) -> Unit,
     onFilterTags: (String, Set<String>) -> Unit,

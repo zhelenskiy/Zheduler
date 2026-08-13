@@ -3,7 +3,6 @@ package com.zhelenskiy.zheduler.zheduler.components.dialogs
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -14,13 +13,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.itemKey
 import com.zhelenskiy.zheduler.zheduler.Task
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
 import kotlinx.collections.immutable.PersistentSet
 
 @Composable
 fun TaskSelectionDialog(
     title: String,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     onFilterTasks: (String) -> Unit,
     selectedTaskIds: PersistentSet<String>,
     onDismiss: () -> Unit,
@@ -53,7 +55,8 @@ fun TaskSelectionDialog(
                     modifier = Modifier.heightIn(max = 300.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(filteredTasks, key = { it.id }) { task ->
+                    items(count = filteredTasks.itemCount, key = filteredTasks.itemKey { it.id }) { index ->
+                        val task = filteredTasks[index] ?: return@items
                         Row(
                             modifier = Modifier
                                 .clip(MaterialTheme.shapes.medium)
@@ -95,6 +98,7 @@ fun TaskSelectionDialog(
                             }
                         }
                     }
+                    pagingAppendStatus(filteredTasks)
                 }
             }
         },

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.ConnectionType
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
@@ -126,6 +127,10 @@ fun TaskEditScreen(
         )
     }
 
+    val filteredTags = container.filteredTags.collectAsLazyPagingItems()
+    val filteredTasksForSelection = container.filteredTasksForSelection.collectAsLazyPagingItems()
+    val searchedTasksForConnection = container.searchedTasksForConnection.collectAsLazyPagingItems()
+
     Scaffold(
         modifier = Modifier.imePadding(),
         topBar = {
@@ -153,9 +158,9 @@ fun TaskEditScreen(
                     onAddNewTaskWithConnection(currentTask.id, connectionType.symmetric)
                 },
                 loadedTasks = state.loadedTasks,
-                filteredTags = state.filteredTags,
-                filteredTasksForSelection = state.filteredTasksForSelection,
-                searchedTasksForConnection = state.searchedTasksForConnection,
+                filteredTags = filteredTags,
+                filteredTasksForSelection = filteredTasksForSelection,
+                searchedTasksForConnection = searchedTasksForConnection,
                 onLoadTask = { taskId -> container.store.intent(TaskEditIntent.LoadTaskById(taskId)) },
                 onFilterTags = { query, excludeTags -> container.store.intent(TaskEditIntent.FilterTags(query, excludeTags)) },
                 onFilterTasksForSelection = { query -> container.store.intent(TaskEditIntent.FilterTasksForSelection(query)) },

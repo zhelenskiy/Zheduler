@@ -2,7 +2,11 @@
 
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
+import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.paging.connectionSearchPagingSource
+import com.zhelenskiy.zheduler.zheduler.paging.tagsPagingSource
+import com.zhelenskiy.zheduler.zheduler.paging.taskSelectionPagingSource
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
@@ -11,6 +15,7 @@ import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
 import pro.respawn.flowmvi.api.MVIIntent
@@ -29,10 +34,6 @@ data class NewTaskState(
     val currentSpaceIdPrefix: String? = null,
     val allSpacePrefixes: List<String> = emptyList(),
     val initialConnections: PersistentSet<TaskConnection> = persistentSetOf(),
-    // Search results for form components
-    val filteredTags: List<String> = emptyList(),
-    val filteredTasksForSelection: List<Task> = emptyList(),
-    val searchedTasksForConnection: List<Task> = emptyList(),
     val loadedTasks: PersistentMap<String, Task> = persistentMapOf()
 ) : MVIState
 
@@ -147,26 +148,49 @@ class NewTaskContainer(
         }
     }
 
-    private suspend fun NewTaskPipelineContext.filterTags(searchQuery: String, excludeTags: Set<String>) {
-        val tags = repository.filterTags(spaceId, searchQuery, excludeTags)
-        updateState { copy(filteredTags = tags) }
+    // ============ Paged search results ============
+    // Streams rather than state, for the same reasons as in TaskEditContainer.
+
+    private val tagSearch = PagedQuery(scope, TagQuery(), repository.changes) { query ->
+        repository.tagsPagingSource(spaceId, query.searchQuery, query.excludeTags)
     }
 
-    private suspend fun NewTaskPipelineContext.filterTasksForSelection(searchQuery: String) {
-        val tasks = repository.filterTasksForSelection(spaceId, null, searchQuery)
-        updateState { copy(filteredTasksForSelection = tasks) }
+    private val taskSelectionSearch = PagedQuery(scope, "", repository.changes) { query ->
+        repository.taskSelectionPagingSource(spaceId, null, query)
     }
 
-    private suspend fun NewTaskPipelineContext.searchTasksForConnection(intent: NewTaskIntent.SearchTasksForConnection) {
-        val tasks = repository.searchTasksForConnection(
+    private val connectionSearch = PagedQuery(scope, ConnectionQuery(), repository.changes) { query ->
+        repository.connectionSearchPagingSource(
             spaceId = spaceId,
             excludeTaskId = null,
-            searchQuery = intent.searchQuery,
-            excludeTaskIds = intent.excludeTaskIds,
-            connectionType = intent.connectionType,
-            existingConnections = intent.existingConnections
+            searchQuery = query.searchQuery,
+            excludeTaskIds = query.excludeTaskIds,
+            connectionType = query.connectionType,
+            existingConnections = query.existingConnections,
         )
-        updateState { copy(searchedTasksForConnection = tasks) }
+    }
+
+    val filteredTags: Flow<PagingData<String>> get() = tagSearch.pages
+    val filteredTasksForSelection: Flow<PagingData<Task>> get() = taskSelectionSearch.pages
+    val searchedTasksForConnection: Flow<PagingData<Task>> get() = connectionSearch.pages
+
+    private fun filterTags(searchQuery: String, excludeTags: Set<String>) {
+        tagSearch.setQuery(TagQuery(searchQuery, excludeTags))
+    }
+
+    private fun filterTasksForSelection(searchQuery: String) {
+        taskSelectionSearch.setQuery(searchQuery)
+    }
+
+    private fun searchTasksForConnection(intent: NewTaskIntent.SearchTasksForConnection) {
+        connectionSearch.setQuery(
+            ConnectionQuery(
+                searchQuery = intent.searchQuery,
+                excludeTaskIds = intent.excludeTaskIds,
+                connectionType = intent.connectionType,
+                existingConnections = intent.existingConnections,
+            )
+        )
     }
 }
 

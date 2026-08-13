@@ -19,6 +19,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.paging.compose.LazyPagingItems
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
@@ -33,7 +34,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.StatusBadge
 @Composable
 fun StatusSelectionDialog(
     currentStatus: TaskStatus,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     loadedTasks: Map<String, Task>,
     onFilterTasks: (String) -> Unit,
     onLoadTask: (String) -> Unit,
@@ -77,7 +78,7 @@ fun StatusSelectionDialog(
 private fun StatusSelectionDialogContent(
     selectedStatusType: TaskStatus,
     onStatusTypeSelected: (TaskStatus) -> Unit,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     loadedTasks: Map<String, Task>,
     onFilterTasks: (String) -> Unit,
     onLoadTask: (String) -> Unit,
@@ -155,7 +156,7 @@ private fun StatusRadioOption(
 private fun ColumnScope.BlockedStatusOption(
     selectedStatusType: TaskStatus,
     onStatusTypeSelected: (TaskStatus) -> Unit,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     loadedTasks: Map<String, Task>,
     onFilterTasks: (String) -> Unit,
     onLoadTask: (String) -> Unit,

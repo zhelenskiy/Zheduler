@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -21,6 +20,10 @@ import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
 import io.github.vinceglb.filekit.dialogs.compose.SaverResultLauncher
 import io.github.vinceglb.filekit.dialogs.FileKitType
@@ -32,6 +35,8 @@ import com.zhelenskiy.zheduler.zheduler.util.writeStringToFile
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptyState
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptySearchResults
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
+import com.zhelenskiy.zheduler.zheduler.components.common.isEmptyAfterRefresh
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
@@ -186,7 +191,7 @@ private fun SpaceCard(
 @Composable
 private fun SpaceListContent(
     hasSpaces: Boolean?,
-    filteredSpaces: List<Space>?,
+    spaces: LazyPagingItems<Space>,
     onSpaceClick: (String) -> Unit,
     onSpaceExport: (Space) -> Unit,
     onSpaceEdit: (Space) -> Unit,
@@ -203,7 +208,7 @@ private fun SpaceListContent(
         }
 
         AnimatedVisibility(
-            visible = hasSpaces == true && filteredSpaces?.isEmpty() == true,
+            visible = hasSpaces == true && spaces.isEmptyAfterRefresh,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -215,7 +220,7 @@ private fun SpaceListContent(
         }
 
         AnimatedVisibility(
-            visible = filteredSpaces?.isNotEmpty() == true,
+            visible = spaces.itemCount > 0,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -226,7 +231,8 @@ private fun SpaceListContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)
             ) {
-                items(filteredSpaces ?: emptyList(), key = { it.id }) { space ->
+                items(count = spaces.itemCount, key = spaces.itemKey { it.id }) { index ->
+                    val space = spaces[index] ?: return@items
                     SpaceCard(
                         space = space,
                         onSpaceClick = onSpaceClick,
@@ -236,9 +242,14 @@ private fun SpaceListContent(
                         modifier = Modifier.animateItem()
                     )
                 }
+                pagingAppendStatus(spaces)
             }
         }
-        AnimatedVisibility(hasSpaces == null || filteredSpaces == null, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(
+            hasSpaces == null || spaces.loadState.refresh is LoadState.Loading,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(48.dp))
             }
@@ -294,6 +305,7 @@ fun SpaceListScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
+    val spaces = container.spaces.collectAsLazyPagingItems()
     val state by container.store.subscribe { action ->
         // Handle actions if needed
         when (action) {
@@ -369,7 +381,7 @@ fun SpaceListScreen(
 
             SpaceListContent(
                 hasSpaces = state.hasSpaces,
-                filteredSpaces = state.filteredSpaces,
+                spaces = spaces,
                 onSpaceClick = onSpaceClick,
                 onSpaceExport = { dialogState.spaceToExport = it },
                 onSpaceEdit = { dialogState.spaceToEdit = it },

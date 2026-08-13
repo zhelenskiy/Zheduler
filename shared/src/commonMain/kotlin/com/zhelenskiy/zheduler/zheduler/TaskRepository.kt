@@ -2,13 +2,24 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.paging.Page
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.LocalDate
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+
+/**
+ * The limit the whole-list overloads pass to their `...Page` counterpart to ask for everything.
+ *
+ * Deliberately not a default on the `...Page` methods: an unbounded read should be something a
+ * caller asks for, not what it gets by forgetting an argument. Note that windows computed from it
+ * overflow Int (`offset + limit`), so window arithmetic goes through Long — see `List.toPage`.
+ */
+internal const val UNLIMITED = Int.MAX_VALUE
 
 /**
  * Interface defining all task repository operations.
@@ -16,8 +27,20 @@ import kotlin.time.Instant
  *
  * Note: Space selection is managed by the UI layer, not the repository.
  * All methods that operate on tasks within a space require an explicit spaceId parameter.
+ *
+ * Every list that can grow with the size of a space is exposed as an `(offset, limit)` window
+ * returning a [Page]; the whole-list overloads are thin wrappers around those windows, so both
+ * spellings always agree. See `com.zhelenskiy.zheduler.zheduler.paging` for the Paging 3 glue.
  */
 interface TaskRepository {
+
+    /**
+     * Emits once after every mutation that can change the contents of a paged list (tasks,
+     * connections, spaces, tags). Paged views subscribe to invalidate themselves; nothing is
+     * emitted for pure UI state such as the saved filter panel flag.
+     */
+    val changes: Flow<Unit>
+
     // ============ Space management ============
 
     /**
@@ -99,7 +122,21 @@ interface TaskRepository {
         spaceId: String,
         excludeTaskId: String?,
         searchQuery: String = ""
-    ): List<Task>
+    ): List<Task> = filterTasksForSelectionPage(spaceId, excludeTaskId, searchQuery, 0, UNLIMITED).items
+
+    /**
+     * One window of [filterTasksForSelection], ordered by task ID.
+     *
+     * @param offset Number of matching tasks to skip
+     * @param limit Maximum number of tasks to return
+     */
+    suspend fun filterTasksForSelectionPage(
+        spaceId: String,
+        excludeTaskId: String?,
+        searchQuery: String = "",
+        offset: Int = 0,
+        limit: Int
+    ): Page<Task>
 
     /**
      * Search tasks for connection dialog with filtering.
@@ -121,7 +158,26 @@ interface TaskRepository {
         excludeTaskIds: Set<String> = emptySet(),
         connectionType: ConnectionType,
         existingConnections: Set<TaskConnection>
-    ): List<Task>
+    ): List<Task> = searchTasksForConnectionPage(
+        spaceId, excludeTaskId, searchQuery, excludeTaskIds, connectionType, existingConnections, 0, UNLIMITED
+    ).items
+
+    /**
+     * One window of [searchTasksForConnection].
+     *
+     * Cycle detection runs per candidate, so the total number of results is not known up front:
+     * the returned [Page] reports `totalCount == null` and only guarantees [Page.hasMore].
+     */
+    suspend fun searchTasksForConnectionPage(
+        spaceId: String,
+        excludeTaskId: String?,
+        searchQuery: String = "",
+        excludeTaskIds: Set<String> = emptySet(),
+        connectionType: ConnectionType,
+        existingConnections: Set<TaskConnection>,
+        offset: Int = 0,
+        limit: Int
+    ): Page<Task>
 
     /**
      * Get all tasks in a space with calculated totals (total due date, total priority).
@@ -165,7 +221,22 @@ interface TaskRepository {
      * @param excludeTags Tags to exclude from results
      * @return Sorted list of matching tags
      */
-    suspend fun filterTags(spaceId: String, searchQuery: String = "", excludeTags: Set<String> = emptySet()): List<String>
+    suspend fun filterTags(spaceId: String, searchQuery: String = "", excludeTags: Set<String> = emptySet()): List<String> =
+        filterTagsPage(spaceId, searchQuery, excludeTags, 0, UNLIMITED).items
+
+    /**
+     * One window of [filterTags], sorted by name.
+     *
+     * @param offset Number of matching tags to skip
+     * @param limit Maximum number of tags to return
+     */
+    suspend fun filterTagsPage(
+        spaceId: String,
+        searchQuery: String = "",
+        excludeTags: Set<String> = emptySet(),
+        offset: Int = 0,
+        limit: Int
+    ): Page<String>
 
     /**
      * Add a new tag to a space's tag list.
@@ -367,7 +438,21 @@ interface TaskRepository {
         query: String,
         searchInName: Boolean,
         searchInPrefix: Boolean
-    ): List<Space>
+    ): List<Space> = filterSpacesPage(query, searchInName, searchInPrefix, 0, UNLIMITED).items
+
+    /**
+     * One window of [filterSpaces].
+     *
+     * @param offset Number of matching spaces to skip
+     * @param limit Maximum number of spaces to return
+     */
+    suspend fun filterSpacesPage(
+        query: String,
+        searchInName: Boolean,
+        searchInPrefix: Boolean,
+        offset: Int = 0,
+        limit: Int
+    ): Page<Space>
 
     /**
      * Get all tasks in a space with totals, filtered by criteria.
@@ -375,7 +460,27 @@ interface TaskRepository {
      * @param criteria The filter criteria
      * @return Filtered list of tasks with totals
      */
-    suspend fun getAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals>
+    suspend fun getAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): List<TaskWithTotals> =
+        getAllWithTotalsFilteredPage(spaceId, criteria, 0, UNLIMITED).items
+
+    /**
+     * One window of [getAllWithTotalsFiltered].
+     *
+     * @param offset Number of matching tasks to skip
+     * @param limit Maximum number of tasks to return
+     */
+    suspend fun getAllWithTotalsFilteredPage(
+        spaceId: String,
+        criteria: TaskFilterCriteria,
+        offset: Int = 0,
+        limit: Int
+    ): Page<TaskWithTotals>
+
+    /**
+     * Number of tasks in a space matching [criteria], without materialising them.
+     * Used where the UI only needs to know whether a filter matches anything.
+     */
+    suspend fun countAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): Int
 
     // ============ Filter state persistence ============
 
@@ -544,7 +649,36 @@ interface TaskRepository {
         filters: PersistentList<GroupFilter>,
         orderingRules: PersistentList<OrderingRule>,
         filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
-    ): List<TaskWithTotals>
+    ): List<TaskWithTotals> = getTasksForGroupPage(spaceId, filters, orderingRules, filterCriteria, 0, UNLIMITED).items
+
+    /**
+     * One window of [getTasksForGroup].
+     *
+     * Ordering is resolved over the whole matching set before the window is cut — the ordering
+     * rules can reference computed totals, which are not stored columns — but only the tasks in
+     * the window are fully loaded.
+     *
+     * @param offset Number of matching tasks to skip
+     * @param limit Maximum number of tasks to return
+     */
+    suspend fun getTasksForGroupPage(
+        spaceId: String,
+        filters: PersistentList<GroupFilter>,
+        orderingRules: PersistentList<OrderingRule>,
+        filterCriteria: TaskFilterCriteria = TaskFilterCriteria(),
+        offset: Int = 0,
+        limit: Int
+    ): Page<TaskWithTotals>
+
+    /**
+     * Number of tasks matching a group's filters, without loading them.
+     * @return The count used for group headers
+     */
+    suspend fun countTasksForGroup(
+        spaceId: String,
+        filters: PersistentList<GroupFilter>,
+        filterCriteria: TaskFilterCriteria = TaskFilterCriteria()
+    ): Int
 
     // ============ Saved filter management ============
 

@@ -4,7 +4,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -16,14 +15,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.itemKey
 import com.zhelenskiy.zheduler.zheduler.ConnectionType
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
+import com.zhelenskiy.zheduler.zheduler.components.common.isEmptyAfterRefresh
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
 
 @Composable
 fun ConnectionDialog(
     existingConnections: Set<TaskConnection>,
-    searchedTasks: List<Task>,
+    searchedTasks: LazyPagingItems<Task>,
     onSearchTasks: (String, Set<String>, ConnectionType, Set<TaskConnection>) -> Unit,
     onDismiss: () -> Unit,
     onConnectionAdded: (TaskConnection) -> Unit,
@@ -78,7 +81,7 @@ private fun ConnectionDialogContent(
     onCreateNewTask: ((ConnectionType) -> Unit)?,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     onTaskSelected: (Task) -> Unit
 ) {
     Column(
@@ -139,7 +142,7 @@ private fun TaskSearchSection(
     hasCreateNewOption: Boolean,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    filteredTasks: List<Task>,
+    filteredTasks: LazyPagingItems<Task>,
     onTaskSelected: (Task) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -178,7 +181,7 @@ private fun TaskSearchField(
 
 @Composable
 private fun TaskSearchResults(
-    tasks: List<Task>,
+    tasks: LazyPagingItems<Task>,
     searchQuery: String,
     onTaskSelected: (Task) -> Unit
 ) {
@@ -186,14 +189,17 @@ private fun TaskSearchResults(
         modifier = Modifier.heightIn(max = 200.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        items(tasks, key = { it.id }) { task ->
+        items(count = tasks.itemCount, key = tasks.itemKey { it.id }) { index ->
+            val task = tasks[index] ?: return@items
             TaskListItem(
                 task = task,
                 onClick = { onTaskSelected(task) }
             )
         }
 
-        if (tasks.isEmpty()) {
+        pagingAppendStatus(tasks)
+
+        if (tasks.isEmptyAfterRefresh) {
             item {
                 EmptyTasksMessage(searchQuery = searchQuery)
             }
