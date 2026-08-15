@@ -22,6 +22,10 @@ kotlin = "2.4.10"
 ksp = "2.3.11"
 room3 = "3.0.1"
 sqlite = "2.7.0"
+# Not a second copy of sqlite: 2.7.0 dropped the macOS x86_64 build of the bundled SQLite JNI
+# binary and 2.6.2 is the last release that ships it. Only that binary is taken, so this must
+# stay behind `sqlite` rather than tracking it. See shared/build.gradle.kts.
+sqliteMacX64Jni = "2.6.2"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
 kotlinx-serialization = "1.11.0"

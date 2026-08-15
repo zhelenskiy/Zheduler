@@ -9,6 +9,36 @@ plugins {
     alias(libs.plugins.room3)
 }
 
+// androidx.sqlite 2.7.0 ships natives/{linux_x64,linux_arm64,osx_arm64,windows_x64} but no
+// osx_x64, so on an Intel Mac BundledSQLiteDriver cannot open a database at all: the first
+// connection dies with "Cannot find a suitable SQLite binary for mac os x | x86_64".
+//
+// 2.6.2 is the last release that shipped that binary, and the JNI contract has not changed
+// since — both versions declare the same native functions and their JNI_OnLoad registers them
+// against the same BundledSQLite{Driver,Connection,Statement}Kt classes — so the 2.6.2 binary
+// drives the 2.7.0 wrapper unchanged. Extract just that one file and put it back on the JVM
+// runtime classpath under the resource path NativeLibraryLoader looks it up by, which covers
+// every entry point (desktop app, jvmTest, packaged distribution) with no launch flags.
+val macX64SqliteJni: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+dependencies {
+    // `@jar` takes the artifact as-is; there is no variant here to select, only a file to unzip.
+    add(
+        macX64SqliteJni.name,
+        "androidx.sqlite:sqlite-bundled-jvm:${libs.versions.sqliteMacX64Jni.get()}@jar",
+    )
+}
+
+val extractMacX64SqliteJni by tasks.registering(Sync::class) {
+    from(zipTree(macX64SqliteJni.elements.map { it.single().asFile })) {
+        include("natives/osx_x64/**")
+    }
+    into(layout.buildDirectory.dir("macX64SqliteJni"))
+}
+
 kotlin {
     android {
         namespace = "com.zhelenskiy.zheduler.zheduler.shared"
@@ -52,7 +82,6 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.room3.runtime)
             api(libs.kotlinx.collections.immutable)
-            // PagingSource/PagingData surface in TaskRepository, so consumers need it on their compile path.
             api(libs.androidx.paging.common)
         }
 
@@ -80,8 +109,13 @@ kotlin {
             implementation(libs.androidx.sqlite.bundled)
         }
 
-        jvmMain.dependencies {
-            implementation(libs.androidx.sqlite.bundled)
+        jvmMain {
+            // Adds the osx_x64 SQLite JNI binary 2.7.0 no longer carries; see the top of the file.
+            resources.srcDir(extractMacX64SqliteJni)
+
+            dependencies {
+                implementation(libs.androidx.sqlite.bundled)
+            }
         }
 
         // webMain is automatically created by default hierarchy template
@@ -132,7 +166,5 @@ tasks.withType<Test>().matching { it.name.contains("AndroidHostTest", ignoreCase
         exclude("**/DatabaseSearchTasksForConnectionTest.class")
         exclude("**/DatabaseSavedFilterRepositoryTest.class")
         exclude("**/GroupedTaskQueriesComparisonTest.class")
-        // Pages of the task list come from the same json_extract queries Robolectric's SQLite
-        // cannot run; the JVM variant of this suite covers the database implementation.
         exclude("**/DatabasePaginationRepositoryTest.class")
     }
