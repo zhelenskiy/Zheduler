@@ -131,6 +131,50 @@ abstract class PaginationRepositoryTest : AbstractRepositoryTest {
     }
 
     @Test
+    fun `group pages see tasks added and removed after an earlier page was read`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.seedTasks(spaceId, count = 10)
+        val noFilters = persistentListOf<GroupFilter>()
+
+        // Read a page first: an implementation that remembers the ranking is primed from here on.
+        val before = repo.getTasksForGroupPage(spaceId, noFilters, orderingRules, TaskFilterCriteria(), 0, 5)
+        assertEquals(10, before.totalCount)
+        assertEquals(10, repo.countTasksForGroup(spaceId, noFilters, TaskFilterCriteria()))
+
+        val added = repo.addTask(spaceId, "Added later", priority = Priority(99))!!
+
+        val afterAdd = repo.getTasksForGroupPage(spaceId, noFilters, orderingRules, TaskFilterCriteria(), 0, 20)
+        assertEquals(11, afterAdd.totalCount)
+        assertTrue(afterAdd.items.any { it.task.id == added.id }, "a task added after the first page must appear")
+        assertEquals(11, repo.countTasksForGroup(spaceId, noFilters, TaskFilterCriteria()))
+
+        repo.deleteTask(added.id)
+
+        val afterDelete = repo.getTasksForGroupPage(spaceId, noFilters, orderingRules, TaskFilterCriteria(), 0, 20)
+        assertEquals(10, afterDelete.totalCount)
+        assertFalse(afterDelete.items.any { it.task.id == added.id }, "a deleted task must not linger in a page")
+        assertEquals(10, repo.countTasksForGroup(spaceId, noFilters, TaskFilterCriteria()))
+    }
+
+    @Test
+    fun `group pages re-rank after an ordering field changes`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val noFilters = persistentListOf<GroupFilter>()
+        // Ordered by total priority descending, so the lowest priority sorts last.
+        val low = repo.addTask(spaceId, "Low", priority = Priority(1))!!
+        repo.addTask(spaceId, "Middle", priority = Priority(50))
+        repo.addTask(spaceId, "High", priority = Priority(90))
+
+        val before = repo.getTasksForGroupPage(spaceId, noFilters, orderingRules, TaskFilterCriteria(), 0, 3)
+        assertEquals(low.id, before.items.last().task.id, "lowest priority starts last")
+
+        repo.updateTask(repo.getTaskById(low.id)!!.copy(priority = Priority(100)))
+
+        val after = repo.getTasksForGroupPage(spaceId, noFilters, orderingRules, TaskFilterCriteria(), 0, 3)
+        assertEquals(low.id, after.items.first().task.id, "raising its priority must move it to the front")
+    }
+
+    @Test
     fun `group pages respect filters and their count matches`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         repo.seedTasks(spaceId)

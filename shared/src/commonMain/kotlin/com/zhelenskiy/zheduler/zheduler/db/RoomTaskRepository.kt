@@ -9,6 +9,7 @@ import kotlinx.collections.immutable.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.*
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -24,6 +25,13 @@ private const val MAX_SQL_PARAMETERS = 500
 private const val CANDIDATE_SCAN_SIZE = 100
 
 /**
+ * How many ranked candidate sets to keep. A screen ranks one per visible group, so this only has
+ * to cover the groups of a view mode with room to spare; entries are dropped on the next mutation
+ * anyway.
+ */
+private const val MAX_CACHED_QUERIES = 64
+
+/**
  * Room-based implementation of TaskRepository
  * Uses SQLite for persistence with proper indexing across all platforms.
  * All compound operations (read-modify-write) are protected by a coroutine Mutex
@@ -36,6 +44,100 @@ class RoomTaskRepository(
 ) : AbstractTaskRepository(clock) {
     private val mutex = Mutex()
     private val dao = database.dao()
+
+    // ============ Paged query memoisation ============
+    //
+    // Ordering can reference totals derived from the dependency graph, so [getTasksForGroupPage]
+    // has to rank the whole matching set before it can cut a window. Recomputing that per page
+    // makes every page cost O(space size) — page 60 costs what page 1 does — and scrolling then
+    // re-scans the space once per page. Remembering the ranking makes each subsequent page cost
+    // only the hydration of its own window.
+    //
+    // Entries hold ids rather than rows so the memory is proportional to the number of tasks, not
+    // to their contents, and they live only until the next mutation: one query per group per data
+    // version. As a side effect pages of one scroll now come from a single consistent ranking,
+    // where before each page re-ranked against a freshly read `now`.
+
+    private data class CandidateKey(
+        val spaceId: String,
+        val filters: List<GroupFilter>,
+        val filterCriteria: TaskFilterCriteria,
+    )
+
+    private data class OrderedKey(
+        val candidate: CandidateKey,
+        val orderingRules: List<OrderingRule>,
+    )
+
+    /** A ranked candidate set: ids in display order, plus the totals they were ranked by. */
+    private class OrderedCandidates(
+        val ids: List<String>,
+        val totals: Map<String, TaskTotals>,
+    )
+
+    private val orderedCache = mutableMapOf<OrderedKey, OrderedCandidates>()
+    private val countCache = mutableMapOf<CandidateKey, Int>()
+
+    /**
+     * Bumped on every mutation. Read and compared under [mutex] so the caches themselves are only
+     * ever touched by one coroutine; a lost increment under a racing write is harmless, since all
+     * that matters is that the value differs from the one the caches were filled at.
+     */
+    @Volatile
+    private var dataVersion = 0L
+    private var cachedVersion = 0L
+
+    override fun onDataChanged() {
+        dataVersion++
+    }
+
+    /** Drop memoised rankings if anything has changed since they were computed. Call under [mutex]. */
+    private fun evictStaleCaches() {
+        val current = dataVersion
+        if (cachedVersion != current) {
+            orderedCache.clear()
+            countCache.clear()
+            cachedVersion = current
+        }
+    }
+
+    /** Insert, evicting the oldest entry first so a long-lived space cannot grow the cache without bound. */
+    private fun <K, V> MutableMap<K, V>.putCapped(key: K, value: V) {
+        if (size >= MAX_CACHED_QUERIES && key !in this) {
+            remove(keys.first())
+        }
+        put(key, value)
+    }
+
+    /**
+     * The ranked candidate set for one paged query, computed once per data version.
+     *
+     * Must be called under [mutex].
+     */
+    private suspend fun orderedCandidatesFor(
+        spaceId: String,
+        filters: PersistentList<GroupFilter>,
+        orderingRules: PersistentList<OrderingRule>,
+        filterCriteria: TaskFilterCriteria,
+    ): OrderedCandidates {
+        evictStaleCaches()
+
+        val candidateKey = CandidateKey(spaceId, filters, filterCriteria)
+        val key = OrderedKey(candidateKey, orderingRules)
+        orderedCache[key]?.let { return it }
+
+        val rows = queryCandidateRows(spaceId, filters, buildFilterParams(filterCriteria))
+        val ordered = orderCandidates(spaceId, rows, orderingRules)
+        val result = OrderedCandidates(
+            ids = ordered.map { it.row.id },
+            totals = ordered.associate { it.row.id to it.totals },
+        )
+
+        orderedCache.putCapped(key, result)
+        // Ranking neither adds nor drops candidates, so this is the group's count as well.
+        countCache.putCapped(candidateKey, result.ids.size)
+        return result
+    }
 
     // Space operations
     override suspend fun hasSpaces(): Boolean =
@@ -1461,27 +1563,31 @@ class RoomTaskRepository(
         offset: Int,
         limit: Int
     ): Page<TaskWithTotals> = mutex.withLock {
-        val filterParams = buildFilterParams(filterCriteria)
+        val ordered = orderedCandidatesFor(spaceId, filters, orderingRules, filterCriteria)
 
-        // Get rows using SQL filters - all filtering is now done in SQL
-        val rows = queryCandidateRows(spaceId, filters, filterParams)
-        val ordered = orderCandidates(spaceId, rows, orderingRules)
+        val from = offset.coerceIn(0, ordered.ids.size)
+        val to = (from.toLong() + limit.coerceAtLeast(0)).coerceAtMost(ordered.ids.size.toLong()).toInt()
+        val windowIds = ordered.ids.subList(from, to)
 
-        val from = offset.coerceIn(0, ordered.size)
-        val to = (from.toLong() + limit.coerceAtLeast(0)).coerceAtMost(ordered.size.toLong()).toInt()
-        val window = ordered.subList(from, to)
+        // Only the window is read back as rows; chunked because the whole-set window (limit =
+        // UNLIMITED) would otherwise blow past SQLite's bound-parameter limit.
+        val rowsById = windowIds.chunked(MAX_SQL_PARAMETERS)
+            .flatMap { dao.getTasksByIds(it) }
+            .associateBy { it.id }
+        val windowRows = windowIds.mapNotNull { rowsById[it] }
 
-        val tasks = hydrateTasks(spaceId, window.map { it.row })
+        val tasks = hydrateTasks(spaceId, windowRows)
         Page(
-            items = tasks.mapIndexed { index, task ->
+            items = tasks.map { task ->
+                val totals = ordered.totals[task.id]
                 TaskWithTotals(
                     task = task,
-                    totalDueDate = window[index].totals.totalDueDate,
-                    totalPriority = window[index].totals.totalPriority,
+                    totalDueDate = totals?.totalDueDate,
+                    totalPriority = totals?.totalPriority,
                 )
             },
             offset = from,
-            totalCount = ordered.size,
+            totalCount = ordered.ids.size,
         )
     }
 
@@ -1490,7 +1596,10 @@ class RoomTaskRepository(
         filters: PersistentList<GroupFilter>,
         filterCriteria: TaskFilterCriteria
     ): Int = mutex.withLock {
-        queryCandidateRows(spaceId, filters, buildFilterParams(filterCriteria)).size
+        evictStaleCaches()
+        val key = CandidateKey(spaceId, filters, filterCriteria)
+        countCache[key] ?: queryCandidateRows(spaceId, filters, buildFilterParams(filterCriteria)).size
+            .also { countCache.putCapped(key, it) }
     }
 
     /**

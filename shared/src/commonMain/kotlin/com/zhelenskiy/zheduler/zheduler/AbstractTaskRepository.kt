@@ -36,8 +36,17 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * Called by subclasses at the end of every mutating operation that actually changed something.
      */
     protected fun notifyChanged() {
+        onDataChanged()
         changeNotifier.tryEmit(Unit)
     }
+
+    /**
+     * Runs just before [changes] is emitted, for subclasses that memoize derived query results.
+     *
+     * Such a cache is exactly as fresh as the paged views themselves: both are driven by this one
+     * signal, so anything that mutates without calling [notifyChanged] leaves the UI stale too.
+     */
+    protected open fun onDataChanged() {}
 
     // ============ Shared JSON configuration ============
 
