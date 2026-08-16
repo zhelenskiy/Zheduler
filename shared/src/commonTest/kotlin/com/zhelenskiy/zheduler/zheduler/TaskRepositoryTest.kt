@@ -1509,6 +1509,22 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     }
 
     @Test
+    fun `addTag and deleteTag report whether they changed anything`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+
+        assertTrue(repo.addTag(spaceId, "alpha"), "adding a new tag")
+        assertFalse(repo.addTag(spaceId, "alpha"), "adding a tag that already exists")
+        assertFalse(repo.addTag(spaceId, "  alpha  "), "tags are compared trimmed")
+        assertFalse(repo.addTag(spaceId, "   "), "a blank tag is not a tag")
+
+        assertTrue(repo.deleteTag(spaceId, "alpha"), "deleting a tag that exists")
+        assertFalse(repo.deleteTag(spaceId, "alpha"), "deleting a tag that is already gone")
+        assertFalse(repo.deleteTag(spaceId, "never added"), "deleting an unknown tag")
+
+        assertEquals(persistentSetOf(), repo.getAllTags(spaceId))
+    }
+
+    @Test
     fun `deleting a space forgets everything scoped to it`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         repo.addTag(spaceId, "leftover")

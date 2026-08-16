@@ -673,7 +673,9 @@ object RecurrenceCalculator {
         val termination = rule.termination
         val maxOccurrences = termination.maxOccurrences
         val endDate = termination.endDate
-        if (maxOccurrences != null && currentState.occurrenceCount + 1 > maxOccurrences) {
+        // A countdown of occurrences still owed, decremented on every fire, not a tally of those
+        // already made. Comparing it against occurrenceCount ended the rule at about half length.
+        if (maxOccurrences != null && maxOccurrences <= 0) {
             return null
         }
         if (endDate != null && triggerTime > endDate) {
@@ -958,7 +960,8 @@ object RecurrenceCalculator {
             false
         rule.timeRecurrenceTrigger != null && recurrenceState.nextOccurrenceDate != null && event.currentTime < recurrenceState.nextOccurrenceDate ->
             false
-        rule.termination.maxOccurrences != null && recurrenceState.occurrenceCount > rule.termination.maxOccurrences!! ->
+        // See calculateNextOccurrence: this is a countdown of occurrences still owed.
+        rule.termination.maxOccurrences.let { it != null && it <= 0 } ->
             false
         rule.termination.endDate != null && recurrenceState.nextOccurrenceDate != null && recurrenceState.nextOccurrenceDate > rule.termination.endDate!! ->
             false

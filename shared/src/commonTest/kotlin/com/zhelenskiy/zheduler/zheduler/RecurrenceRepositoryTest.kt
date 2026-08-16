@@ -108,10 +108,12 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
     @Test
     fun testEveryPeriodTerminationAfterOccurrences() {
         val firstOccurrence = instant(2024, 1, 15, 9, 0)
+        // afterOccurrences counts down as occurrences are spent, so a rule with none left is the
+        // state processRecurrence arrives at after the third fire.
         val rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
-        ).toRule().copy(termination = RecurrenceTermination.afterOccurrences(3))
+        ).toRule().copy(termination = RecurrenceTermination.afterOccurrences(0))
         val state = RecurrenceState(occurrenceCount = 3)
 
         val next = RecurrenceCalculator.calculateNextOccurrence(rule, state)

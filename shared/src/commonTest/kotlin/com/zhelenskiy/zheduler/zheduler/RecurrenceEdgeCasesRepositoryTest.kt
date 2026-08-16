@@ -549,31 +549,28 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     @Test
     fun `termination after 3 occurrences stops after third`() {
         val firstOccurrence = instant(2024, 1, 1, 9, 0)
-        val rule = RecurrenceTrigger.AfterTimeout(
+        var rule = RecurrenceTrigger.AfterTimeout(
             period = RecurrencePeriod.ofDays(1),
             firstOccurrence = firstOccurrence,
         ).toRule().copy(termination = RecurrenceTermination.afterOccurrences(3))
 
         var state = RecurrenceState()
 
-        // Occurrence 1
-        var next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
-        assertNotNull(next)
-        state = state.copy(occurrenceCount = 1, lastOccurrenceDate = next)
-
-        // Occurrence 2
-        next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
-        assertNotNull(next)
-        state = state.copy(occurrenceCount = 2, lastOccurrenceDate = next)
-
-        // Occurrence 3
-        next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
-        assertNotNull(next)
-        state = state.copy(occurrenceCount = 3, lastOccurrenceDate = next)
+        // Each occurrence spends one of the three the rule still owes, the way processRecurrence
+        // advances it; the remaining count is what termination is measured by.
+        repeat(3) { index ->
+            val next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
+            assertNotNull(next, "occurrence ${index + 1} should still be scheduled")
+            state = state.copy(occurrenceCount = index + 1, lastOccurrenceDate = next)
+            rule = rule.copy(
+                termination = rule.termination.copy(
+                    afterOccurrences = RecurrenceTerminationCondition.AfterOccurrences(2 - index)
+                )
+            )
+        }
 
         // No more occurrences after 3
-        next = RecurrenceCalculator.calculateNextOccurrence(rule, state)
-        assertNull(next)
+        assertNull(RecurrenceCalculator.calculateNextOccurrence(rule, state))
     }
 
     // ==================== Multiple Rules Tests ====================

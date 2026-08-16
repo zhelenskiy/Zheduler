@@ -354,8 +354,11 @@ interface ZhedulerDao {
     @Query("INSERT OR IGNORE INTO tags(spaceId, name) VALUES (:spaceId, :name)")
     suspend fun insertTagForSpace(spaceId: String, name: String)
 
+    @Query("SELECT EXISTS(SELECT 1 FROM tags WHERE spaceId = :spaceId AND name = :name)")
+    suspend fun tagExists(spaceId: String, name: String): Boolean
+
     @Query("DELETE FROM tags WHERE spaceId = :spaceId AND name = :name")
-    suspend fun deleteTagForSpace(spaceId: String, name: String)
+    suspend fun deleteTagForSpace(spaceId: String, name: String): Int
 
     // ============ Task tag queries (normalized task_tags table) ============
 

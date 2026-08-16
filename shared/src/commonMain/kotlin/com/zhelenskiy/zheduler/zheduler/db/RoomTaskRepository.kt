@@ -516,18 +516,22 @@ class RoomTaskRepository(
         totalCount = dao.countFilteredTagsForSpace(spaceId, searchQuery, excludeTags),
     )
 
-    override suspend fun addTag(spaceId: String, tag: String): Boolean {
-        if (tag.isBlank()) return false
-        dao.insertTagForSpace(spaceId, tag.trim())
+    override suspend fun addTag(spaceId: String, tag: String): Boolean = mutex.withLock {
+        val name = tag.trim()
+        if (name.isBlank()) return@withLock false
+        // Checked rather than relying on INSERT OR IGNORE, which cannot say whether it inserted.
+        if (dao.tagExists(spaceId, name)) return@withLock false
+        dao.insertTagForSpace(spaceId, name)
         notifyChanged()
-        return true
+        true
     }
 
-    override suspend fun deleteTag(spaceId: String, tag: String): Boolean {
-        if (tag.isBlank()) return false
-        dao.deleteTagForSpace(spaceId, tag.trim())
-        notifyChanged()
-        return true
+    override suspend fun deleteTag(spaceId: String, tag: String): Boolean = mutex.withLock {
+        val name = tag.trim()
+        if (name.isBlank()) return@withLock false
+        val removed = dao.deleteTagForSpace(spaceId, name) > 0
+        if (removed) notifyChanged()
+        removed
     }
 
     override suspend fun peekNextId(spaceId: String): String {

@@ -68,10 +68,10 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         searchInPrefix: Boolean,
         offset: Int,
         limit: Int
-    ): Page<Space> {
-        if (query.isBlank()) return spaces.values.toList().toPage(offset, limit)
+    ): Page<Space> = mutex.withLock {
+        if (query.isBlank()) return@withLock spaces.values.toList().toPage(offset, limit)
 
-        return spaces.values.filter { space ->
+        spaces.values.filter { space ->
             val matchesName = searchInName && space.name.contains(query, ignoreCase = true)
             val matchesPrefix = searchInPrefix && space.idPrefix.contains(query, ignoreCase = true)
             matchesName || matchesPrefix
@@ -255,15 +255,17 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     }
 
     override suspend fun addTag(spaceId: String, tag: String): Boolean = mutex.withLock {
-        if (tag.isBlank()) return@withLock false
-        tagsBySpace.getOrPut(spaceId) { mutableSetOf() }.add(tag.trim())
-        notifyChanged()
-        true
+        val name = tag.trim()
+        if (name.isBlank()) return@withLock false
+        val added = tagsBySpace.getOrPut(spaceId) { mutableSetOf() }.add(name)
+        if (added) notifyChanged()
+        added
     }
 
     override suspend fun deleteTag(spaceId: String, tag: String): Boolean = mutex.withLock {
-        if (tag.isBlank()) return@withLock false
-        val removed = tagsBySpace[spaceId]?.remove(tag.trim()) ?: false
+        val name = tag.trim()
+        if (name.isBlank()) return@withLock false
+        val removed = tagsBySpace[spaceId]?.remove(name) ?: false
         if (removed) notifyChanged()
         removed
     }
