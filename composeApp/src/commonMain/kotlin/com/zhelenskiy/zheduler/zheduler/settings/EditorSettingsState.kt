@@ -8,6 +8,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 /**
@@ -36,9 +37,13 @@ class EditorSettingsState(
     fun descriptionEditorFor(taskId: String?): DescriptionEditorKind =
         taskId?.let { descriptionEditorByTask[it] } ?: DefaultDescriptionEditor
 
+    /** Tasks the user has decided about since start, which storage must not speak over. */
+    private val decidedSinceStart = mutableSetOf<String>()
+
     /** Remembers [kind] for [taskId]. A task with no id yet has nothing to remember it by. */
     fun setDescriptionEditorFor(taskId: String?, kind: DescriptionEditorKind) {
         if (taskId == null) return
+        decidedSinceStart += taskId
         val updated = if (kind == DefaultDescriptionEditor) {
             descriptionEditorByTask - taskId
         } else {
@@ -49,9 +54,15 @@ class EditorSettingsState(
         onPersist(updated)
     }
 
-    /** Applies what was read back from storage, without writing it out again. */
+    /**
+     * Applies what was read back from storage, without writing it out again.
+     *
+     * A choice made while the read was still in flight is the newer one and stands. Replacing the
+     * map wholesale flipped such a task back to whatever the disk said, while the write for the
+     * user's choice was already on its way — leaving the screen and the file disagreeing.
+     */
     internal fun restore(byTask: Map<String, DescriptionEditorKind>) {
-        descriptionEditorByTask = byTask
+        descriptionEditorByTask = byTask.filterKeys { it !in decidedSinceStart } + descriptionEditorByTask
     }
 }
 
@@ -65,10 +76,14 @@ class EditorSettingsState(
 private val persistedEditorSettings: EditorSettingsState by lazy {
     val store = createEditorSettingsStore()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    lateinit var state: EditorSettingsState
-    state = EditorSettingsState(
-        onPersist = { byTask -> scope.launch { store.set(EditorSettings(byTask)) } },
-    )
+
+    // One writer, newest wins. Launching a coroutine per change left their order to the
+    // dispatcher, so of two quick switches the older could reach the file last and be what came
+    // back on restart. Each value is the whole map, so dropping a superseded one loses nothing.
+    val writes = Channel<Map<String, DescriptionEditorKind>>(Channel.CONFLATED)
+    scope.launch { for (byTask in writes) store.set(EditorSettings(byTask)) }
+
+    val state = EditorSettingsState(onPersist = { writes.trySend(it) })
     scope.launch { state.restore(store.get()?.descriptionEditorByTask.orEmpty()) }
     state
 }

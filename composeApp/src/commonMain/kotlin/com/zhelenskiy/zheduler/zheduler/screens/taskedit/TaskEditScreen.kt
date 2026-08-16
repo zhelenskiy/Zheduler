@@ -46,12 +46,20 @@ fun TaskEditScreen(
 
     formState.persistedIn(container.formPersistence)
 
-    // Update connections when task changes
+    // Connections can change underneath the form: creating a connected task from here writes the
+    // other half of the link into the task being edited. Only that difference is taken, though —
+    // replacing the set wholesale reverted the connections the user had just added or removed,
+    // silently, on the way back from creating one.
+    var syncedConnections by remember(currentTask.id) { mutableStateOf(currentTask.connections) }
     LaunchedEffect(state.task) {
-        val freshTask = state.task
-        if (freshTask != null) {
-            formState.connections = freshTask.connections
-        }
+        val freshTask = state.task ?: return@LaunchedEffect
+        val fresh = freshTask.connections
+        if (fresh == syncedConnections) return@LaunchedEffect
+
+        val added = fresh - syncedConnections
+        val removed = syncedConnections - fresh
+        formState.connections = formState.connections.addAll(added).removeAll(removed)
+        syncedConnections = fresh
     }
 
     var showDiscardChangesDialog by remember { mutableStateOf(false) }

@@ -92,32 +92,51 @@ class ThemeState(
 
     val colorScheme: ColorScheme
         @Composable get() = getColorScheme(themeMode, useDynamicColors, colorSettings.effectiveColor)
+
+    /** Takes [settings] as the current theme, and counts as having them. */
+    fun adopt(settings: ThemeSettings) {
+        themeMode = settings.themeMode
+        useDynamicColors = settings.useDynamicColors
+        colorSettings = ColorSettings(savedColor = Color(settings.customSeedColorArgb))
+        settingsLoaded = true
+    }
 }
+
+/**
+ * The settings as last read or written, for the lifetime of the process.
+ *
+ * Android rebuilds the composition on every configuration change, which re-ran the disk read and
+ * let it land on top of a choice made since — reverting it on screen and then persisting the
+ * revert. Seeded from here, a rebuilt composition already knows them and reads nothing.
+ */
+private var loadedThemeSettings: ThemeSettings? = null
 
 @Composable
 fun rememberThemeState(): ThemeState {
     val themeSettingsStore = remember { createThemeSettingsStore() }
-    val themeState = remember { ThemeState() }
+    val themeState = remember {
+        ThemeState().apply { loadedThemeSettings?.let { adopt(it) } }
+    }
 
     // Load settings on startup
     LaunchedEffect(Unit) {
-        val settings = themeSettingsStore.updates.first() ?: ThemeSettings()
-        themeState.themeMode = settings.themeMode
-        themeState.useDynamicColors = settings.useDynamicColors
-        themeState.colorSettings = ColorSettings(savedColor = Color(settings.customSeedColorArgb))
-        themeState.settingsLoaded = true
+        if (!themeState.settingsLoaded) {
+            val settings = themeSettingsStore.updates.first() ?: ThemeSettings()
+            loadedThemeSettings = settings
+            themeState.adopt(settings)
+        }
     }
 
     // Save settings when they change (only savedColor, not previewColor)
     LaunchedEffect(themeState.themeMode, themeState.useDynamicColors, themeState.colorSettings.savedColor) {
         if (themeState.settingsLoaded) {
-            themeSettingsStore.set(
-                ThemeSettings(
-                    themeMode = themeState.themeMode,
-                    useDynamicColors = themeState.useDynamicColors,
-                    customSeedColorArgb = themeState.colorSettings.savedColor.toArgb()
-                )
+            val settings = ThemeSettings(
+                themeMode = themeState.themeMode,
+                useDynamicColors = themeState.useDynamicColors,
+                customSeedColorArgb = themeState.colorSettings.savedColor.toArgb()
             )
+            loadedThemeSettings = settings
+            themeSettingsStore.set(settings)
         }
     }
 

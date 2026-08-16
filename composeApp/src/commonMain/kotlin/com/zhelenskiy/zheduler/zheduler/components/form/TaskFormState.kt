@@ -92,13 +92,16 @@ class TaskFormState(
         get() = title.isNotBlank() &&
                 (priority.isEmpty() || priority.toIntOrNull()?.let { it in 1..100 } == true) &&
                 (estimatedTime.isEmpty() || parseCompactTimeToPeriod(estimatedTime) != null) &&
-                notifications.all { it.isNotBlank() && parseCompactTimeToPeriod(it) != null }
+                (dueDate == null || notifications.all { it.isNotBlank() && parseCompactTimeToPeriod(it) != null })
 
     fun validate(): Boolean {
         if (title.isBlank()) return false
         if (priority.isNotEmpty() && priority.toIntOrNull()?.let { it in 1..100 } != true) return false
         if (estimatedTime.isNotEmpty() && parseCompactTimeToPeriod(estimatedTime) == null) return false
-        if (notifications.any { it.isBlank() || parseCompactTimeToPeriod(it) == null }) return false
+        // Only while there is a deadline to be notified before. The notifications section is
+        // hidden without one and toParsedValues already drops them, so judging them anyway left
+        // Save disabled over a half-typed notification the user could no longer see or fix.
+        if (dueDate != null && notifications.any { it.isBlank() || parseCompactTimeToPeriod(it) == null }) return false
         return true
     }
 

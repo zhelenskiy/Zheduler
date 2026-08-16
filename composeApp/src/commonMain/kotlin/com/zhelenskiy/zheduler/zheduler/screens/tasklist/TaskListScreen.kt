@@ -410,9 +410,11 @@ internal fun DynamicTaskList(
                 )
             }
 
-            // Collect keys that were previously expanded (had loaded children)
-            val previouslyExpandedGroupKeys = loadedGroups.keys.filter { it.isNotEmpty() }.toSet()
-            val previouslyOpenLeafKeys = openLeaves.keys.filter { it.isNotEmpty() }.toSet()
+            // Which groups are open, read as the walk reaches each one rather than snapshotted
+            // before it starts. The walk suspends on a query per group, and a group the user
+            // expands during that is otherwise missed: it would be left looking expanded with
+            // nothing beneath it until collapsed and opened again.
+            fun isExpanded(key: String) = key in loadedGroups || key in openLeaves
 
             // Start with root groups and use builders
             val newLoadedGroupsBuilder = persistentMapOf("" to rootGroups).builder()
@@ -422,8 +424,7 @@ internal fun DynamicTaskList(
             val groupsToProcess = ArrayDeque(rootGroups)
             while (groupsToProcess.isNotEmpty()) {
                 val groupData = groupsToProcess.removeFirst()
-                val wasExpanded = groupData.groupKey in previouslyExpandedGroupKeys ||
-                                  groupData.groupKey in previouslyOpenLeafKeys
+                val wasExpanded = isExpanded(groupData.groupKey)
 
                 if (wasExpanded) {
                     val result = loadGroupChildren(groupData)

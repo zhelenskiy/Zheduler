@@ -40,9 +40,13 @@ internal fun taskIdPattern(allSpacePrefixes: List<String>): Regex =
 /**
  * Spans that already carry their own meaning and must be left alone: links, images,
  * inline code, and autolinks.
+ *
+ * A code span is a run of backticks closed by a run of the same length, which is how a span can
+ * contain a backtick of its own. Matching only single-backtick pairs read ``ZH-12`` as two empty
+ * spans with an unprotected reference between them, and linkified the contents of the code.
  */
 private val NonLinkifiableSpan =
-    Regex("!?\\[[^\\]]*$LiteralCloseBracket\\([^)]*\\)|`[^`]*`|<[^<>\\s]*>")
+    Regex("!?\\[[^\\]]*$LiteralCloseBracket\\([^)]*\\)|(`+)[\\s\\S]*?\\1(?!`)|<[^<>\\s]*>")
 
 /**
  * Turns bare `ZH-12` references into Markdown links, skipping text that is already one.

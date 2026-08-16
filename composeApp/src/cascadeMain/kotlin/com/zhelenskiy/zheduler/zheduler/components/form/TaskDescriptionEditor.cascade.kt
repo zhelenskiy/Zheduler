@@ -47,6 +47,7 @@ import io.github.linreal.cascade.editor.core.BlockContent
 import io.github.linreal.cascade.editor.core.BlockId
 import io.github.linreal.cascade.editor.markdown.ExperimentalCascadeMarkdownApi
 import io.github.linreal.cascade.editor.markdown.MarkdownDecodeWarning
+import io.github.linreal.cascade.editor.markdown.MarkdownEncodeResult
 import io.github.linreal.cascade.editor.markdown.MarkdownEncodeWarning
 import io.github.linreal.cascade.editor.markdown.MarkdownWarning
 import io.github.linreal.cascade.editor.markdown.MarkdownEditModeRecommendation
@@ -198,30 +199,45 @@ actual fun TaskDescriptionEditor(
         return
     }
 
+    /** Hands [result] to the form, unless storing it would lose part of the document. */
+    fun applyEncoded(result: MarkdownEncodeResult) {
+        val payload = result.markdown?.let(::withBareTaskReferenceLinks) ?: return
+        val lossy = result.warnings.filter { warning ->
+            warning.impact == MarkdownFidelityImpact.DataLoss ||
+                warning.impact == MarkdownFidelityImpact.Fatal
+        }
+        val blocking = lossy.filterNot { warning ->
+            isBlankBlockNoise(warning, stateHolder.state.blocks, textStates)
+        }
+        if (blocking.isNotEmpty()) {
+            // Storing this would lose part of it, so the last good text is kept —
+            // but silently discarding what someone just typed is worse than saying so.
+            sync.unstorableReasons = blocking.map(::describeEncodeWarning).distinct()
+            return
+        }
+        sync.unstorableReasons = emptyList()
+        sync.pushValue(payload)?.let(currentOnMarkdownChange)
+    }
+
     LaunchedEffect(Unit) {
         snapshotFlow { stateHolder.toMarkdownWithReport(textStates, spanStates, profile) }
             .collectLatest { result ->
                 // Cancelled and restarted by the next edit, so this only fires once the
                 // user pauses.
                 delay(SyncDebounceMillis)
-                val payload = result.markdown?.let(::withBareTaskReferenceLinks)
-                    ?: return@collectLatest
-                val lossy = result.warnings.filter { warning ->
-                    warning.impact == MarkdownFidelityImpact.DataLoss ||
-                        warning.impact == MarkdownFidelityImpact.Fatal
-                }
-                val blocking = lossy.filterNot { warning ->
-                    isBlankBlockNoise(warning, stateHolder.state.blocks, textStates)
-                }
-                if (blocking.isNotEmpty()) {
-                    // Storing this would lose part of it, so the last good text is kept —
-                    // but silently discarding what someone just typed is worse than saying so.
-                    sync.unstorableReasons = blocking.map(::describeEncodeWarning).distinct()
-                    return@collectLatest
-                }
-                sync.unstorableReasons = emptyList()
-                sync.pushValue(payload)?.let(currentOnMarkdownChange)
+                applyEncoded(result)
             }
+    }
+
+    // The debounce above means the newest edits have not reached the form yet when the editor
+    // goes away — on Save, on back, on switching to the raw Markdown field. Cancelling the effect
+    // would simply drop them: pressing back within the debounce window reported no unsaved
+    // changes and left without them.
+    val flushPendingEdits by rememberUpdatedState {
+        applyEncoded(stateHolder.toMarkdownWithReport(textStates, spanStates, profile))
+    }
+    DisposableEffect(Unit) {
+        onDispose { flushPendingEdits() }
     }
 
     val scheme = MaterialTheme.colorScheme
