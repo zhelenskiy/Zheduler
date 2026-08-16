@@ -198,39 +198,63 @@ fun rememberTaskFormState(
     initialNotifications: PersistentList<String> = persistentListOf(),
     initialRecurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(),
     initialAutoUpdateStatusFromSubtasks: Boolean = false
-): TaskFormState {
-    return remember {
-        TaskFormState(
-            initialTitle = initialTitle,
-            initialDescription = initialDescription,
-            initialPriority = initialPriority,
-            initialEstimatedTime = initialEstimatedTime,
-            initialTags = initialTags,
-            initialDueDate = initialDueDate,
-            initialStatus = initialStatus,
-            initialConnections = initialConnections,
-            initialNotifications = initialNotifications,
-            initialRecurrenceRules = initialRecurrenceRules,
-            initialAutoUpdateStatusFromSubtasks = initialAutoUpdateStatusFromSubtasks
-        )
-    }
+): TaskFormState = remember {
+    taskFormState(
+        initialTitle = initialTitle,
+        initialDescription = initialDescription,
+        initialPriority = initialPriority,
+        initialEstimatedTime = initialEstimatedTime,
+        initialTags = initialTags,
+        initialDueDate = initialDueDate,
+        initialStatus = initialStatus,
+        initialConnections = initialConnections,
+        initialNotifications = initialNotifications,
+        initialRecurrenceRules = initialRecurrenceRules,
+        initialAutoUpdateStatusFromSubtasks = initialAutoUpdateStatusFromSubtasks
+    )
 }
 
+/** An empty form, or one prefilled with the given values. */
+fun taskFormState(
+    initialTitle: String = "",
+    initialDescription: String = "",
+    initialPriority: String = "",
+    initialEstimatedTime: String = "",
+    initialTags: PersistentSet<String> = persistentSetOf(),
+    initialDueDate: Instant? = null,
+    initialStatus: TaskStatus = TaskStatus.Open,
+    initialConnections: PersistentSet<TaskConnection> = persistentSetOf(),
+    initialNotifications: PersistentList<String> = persistentListOf(),
+    initialRecurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(),
+    initialAutoUpdateStatusFromSubtasks: Boolean = false
+): TaskFormState = TaskFormState(
+    initialTitle = initialTitle,
+    initialDescription = initialDescription,
+    initialPriority = initialPriority,
+    initialEstimatedTime = initialEstimatedTime,
+    initialTags = initialTags,
+    initialDueDate = initialDueDate,
+    initialStatus = initialStatus,
+    initialConnections = initialConnections,
+    initialNotifications = initialNotifications,
+    initialRecurrenceRules = initialRecurrenceRules,
+    initialAutoUpdateStatusFromSubtasks = initialAutoUpdateStatusFromSubtasks
+)
+
 @Composable
-fun rememberTaskFormState(task: Task): TaskFormState {
-    return remember {
-        TaskFormState(
-            initialTitle = task.title,
-            initialDescription = task.description,
-            initialPriority = task.priority?.value?.toString() ?: "",
-            initialEstimatedTime = task.estimatedTime?.toBriefString() ?: "",
-            initialTags = task.tags,
-            initialDueDate = task.dueDate,
-            initialStatus = task.status,
-            initialConnections = task.connections,
-            initialNotifications = task.notifications.mapToPersistentList { it.timeBeforeDeadline.toBriefString() },
-            initialRecurrenceRules = task.recurrenceRules,
-            initialAutoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
-        )
-    }
-}
+fun rememberTaskFormState(task: Task): TaskFormState = remember { taskFormState(task) }
+
+/** A form prefilled from an existing task. */
+fun taskFormState(task: Task): TaskFormState = TaskFormState(
+    initialTitle = task.title,
+    initialDescription = task.description,
+    initialPriority = task.priority?.value?.toString() ?: "",
+    initialEstimatedTime = task.estimatedTime?.toBriefString() ?: "",
+    initialTags = task.tags,
+    initialDueDate = task.dueDate,
+    initialStatus = task.status,
+    initialConnections = task.connections,
+    initialNotifications = task.notifications.mapToPersistentList { it.timeBeforeDeadline.toBriefString() },
+    initialRecurrenceRules = task.recurrenceRules,
+    initialAutoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
+)

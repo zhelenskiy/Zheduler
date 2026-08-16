@@ -13,7 +13,9 @@ import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
-import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
+import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormState
+import com.zhelenskiy.zheduler.zheduler.components.form.persistedIn
+import com.zhelenskiy.zheduler.zheduler.components.form.taskFormState
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskAction
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
@@ -47,6 +49,7 @@ fun NewTaskScreen(
 
     val initialConnections = state.initialConnections
     val formState = rememberFormStateFromData(state.taskToCopy, initialConnections)
+    formState.persistedIn(container.formPersistence)
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
 
     fun handleBackPress() {
@@ -137,12 +140,21 @@ fun NewTaskScreen(
     }
 }
 
+/**
+ * The form to fill in, rebuilt when the data it starts from arrives.
+ *
+ * Both the task being copied and the connection to prefill are read from the database after the
+ * screen is already on show, so the first form is always the empty one. Keyed on them, or opening
+ * "new related task" would drop the very connection it was opened to create.
+ */
 @Composable
-private fun rememberFormStateFromData(taskToCopy: Task?, initialConnections: PersistentSet<TaskConnection>) =
+internal fun rememberFormStateFromData(
+    taskToCopy: Task?,
+    initialConnections: PersistentSet<TaskConnection>,
+): TaskFormState = remember(taskToCopy, initialConnections) {
     if (taskToCopy != null) {
-        rememberTaskFormState(taskToCopy).apply {
-            connections = initialConnections
-        }
+        taskFormState(taskToCopy).apply { connections = initialConnections }
     } else {
-        rememberTaskFormState(initialConnections = initialConnections)
+        taskFormState(initialConnections = initialConnections)
     }
+}

@@ -39,9 +39,7 @@ class CalendarContainer(
 ) : ScopedContainer(), Container<CalendarState, CalendarIntent, CalendarAction> {
 
     override val store = store(CalendarState(), scope) {
-        configure {
-            name = "CalendarStore"
-        }
+        reportingFailuresAs("CalendarStore")
 
         reduce { intent ->
             when (intent) {

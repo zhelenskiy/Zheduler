@@ -22,12 +22,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.materialkolor.rememberDynamicColorScheme
+import com.zhelenskiy.zheduler.zheduler.components.common.LocalFailureSnackbar
+import com.zhelenskiy.zheduler.zheduler.components.common.ReportFailures
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
-import com.zhelenskiy.zheduler.zheduler.di.AppGraph
 import com.zhelenskiy.zheduler.zheduler.di.AppGraphProvider
 import com.zhelenskiy.zheduler.zheduler.di.LocalAppGraph
-import com.zhelenskiy.zheduler.zheduler.di.awaitDatabaseInitialization
-import com.zhelenskiy.zheduler.zheduler.di.createAppGraph
+import com.zhelenskiy.zheduler.zheduler.di.obtainAppGraph
+import com.zhelenskiy.zheduler.zheduler.di.peekAppGraph
 import com.zhelenskiy.zheduler.zheduler.navigation.CalendarRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.NewTaskRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.SpaceListRoute
@@ -123,11 +124,11 @@ fun rememberThemeState(): ThemeState {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(themeState: ThemeState = rememberThemeState()) {
-    var appGraph by remember { mutableStateOf<AppGraph?>(null) }
+    // Seeded from the existing graph so a recreated activity draws its first frame with content.
+    var appGraph by remember { mutableStateOf(peekAppGraph()) }
 
     LaunchedEffect(Unit) {
-        awaitDatabaseInitialization()
-        appGraph = createAppGraph()
+        if (appGraph == null) appGraph = obtainAppGraph()
     }
 
     val onThemeModeChange: (ThemeMode) -> Unit = { themeState.themeMode = it }
@@ -138,11 +139,19 @@ fun App(themeState: ThemeState = rememberThemeState()) {
     if (graph != null) {
         MaterialTheme(colorScheme = themeState.colorScheme) {
             AppGraphProvider(graph) {
-                AppContent(
-                    themeState.themeMode, onThemeModeChange,
-                    themeState.useDynamicColors, onUseDynamicColorsChange,
-                    themeState.colorSettings, onColorSettingsChange
-                )
+                // One host above the whole navigation graph: a screen does not need a snackbar of
+                // its own for its store to be able to say that something went wrong.
+                val failureSnackbar = remember { SnackbarHostState() }
+                CompositionLocalProvider(LocalFailureSnackbar provides failureSnackbar) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AppContent(
+                            themeState.themeMode, onThemeModeChange,
+                            themeState.useDynamicColors, onUseDynamicColorsChange,
+                            themeState.colorSettings, onColorSettingsChange
+                        )
+                        SnackbarHost(failureSnackbar, modifier = Modifier.align(Alignment.BottomCenter))
+                    }
+                }
             }
         }
     } else {
@@ -205,6 +214,7 @@ private fun AppContent(
         popExitTransition = { slideOutHorizontally { it } }
     ) {
         composable<SpaceListRoute> {
+            ReportFailures(appGraph.spaceListContainer)
             SpaceListScreen(
                 container = appGraph.spaceListContainer,
                 refreshTrigger = refreshTrigger,
@@ -227,6 +237,7 @@ private fun AppContent(
             val container = rememberContainer(route.spaceId) {
                 appGraph.taskListContainerFactory.create(route.spaceId)
             }
+            ReportFailures(container)
 
             // Observe loaded filter from SavedFilterManagementScreen
             val loadedFilterId by savedStateHandle.getStateFlow<String?>("loadedFilterId", null).collectAsState()
@@ -274,6 +285,7 @@ private fun AppContent(
             val container = rememberContainer(route.spaceId) {
                 appGraph.calendarContainerFactory.create(route.spaceId)
             }
+            ReportFailures(container)
             CalendarScreen(
                 container = container,
                 onNavigateBack = {
@@ -320,6 +332,7 @@ private fun AppContent(
                     taskId = route.taskId
                 )
             }
+            ReportFailures(container)
             TaskDetailScreen(
                 container = container,
                 externalRefreshTrigger = refreshTrigger,
@@ -355,6 +368,7 @@ private fun AppContent(
                     savedStateHandle = savedStateHandle
                 )
             }
+            ReportFailures(container)
             TaskEditScreen(
                 container = container,
                 onNavigateBack = {
@@ -410,13 +424,16 @@ private fun AppContent(
                         ConnectionType.valueOf(route.prefilledConnectionType)
                     )
                 } else null
+            val savedStateHandle = backStackEntry.savedStateHandle
             val container = rememberContainer(route.spaceId, prefilledConnection, route.taskIdToCopy) {
                 appGraph.newTaskContainerFactory.create(
                     spaceId = route.spaceId,
                     prefilledConnection = prefilledConnection,
-                    taskIdToCopy = route.taskIdToCopy
+                    taskIdToCopy = route.taskIdToCopy,
+                    savedStateHandle = savedStateHandle,
                 )
             }
+            ReportFailures(container)
             NewTaskScreen(
                 container = container,
                 onNavigateBack = {
@@ -451,6 +468,7 @@ private fun AppContent(
             val container = rememberContainer(route.spaceId) {
                 ViewModeContainer(appGraph.taskRepository, route.spaceId)
             }
+            ReportFailures(container)
 
             ViewModeManagementScreen(
                 container = container,
@@ -484,6 +502,7 @@ private fun AppContent(
             val container = rememberContainer(route.spaceId) {
                 ViewModeContainer(appGraph.taskRepository, route.spaceId)
             }
+            ReportFailures(container)
 
             ViewModeEditorScreen(
                 container = container,
@@ -510,6 +529,7 @@ private fun AppContent(
             val container = rememberContainer(route.spaceId) {
                 SavedFilterContainer(appGraph.taskRepository, route.spaceId)
             }
+            ReportFailures(container)
 
             SavedFilterManagementScreen(
                 container = container,

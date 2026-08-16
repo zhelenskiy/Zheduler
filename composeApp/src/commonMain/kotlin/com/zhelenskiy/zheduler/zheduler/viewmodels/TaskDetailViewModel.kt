@@ -17,18 +17,6 @@ import pro.respawn.flowmvi.plugins.whileSubscribed
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-/**
- * Persisted form state for surviving process death during nested navigation
- */
-data class PersistedFormState(
-    val title: String?,
-    val description: String?,
-    val priority: String?,
-    val estimatedTime: String?,
-    val tags: PersistentSet<String>,
-    val dueDate: Instant?
-)
-
 data class TaskDetailState(
     val taskWithTotals: TaskWithTotals? = null,
     val connectionsByType: Map<ConnectionType, List<Task>> = emptyMap(),
@@ -55,9 +43,7 @@ class TaskDetailContainer(
 ) : ScopedContainer(), Container<TaskDetailState, TaskDetailIntent, TaskDetailAction> {
 
     override val store = store(TaskDetailState(), scope) {
-        configure {
-            name = "TaskDetailStore"
-        }
+        reportingFailuresAs("TaskDetailStore")
 
         whileSubscribed {
             loadTask()

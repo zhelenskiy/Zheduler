@@ -37,9 +37,7 @@ class SavedFilterContainer(
 ) : ScopedContainer(), Container<SavedFilterState, SavedFilterIntent, SavedFilterAction> {
 
     override val store = store(SavedFilterState(), scope) {
-        configure {
-            name = "SavedFilterStore"
-        }
+        reportingFailuresAs("SavedFilterStore")
 
         whileSubscribed {
             loadInitialData()

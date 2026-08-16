@@ -115,8 +115,8 @@ interface AppGraph {
 
         @Provides
         fun provideNewTaskContainerFactory(repository: RoomTaskRepository): NewTaskContainerFactory =
-            NewTaskContainerFactory { spaceId, prefilledConnection, taskIdToCopy ->
-                NewTaskContainer(repository, spaceId, prefilledConnection, taskIdToCopy)
+            NewTaskContainerFactory { spaceId, prefilledConnection, taskIdToCopy, savedStateHandle ->
+                NewTaskContainer(repository, spaceId, prefilledConnection, taskIdToCopy, savedStateHandle)
             }
 
         @Provides

@@ -72,9 +72,7 @@ fun ViewModeEditorScreen(
         }
     }
     val editorState = rememberViewModeEditorState(viewMode, spaceId, isCopy)
-    val validationResult by remember {
-        derivedStateOf { editorState.validate() }
-    }
+    val validationResult by rememberViewModeValidation(editorState)
     val isValid = validationResult is GroupingValidationResult.Valid
     val isNewMode = viewMode == null
     var showDiscardDialog by remember { mutableStateOf(false) }
@@ -455,7 +453,7 @@ private fun GroupingLevelEditorDialog(
         level.moveGroup(from.index - headerCount, to.index - headerCount)
     }
 
-    val validationErrors by remember { derivedStateOf { level.validate() } }
+    val validationErrors by remember(level) { derivedStateOf { level.validate() } }
 
     AlertDialog(
         onDismissRequest = onCancel,

@@ -82,9 +82,7 @@ class SpaceListContainer(
 ) : ScopedContainer(), Container<SpaceListState, SpaceListIntent, SpaceListAction> {
 
     override val store = store(SpaceListState(), scope) {
-        configure {
-            name = "SpaceListStore"
-        }
+        reportingFailuresAs("SpaceListStore")
 
         whileSubscribed {
             loadSpaces()

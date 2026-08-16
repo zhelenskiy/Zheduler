@@ -523,6 +523,18 @@ class OrderingRuleState(
     )
 }
 
+/**
+ * Tracks [ViewModeEditorState.validate] for whichever editor state is current.
+ *
+ * Keyed on the state itself: [rememberViewModeEditorState] hands back a new instance once the
+ * mode being edited finishes loading, and an unkeyed `derivedStateOf` would keep reporting on
+ * the empty placeholder built before it arrived — which validates clean, leaving Save enabled
+ * over an invalid grouping.
+ */
+@Composable
+fun rememberViewModeValidation(editorState: ViewModeEditorState): State<GroupingValidationResult> =
+    remember(editorState) { derivedStateOf { editorState.validate() } }
+
 @Composable
 fun rememberViewModeEditorState(
     viewMode: ViewMode? = null,

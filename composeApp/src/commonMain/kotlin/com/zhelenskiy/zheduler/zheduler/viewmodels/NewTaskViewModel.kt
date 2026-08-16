@@ -2,8 +2,10 @@
 
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.components.form.FormStatePersistence
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
@@ -69,13 +71,12 @@ class NewTaskContainer(
     private val repository: TaskRepository,
     private val spaceId: String,
     private val prefilledConnection: TaskConnection?,
-    private val taskIdToCopy: String?
+    private val taskIdToCopy: String?,
+    savedStateHandle: SavedStateHandle,
 ) : ScopedContainer(), Container<NewTaskState, NewTaskIntent, NewTaskAction> {
 
     override val store = store(NewTaskState(), scope) {
-        configure {
-            name = "NewTaskStore"
-        }
+        reportingFailuresAs("NewTaskStore")
 
         whileSubscribed {
             loadInitialData()
@@ -113,6 +114,9 @@ class NewTaskContainer(
         }
     }
 
+    /** Keeps a half-written task across process death. See [FormStatePersistence]. */
+    val formPersistence = FormStatePersistence(savedStateHandle)
+
     private suspend fun NewTaskPipelineContext.createTask(intent: NewTaskIntent.CreateTask) {
         val task = repository.addTask(
             spaceId = spaceId,
@@ -129,6 +133,7 @@ class NewTaskContainer(
             autoUpdateStatusFromSubtasks = intent.autoUpdateStatusFromSubtasks
         )
         if (task != null) {
+            formPersistence.clear()
             action(NewTaskAction.TaskCreated(task))
         }
     }
@@ -171,6 +176,7 @@ fun interface NewTaskContainerFactory {
     fun create(
         spaceId: String,
         prefilledConnection: TaskConnection?,
-        taskIdToCopy: String?
+        taskIdToCopy: String?,
+        savedStateHandle: SavedStateHandle,
     ): NewTaskContainer
 }

@@ -5,6 +5,7 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 import androidx.lifecycle.SavedStateHandle
 import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.components.form.FormStatePersistence
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
@@ -23,12 +24,6 @@ import pro.respawn.flowmvi.plugins.whileSubscribed
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-private const val KEY_FORM_TITLE = "formTitle"
-private const val KEY_FORM_DESCRIPTION = "formDescription"
-private const val KEY_FORM_PRIORITY = "formPriority"
-private const val KEY_FORM_ESTIMATED_TIME = "formEstimatedTime"
-private const val KEY_FORM_TAGS = "formTags"
-private const val KEY_FORM_DUE_DATE = "formDueDate"
 
 data class TaskEditState(
     val task: Task? = null,
@@ -67,9 +62,7 @@ class TaskEditContainer(
 ) : ScopedContainer(), Container<TaskEditState, TaskEditIntent, TaskEditAction> {
 
     override val store = store(TaskEditState(), scope) {
-        configure {
-            name = "TaskEditStore"
-        }
+        reportingFailuresAs("TaskEditStore")
 
         whileSubscribed {
             loadTask()
@@ -102,55 +95,12 @@ class TaskEditContainer(
 
     private suspend fun TaskEditPipelineContext.saveTask(updatedTask: Task) {
         repository.updateTask(updatedTask)
-        clearPersistedFormState()
+        formPersistence.clear()
         action(TaskEditAction.TaskSaved)
     }
 
-    // Form state persistence using SavedStateHandle (survives navigation)
-    fun getPersistedFormState(): PersistedFormState {
-        val tags = savedStateHandle.get<String>(KEY_FORM_TAGS)
-            ?.let { tagsJson -> runCatching { Json.decodeFromString<Set<String>>(tagsJson) }.getOrNull() }
-            ?.toPersistentSet()
-            ?: persistentSetOf()
-
-        val dueDate = savedStateHandle.get<Long>(KEY_FORM_DUE_DATE)?.let { epochMillis ->
-            Instant.fromEpochMilliseconds(epochMillis)
-        }
-
-        return PersistedFormState(
-            title = savedStateHandle.get<String>(KEY_FORM_TITLE),
-            description = savedStateHandle.get<String>(KEY_FORM_DESCRIPTION),
-            priority = savedStateHandle.get<String>(KEY_FORM_PRIORITY),
-            estimatedTime = savedStateHandle.get<String>(KEY_FORM_ESTIMATED_TIME),
-            tags = tags,
-            dueDate = dueDate
-        )
-    }
-
-    fun persistFormState(
-        title: String,
-        description: String,
-        priority: String,
-        estimatedTime: String,
-        tags: PersistentSet<String>,
-        dueDate: Instant?
-    ) {
-        savedStateHandle[KEY_FORM_TITLE] = title
-        savedStateHandle[KEY_FORM_DESCRIPTION] = description
-        savedStateHandle[KEY_FORM_PRIORITY] = priority
-        savedStateHandle[KEY_FORM_ESTIMATED_TIME] = estimatedTime
-        savedStateHandle[KEY_FORM_TAGS] = Json.encodeToString<Set<String>>(tags)
-        savedStateHandle[KEY_FORM_DUE_DATE] = dueDate?.toEpochMilliseconds()
-    }
-
-    fun clearPersistedFormState() {
-        savedStateHandle.remove<String>(KEY_FORM_TITLE)
-        savedStateHandle.remove<String>(KEY_FORM_DESCRIPTION)
-        savedStateHandle.remove<String>(KEY_FORM_PRIORITY)
-        savedStateHandle.remove<String>(KEY_FORM_ESTIMATED_TIME)
-        savedStateHandle.remove<String>(KEY_FORM_TAGS)
-        savedStateHandle.remove<Long>(KEY_FORM_DUE_DATE)
-    }
+    /** Keeps a half-written edit across process death. See [FormStatePersistence]. */
+    val formPersistence = FormStatePersistence(savedStateHandle)
 
     private suspend fun TaskEditPipelineContext.loadTaskById(id: String) {
         val task = repository.getTaskById(id)

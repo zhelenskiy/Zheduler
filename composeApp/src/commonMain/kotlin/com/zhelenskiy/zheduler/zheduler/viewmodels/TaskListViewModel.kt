@@ -65,9 +65,7 @@ class TaskListContainer(
 ) : ScopedContainer(dispatcher), Container<TaskListState, TaskListIntent, TaskListAction> {
 
     override val store = store(TaskListState(), scope) {
-        configure {
-            name = "TaskListStore"
-        }
+        reportingFailuresAs("TaskListStore")
 
         whileSubscribed {
             loadTasks()

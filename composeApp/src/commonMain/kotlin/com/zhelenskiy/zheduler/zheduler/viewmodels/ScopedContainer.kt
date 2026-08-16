@@ -8,6 +8,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import pro.respawn.flowmvi.api.MVIAction
+import pro.respawn.flowmvi.api.MVIIntent
+import pro.respawn.flowmvi.api.MVIState
+import pro.respawn.flowmvi.dsl.StoreBuilder
+import pro.respawn.flowmvi.plugins.recover
 
 /**
  * The coroutine scope a container's store, paged queries and repository subscriptions live in.
@@ -25,6 +34,37 @@ abstract class ScopedContainer(
 ) : AutoCloseable {
 
     protected val scope = CoroutineScope(SupervisorJob() + dispatcher)
+
+    private val _failures = MutableSharedFlow<Throwable>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Whatever handling an intent threw.
+     *
+     * Screens show these; see `FailureSnackbar`. Nothing is replayed, so a failure raised while no
+     * screen is listening is dropped rather than shown late against unrelated content.
+     */
+    val failures: SharedFlow<Throwable> = _failures.asSharedFlow()
+
+    /**
+     * Names the store and gives it somewhere to put the exceptions its intents raise.
+     *
+     * Without a recover plugin FlowMVI rethrows into the store's coroutine, and this scope has no
+     * exception handler to catch it: a single failed database call would take down the process on
+     * Android and leave the store dead everywhere else. Recovering keeps the store answering
+     * intents, and the user is told rather than left looking at a screen that stopped responding.
+     */
+    protected fun <S : MVIState, I : MVIIntent, A : MVIAction> StoreBuilder<S, I, A>.reportingFailuresAs(
+        storeName: String,
+    ) {
+        configure { name = storeName }
+        recover { e ->
+            _failures.tryEmit(e)
+            null
+        }
+    }
 
     override fun close() {
         scope.cancel()

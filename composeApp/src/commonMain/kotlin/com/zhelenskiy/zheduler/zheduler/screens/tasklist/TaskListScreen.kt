@@ -294,7 +294,9 @@ private data class LoadedGroupData(
 private data class OpenLeafGroup(
     val groupKey: String,
     val level: Int,
-    val filters: PersistentList<GroupFilter>
+    val filters: PersistentList<GroupFilter>,
+    /** The group's own ordering rules. Empty means the view mode's defaults apply. */
+    val orderingRules: PersistentList<OrderingRule> = persistentListOf(),
 )
 
 /**
@@ -313,7 +315,7 @@ private val persistentStringSetSaver = listSaver<PersistentSet<String>, String>(
  * group tree holds counts and filters only, never task lists.
  */
 @Composable
-private fun DynamicTaskList(
+internal fun DynamicTaskList(
     viewMode: ViewMode,
     filterCriteria: TaskFilterCriteria,
     dataVersion: Long,
@@ -359,7 +361,13 @@ private fun DynamicTaskList(
             }
         } else {
             // Leaf level - its tasks are paged in, so only the filters that select them are kept
-            groupData.groupKey to OpenLeafGroup(groupData.groupKey, nextLevelIndex, newFilters)
+            groupData.groupKey to OpenLeafGroup(
+                groupData.groupKey,
+                nextLevelIndex,
+                newFilters,
+                // Uncategorized groups have no definition, and so no rules of their own.
+                groupData.groupInfo.groupDefinition?.orderingRules ?: persistentListOf(),
+            )
         }
     }
 
@@ -441,7 +449,11 @@ private fun DynamicTaskList(
     for (leaf in openLeaves.values) {
         key(leaf.groupKey) {
             val pages = remember(leaf, filterCriteria, viewMode) {
-                onGetTaskPages(leaf.filters, viewMode.defaultOrderingRules, filterCriteria)
+                onGetTaskPages(
+                    leaf.filters,
+                    leaf.orderingRules.ifEmpty { viewMode.defaultOrderingRules },
+                    filterCriteria,
+                )
             }
             leafItems[leaf.groupKey] = pages.collectAsLazyPagingItems()
         }

@@ -41,9 +41,7 @@ class ViewModeContainer(
 ) : ScopedContainer(), Container<ViewModeState, ViewModeIntent, ViewModeAction> {
 
     override val store = store(ViewModeState(), scope) {
-        configure {
-            name = "ViewModeStore"
-        }
+        reportingFailuresAs("ViewModeStore")
 
         whileSubscribed {
             loadInitialData()

@@ -12,6 +12,7 @@ import com.zhelenskiy.zheduler.zheduler.ConnectionType
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
+import com.zhelenskiy.zheduler.zheduler.components.form.persistedIn
 import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditAction
@@ -43,37 +44,7 @@ fun TaskEditScreen(
 
     val formState = rememberTaskFormState(currentTask)
 
-    // Apply persisted form state on initial load (from SavedStateHandle)
-    LaunchedEffect(Unit) {
-        val persistedState = container.getPersistedFormState()
-        persistedState.title?.let { formState.title = it }
-        persistedState.description?.let { formState.description = it }
-        persistedState.priority?.let { formState.priority = it }
-        persistedState.estimatedTime?.let { formState.estimatedTime = it }
-        if (persistedState.tags.isNotEmpty()) {
-            formState.tags = persistedState.tags
-        }
-        persistedState.dueDate?.let { formState.dueDate = it }
-    }
-
-    // Persist form state changes to SavedStateHandle
-    LaunchedEffect(
-        formState.title,
-        formState.description,
-        formState.priority,
-        formState.estimatedTime,
-        formState.tags,
-        formState.dueDate
-    ) {
-        container.persistFormState(
-            title = formState.title,
-            description = formState.description,
-            priority = formState.priority,
-            estimatedTime = formState.estimatedTime,
-            tags = formState.tags,
-            dueDate = formState.dueDate
-        )
-    }
+    formState.persistedIn(container.formPersistence)
 
     // Update connections when task changes
     LaunchedEffect(state.task) {
@@ -107,7 +78,7 @@ fun TaskEditScreen(
         if (formState.hasUnsavedChanges(currentTask)) {
             showDiscardChangesDialog = true
         } else {
-            container.clearPersistedFormState()
+            container.formPersistence.clear()
             onNavigateBack()
         }
     }
@@ -120,7 +91,7 @@ fun TaskEditScreen(
             dismissText = "Keep editing",
             onConfirm = {
                 showDiscardChangesDialog = false
-                container.clearPersistedFormState()
+                container.formPersistence.clear()
                 onNavigateBack()
             },
             onDismiss = { showDiscardChangesDialog = false }
