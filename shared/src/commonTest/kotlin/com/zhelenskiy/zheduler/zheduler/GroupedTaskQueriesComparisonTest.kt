@@ -13,6 +13,7 @@ import kotlin.test.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 import kotlin.time.ExperimentalTime
 
 /**
@@ -1682,6 +1683,40 @@ class GroupedTaskQueriesComparisonTest {
                     estimatedTimeFilter = EstimatedTimeFilter.Custom,
                     customEstimatedTimeMin = "not a period",
                 ),
+            )
+        }
+    }
+
+    @Test
+    fun `compare custom dueDate criteria`() = runTest {
+        val clock = object : Clock {
+            override fun now() = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        }
+        withTestContext(clock) {
+            setupTasks { spaceId ->
+                addTask(spaceId, title = "before", dueDate = clock.now() - 2.days)
+                addTask(spaceId, title = "after", dueDate = clock.now() + 2.days)
+                addTask(spaceId, title = "no due date", dueDate = null)
+            }
+
+            // A custom range with an end, with a start, and with neither.
+            compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(
+                    dueDateFilter = DueDateFilter.Custom,
+                    customDueDateBefore = clock.now(),
+                ),
+            )
+            compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(
+                    dueDateFilter = DueDateFilter.Custom,
+                    customDueDateAfter = clock.now(),
+                ),
+            )
+            compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(dueDateFilter = DueDateFilter.Custom),
             )
         }
     }

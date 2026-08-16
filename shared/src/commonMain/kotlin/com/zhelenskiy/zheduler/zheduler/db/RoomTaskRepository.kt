@@ -1137,6 +1137,27 @@ class RoomTaskRepository(
                     (estimatedTimeBounds.second ?: Long.MAX_VALUE)
         }
 
+        // The same bounds the guarded clause uses, as half-open ranges. A task without the value is
+        // outside every one of them, which is what lets a range be a plain conjunction.
+        val priorityRange: Pair<Long, Long>? = when (filterCriteria.priorityFilter) {
+            PriorityFilter.Any, PriorityFilter.NoPriority -> null
+            PriorityFilter.High -> 75L to Long.MAX_VALUE
+            PriorityFilter.Medium -> 50L to 75L
+            PriorityFilter.Low -> 1L to 50L
+            // Custom bounds are inclusive; one past the top is the same range over whole numbers.
+            PriorityFilter.Custom -> (filterCriteria.customPriorityMin.toLongOrNull() ?: Long.MIN_VALUE) to
+                    (filterCriteria.customPriorityMax.toLongOrNull()?.plus(1) ?: Long.MAX_VALUE)
+        }
+        val dueDateRange: Pair<Long, Long>? = when (filterCriteria.dueDateFilter) {
+            DueDateFilter.Any, DueDateFilter.NoDueDate -> null
+            DueDateFilter.Overdue -> Long.MIN_VALUE to now.toEpochMilliseconds()
+            DueDateFilter.Today -> todayStart.toEpochMilliseconds() to todayEnd.toEpochMilliseconds()
+            DueDateFilter.ThisWeek -> todayStart.toEpochMilliseconds() to weekEnd.toEpochMilliseconds()
+            DueDateFilter.ThisMonth -> todayStart.toEpochMilliseconds() to monthEnd.toEpochMilliseconds()
+            DueDateFilter.Custom -> (filterCriteria.customDueDateAfter?.toEpochMilliseconds() ?: Long.MIN_VALUE) to
+                    (filterCriteria.customDueDateBefore?.toEpochMilliseconds()?.plus(1) ?: Long.MAX_VALUE)
+        }
+
         return FilterParams(
             searchQuery = filterCriteria.searchQuery.takeIf { it.isNotBlank() },
             searchInId = if (TaskTextSearchField.Id in filterCriteria.textSearchFields) 1L else 0L,
@@ -1179,6 +1200,8 @@ class RoomTaskRepository(
             estimatedTimeMinSeconds = estimatedTimeBounds.first,
             estimatedTimeMaxSeconds = estimatedTimeBounds.second,
             estimatedTimeRange = estimatedTimeRange,
+            priorityRange = priorityRange,
+            dueDateRange = dueDateRange,
             // SQL only separates recurring from non-recurring; see `recurrenceFilter` below.
             recurrenceFilterType = when (filterCriteria.recurrenceFilter) {
                 RecurrenceFilter.Any -> 0L
@@ -1511,132 +1534,263 @@ class RoomTaskRepository(
         val groupParams = mergeGroupFilterParams(groupFilterParamsList)
 
         // Execute main SQL query with all group filters
-        // A range bound is passed as a plain conjunction so the planner can seek on
-        // idx_tasks_estimatedTimeSeconds; the guarded clause stands aside with type 0.
-        val range = filterParams.estimatedTimeRange
-        var rows = if (range == null) {
-            dao.getTasksFilteredWithGroupFilter(
-            spaceId = spaceId,
-            searchQuery = filterParams.searchQuery,
-            searchInId = filterParams.searchInId,
-            searchInTitle = filterParams.searchInTitle,
-            searchInDescription = filterParams.searchInDescription,
-            searchInTags = filterParams.searchInTags,
-            priorityFilterType = filterParams.priorityFilterType,
-            customPriorityMin = filterParams.customPriorityMin,
-            customPriorityMax = filterParams.customPriorityMax,
-            dueDateFilterType = filterParams.dueDateFilterType,
-            nowMillis = filterParams.nowMillis,
-            todayStartMillis = filterParams.todayStartMillis,
-            todayEndMillis = filterParams.todayEndMillis,
-            weekEndMillis = filterParams.weekEndMillis,
-            monthEndMillis = filterParams.monthEndMillis,
-            customDueDateAfter = filterParams.customDueDateAfter,
-            customDueDateBefore = filterParams.customDueDateBefore,
-            estimatedTimeFilterType = filterParams.estimatedTimeFilterType,
-            estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
-            estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
-            recurrenceFilterType = filterParams.recurrenceFilterType,
-            notificationsFilterType = filterParams.notificationsFilterType,
-            autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
-            // Group filter params
-            groupPriorityFilterType = groupParams.groupPriorityFilterType,
-            groupPriorityMin = groupParams.groupPriorityMin,
-            groupPriorityMax = groupParams.groupPriorityMax,
-            groupDueDateFilterType = groupParams.groupDueDateFilterType,
-            groupDueDateMin = groupParams.groupDueDateMin,
-            groupDueDateMax = groupParams.groupDueDateMax,
-            groupIsRecurring = groupParams.groupIsRecurring,
-            groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
-            groupHasNotifications = groupParams.groupHasNotifications,
-            groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
-            groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
-            groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
-            groupHasConnections = groupParams.groupHasConnections,
-            groupStatusFilterType = groupParams.groupStatusFilterType,
-            groupStatusOpen = groupParams.groupStatusOpen,
-            groupStatusInProgress = groupParams.groupStatusInProgress,
-            groupStatusBlocked = groupParams.groupStatusBlocked,
-            groupStatusDone = groupParams.groupStatusDone,
-            groupStatusDeclined = groupParams.groupStatusDeclined,
-            // TaskFilterCriteria: status filters
-            criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
-            criteriaStatusOpen = filterParams.criteriaStatusOpen,
-            criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
-            criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
-            criteriaStatusDone = filterParams.criteriaStatusDone,
-            criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
-            // TaskFilterCriteria: connection type filters
-            connectionFilterType = filterParams.connectionFilterType,
-            requireDependsOn = filterParams.requireDependsOn,
-            requireIsDependencyOf = filterParams.requireIsDependencyOf,
-            requireRelatesTo = filterParams.requireRelatesTo,
-            requireSubtaskOf = filterParams.requireSubtaskOf,
-            requireParentOf = filterParams.requireParentOf,
-            requireNotSubtask = filterParams.requireNotSubtask
-                    )
-        } else {
-            dao.getTasksFilteredInEstimatedRange(
-            spaceId = spaceId,
-            searchQuery = filterParams.searchQuery,
-            searchInId = filterParams.searchInId,
-            searchInTitle = filterParams.searchInTitle,
-            searchInDescription = filterParams.searchInDescription,
-            searchInTags = filterParams.searchInTags,
-            priorityFilterType = filterParams.priorityFilterType,
-            customPriorityMin = filterParams.customPriorityMin,
-            customPriorityMax = filterParams.customPriorityMax,
-            dueDateFilterType = filterParams.dueDateFilterType,
-            nowMillis = filterParams.nowMillis,
-            todayStartMillis = filterParams.todayStartMillis,
-            todayEndMillis = filterParams.todayEndMillis,
-            weekEndMillis = filterParams.weekEndMillis,
-            monthEndMillis = filterParams.monthEndMillis,
-            customDueDateAfter = filterParams.customDueDateAfter,
-            customDueDateBefore = filterParams.customDueDateBefore,
-            estimatedTimeFilterType = 0L,
-            estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
-            estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
-            recurrenceFilterType = filterParams.recurrenceFilterType,
-            notificationsFilterType = filterParams.notificationsFilterType,
-            autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
-            // Group filter params
-            groupPriorityFilterType = groupParams.groupPriorityFilterType,
-            groupPriorityMin = groupParams.groupPriorityMin,
-            groupPriorityMax = groupParams.groupPriorityMax,
-            groupDueDateFilterType = groupParams.groupDueDateFilterType,
-            groupDueDateMin = groupParams.groupDueDateMin,
-            groupDueDateMax = groupParams.groupDueDateMax,
-            groupIsRecurring = groupParams.groupIsRecurring,
-            groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
-            groupHasNotifications = groupParams.groupHasNotifications,
-            groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
-            groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
-            groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
-            groupHasConnections = groupParams.groupHasConnections,
-            groupStatusFilterType = groupParams.groupStatusFilterType,
-            groupStatusOpen = groupParams.groupStatusOpen,
-            groupStatusInProgress = groupParams.groupStatusInProgress,
-            groupStatusBlocked = groupParams.groupStatusBlocked,
-            groupStatusDone = groupParams.groupStatusDone,
-            groupStatusDeclined = groupParams.groupStatusDeclined,
-            // TaskFilterCriteria: status filters
-            criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
-            criteriaStatusOpen = filterParams.criteriaStatusOpen,
-            criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
-            criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
-            criteriaStatusDone = filterParams.criteriaStatusDone,
-            criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
-            // TaskFilterCriteria: connection type filters
-            connectionFilterType = filterParams.connectionFilterType,
-            requireDependsOn = filterParams.requireDependsOn,
-            requireIsDependencyOf = filterParams.requireIsDependencyOf,
-            requireRelatesTo = filterParams.requireRelatesTo,
-            requireSubtaskOf = filterParams.requireSubtaskOf,
-            requireParentOf = filterParams.requireParentOf,
-            requireNotSubtask = filterParams.requireNotSubtask,
-            rangeMinSeconds = range.first,
-            rangeMaxSeconds = range.second,
+        // One filter's bound is restated as a plain conjunction so the planner can seek on its
+        // index, and that filter's guarded clause stands aside with type 0. Only one of them:
+        // SQLite uses at most one index per table reference, so a second range would be checked
+        // row by row anyway. Due date first, because "today" or "this week" narrows a space far
+        // more than a priority band, which is a quarter of the range.
+        val dueDates = filterParams.dueDateRange
+        val estimates = filterParams.estimatedTimeRange
+        val priorities = filterParams.priorityRange
+        var rows = when {
+            dueDates != null -> dao.getTasksFilteredInDueDateRange(
+                spaceId = spaceId,
+                searchQuery = filterParams.searchQuery,
+                searchInId = filterParams.searchInId,
+                searchInTitle = filterParams.searchInTitle,
+                searchInDescription = filterParams.searchInDescription,
+                searchInTags = filterParams.searchInTags,
+                priorityFilterType = filterParams.priorityFilterType,
+                customPriorityMin = filterParams.customPriorityMin,
+                customPriorityMax = filterParams.customPriorityMax,
+                dueDateFilterType = 0L,
+                nowMillis = filterParams.nowMillis,
+                todayStartMillis = filterParams.todayStartMillis,
+                todayEndMillis = filterParams.todayEndMillis,
+                weekEndMillis = filterParams.weekEndMillis,
+                monthEndMillis = filterParams.monthEndMillis,
+                customDueDateAfter = filterParams.customDueDateAfter,
+                customDueDateBefore = filterParams.customDueDateBefore,
+                estimatedTimeFilterType = filterParams.estimatedTimeFilterType,
+                estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+                estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
+                recurrenceFilterType = filterParams.recurrenceFilterType,
+                notificationsFilterType = filterParams.notificationsFilterType,
+                autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
+                // Group filter params
+                groupPriorityFilterType = groupParams.groupPriorityFilterType,
+                groupPriorityMin = groupParams.groupPriorityMin,
+                groupPriorityMax = groupParams.groupPriorityMax,
+                groupDueDateFilterType = groupParams.groupDueDateFilterType,
+                groupDueDateMin = groupParams.groupDueDateMin,
+                groupDueDateMax = groupParams.groupDueDateMax,
+                groupIsRecurring = groupParams.groupIsRecurring,
+                groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
+                groupHasNotifications = groupParams.groupHasNotifications,
+                groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
+                groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
+                groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
+                groupHasConnections = groupParams.groupHasConnections,
+                groupStatusFilterType = groupParams.groupStatusFilterType,
+                groupStatusOpen = groupParams.groupStatusOpen,
+                groupStatusInProgress = groupParams.groupStatusInProgress,
+                groupStatusBlocked = groupParams.groupStatusBlocked,
+                groupStatusDone = groupParams.groupStatusDone,
+                groupStatusDeclined = groupParams.groupStatusDeclined,
+                // TaskFilterCriteria: status filters
+                criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
+                criteriaStatusOpen = filterParams.criteriaStatusOpen,
+                criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
+                criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
+                criteriaStatusDone = filterParams.criteriaStatusDone,
+                criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
+                // TaskFilterCriteria: connection type filters
+                connectionFilterType = filterParams.connectionFilterType,
+                requireDependsOn = filterParams.requireDependsOn,
+                requireIsDependencyOf = filterParams.requireIsDependencyOf,
+                requireRelatesTo = filterParams.requireRelatesTo,
+                requireSubtaskOf = filterParams.requireSubtaskOf,
+                requireParentOf = filterParams.requireParentOf,
+                requireNotSubtask = filterParams.requireNotSubtask,
+                rangeMinDueDate = dueDates.first,
+                rangeMaxDueDate = dueDates.second,
+            )
+
+            estimates != null -> dao.getTasksFilteredInEstimatedRange(
+                spaceId = spaceId,
+                searchQuery = filterParams.searchQuery,
+                searchInId = filterParams.searchInId,
+                searchInTitle = filterParams.searchInTitle,
+                searchInDescription = filterParams.searchInDescription,
+                searchInTags = filterParams.searchInTags,
+                priorityFilterType = filterParams.priorityFilterType,
+                customPriorityMin = filterParams.customPriorityMin,
+                customPriorityMax = filterParams.customPriorityMax,
+                dueDateFilterType = filterParams.dueDateFilterType,
+                nowMillis = filterParams.nowMillis,
+                todayStartMillis = filterParams.todayStartMillis,
+                todayEndMillis = filterParams.todayEndMillis,
+                weekEndMillis = filterParams.weekEndMillis,
+                monthEndMillis = filterParams.monthEndMillis,
+                customDueDateAfter = filterParams.customDueDateAfter,
+                customDueDateBefore = filterParams.customDueDateBefore,
+                estimatedTimeFilterType = 0L,
+                estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+                estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
+                recurrenceFilterType = filterParams.recurrenceFilterType,
+                notificationsFilterType = filterParams.notificationsFilterType,
+                autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
+                // Group filter params
+                groupPriorityFilterType = groupParams.groupPriorityFilterType,
+                groupPriorityMin = groupParams.groupPriorityMin,
+                groupPriorityMax = groupParams.groupPriorityMax,
+                groupDueDateFilterType = groupParams.groupDueDateFilterType,
+                groupDueDateMin = groupParams.groupDueDateMin,
+                groupDueDateMax = groupParams.groupDueDateMax,
+                groupIsRecurring = groupParams.groupIsRecurring,
+                groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
+                groupHasNotifications = groupParams.groupHasNotifications,
+                groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
+                groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
+                groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
+                groupHasConnections = groupParams.groupHasConnections,
+                groupStatusFilterType = groupParams.groupStatusFilterType,
+                groupStatusOpen = groupParams.groupStatusOpen,
+                groupStatusInProgress = groupParams.groupStatusInProgress,
+                groupStatusBlocked = groupParams.groupStatusBlocked,
+                groupStatusDone = groupParams.groupStatusDone,
+                groupStatusDeclined = groupParams.groupStatusDeclined,
+                // TaskFilterCriteria: status filters
+                criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
+                criteriaStatusOpen = filterParams.criteriaStatusOpen,
+                criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
+                criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
+                criteriaStatusDone = filterParams.criteriaStatusDone,
+                criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
+                // TaskFilterCriteria: connection type filters
+                connectionFilterType = filterParams.connectionFilterType,
+                requireDependsOn = filterParams.requireDependsOn,
+                requireIsDependencyOf = filterParams.requireIsDependencyOf,
+                requireRelatesTo = filterParams.requireRelatesTo,
+                requireSubtaskOf = filterParams.requireSubtaskOf,
+                requireParentOf = filterParams.requireParentOf,
+                requireNotSubtask = filterParams.requireNotSubtask,
+                rangeMinSeconds = estimates.first,
+                rangeMaxSeconds = estimates.second,
+            )
+
+            priorities != null -> dao.getTasksFilteredInPriorityRange(
+                spaceId = spaceId,
+                searchQuery = filterParams.searchQuery,
+                searchInId = filterParams.searchInId,
+                searchInTitle = filterParams.searchInTitle,
+                searchInDescription = filterParams.searchInDescription,
+                searchInTags = filterParams.searchInTags,
+                priorityFilterType = 0L,
+                customPriorityMin = filterParams.customPriorityMin,
+                customPriorityMax = filterParams.customPriorityMax,
+                dueDateFilterType = filterParams.dueDateFilterType,
+                nowMillis = filterParams.nowMillis,
+                todayStartMillis = filterParams.todayStartMillis,
+                todayEndMillis = filterParams.todayEndMillis,
+                weekEndMillis = filterParams.weekEndMillis,
+                monthEndMillis = filterParams.monthEndMillis,
+                customDueDateAfter = filterParams.customDueDateAfter,
+                customDueDateBefore = filterParams.customDueDateBefore,
+                estimatedTimeFilterType = filterParams.estimatedTimeFilterType,
+                estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+                estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
+                recurrenceFilterType = filterParams.recurrenceFilterType,
+                notificationsFilterType = filterParams.notificationsFilterType,
+                autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
+                // Group filter params
+                groupPriorityFilterType = groupParams.groupPriorityFilterType,
+                groupPriorityMin = groupParams.groupPriorityMin,
+                groupPriorityMax = groupParams.groupPriorityMax,
+                groupDueDateFilterType = groupParams.groupDueDateFilterType,
+                groupDueDateMin = groupParams.groupDueDateMin,
+                groupDueDateMax = groupParams.groupDueDateMax,
+                groupIsRecurring = groupParams.groupIsRecurring,
+                groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
+                groupHasNotifications = groupParams.groupHasNotifications,
+                groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
+                groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
+                groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
+                groupHasConnections = groupParams.groupHasConnections,
+                groupStatusFilterType = groupParams.groupStatusFilterType,
+                groupStatusOpen = groupParams.groupStatusOpen,
+                groupStatusInProgress = groupParams.groupStatusInProgress,
+                groupStatusBlocked = groupParams.groupStatusBlocked,
+                groupStatusDone = groupParams.groupStatusDone,
+                groupStatusDeclined = groupParams.groupStatusDeclined,
+                // TaskFilterCriteria: status filters
+                criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
+                criteriaStatusOpen = filterParams.criteriaStatusOpen,
+                criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
+                criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
+                criteriaStatusDone = filterParams.criteriaStatusDone,
+                criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
+                // TaskFilterCriteria: connection type filters
+                connectionFilterType = filterParams.connectionFilterType,
+                requireDependsOn = filterParams.requireDependsOn,
+                requireIsDependencyOf = filterParams.requireIsDependencyOf,
+                requireRelatesTo = filterParams.requireRelatesTo,
+                requireSubtaskOf = filterParams.requireSubtaskOf,
+                requireParentOf = filterParams.requireParentOf,
+                requireNotSubtask = filterParams.requireNotSubtask,
+                rangeMinPriority = priorities.first,
+                rangeMaxPriority = priorities.second,
+            )
+
+            else -> dao.getTasksFilteredWithGroupFilter(
+                spaceId = spaceId,
+                searchQuery = filterParams.searchQuery,
+                searchInId = filterParams.searchInId,
+                searchInTitle = filterParams.searchInTitle,
+                searchInDescription = filterParams.searchInDescription,
+                searchInTags = filterParams.searchInTags,
+                priorityFilterType = filterParams.priorityFilterType,
+                customPriorityMin = filterParams.customPriorityMin,
+                customPriorityMax = filterParams.customPriorityMax,
+                dueDateFilterType = filterParams.dueDateFilterType,
+                nowMillis = filterParams.nowMillis,
+                todayStartMillis = filterParams.todayStartMillis,
+                todayEndMillis = filterParams.todayEndMillis,
+                weekEndMillis = filterParams.weekEndMillis,
+                monthEndMillis = filterParams.monthEndMillis,
+                customDueDateAfter = filterParams.customDueDateAfter,
+                customDueDateBefore = filterParams.customDueDateBefore,
+                estimatedTimeFilterType = filterParams.estimatedTimeFilterType,
+                estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+                estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
+                recurrenceFilterType = filterParams.recurrenceFilterType,
+                notificationsFilterType = filterParams.notificationsFilterType,
+                autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
+                // Group filter params
+                groupPriorityFilterType = groupParams.groupPriorityFilterType,
+                groupPriorityMin = groupParams.groupPriorityMin,
+                groupPriorityMax = groupParams.groupPriorityMax,
+                groupDueDateFilterType = groupParams.groupDueDateFilterType,
+                groupDueDateMin = groupParams.groupDueDateMin,
+                groupDueDateMax = groupParams.groupDueDateMax,
+                groupIsRecurring = groupParams.groupIsRecurring,
+                groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
+                groupHasNotifications = groupParams.groupHasNotifications,
+                groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
+                groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
+                groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
+                groupHasConnections = groupParams.groupHasConnections,
+                groupStatusFilterType = groupParams.groupStatusFilterType,
+                groupStatusOpen = groupParams.groupStatusOpen,
+                groupStatusInProgress = groupParams.groupStatusInProgress,
+                groupStatusBlocked = groupParams.groupStatusBlocked,
+                groupStatusDone = groupParams.groupStatusDone,
+                groupStatusDeclined = groupParams.groupStatusDeclined,
+                // TaskFilterCriteria: status filters
+                criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
+                criteriaStatusOpen = filterParams.criteriaStatusOpen,
+                criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
+                criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
+                criteriaStatusDone = filterParams.criteriaStatusDone,
+                criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
+                // TaskFilterCriteria: connection type filters
+                connectionFilterType = filterParams.connectionFilterType,
+                requireDependsOn = filterParams.requireDependsOn,
+                requireIsDependencyOf = filterParams.requireIsDependencyOf,
+                requireRelatesTo = filterParams.requireRelatesTo,
+                requireSubtaskOf = filterParams.requireSubtaskOf,
+                requireParentOf = filterParams.requireParentOf,
+                requireNotSubtask = filterParams.requireNotSubtask
             )
         }
 
@@ -1911,6 +2065,10 @@ class RoomTaskRepository(
          * at all. Only this form can be seeked on; see `getTasksFilteredInEstimatedRange`.
          */
         val estimatedTimeRange: Pair<Long, Long>? = null,
+        /** As [estimatedTimeRange], for `idx_tasks_priority`. */
+        val priorityRange: Pair<Long, Long>? = null,
+        /** As [estimatedTimeRange], for `idx_tasks_dueDate`. */
+        val dueDateRange: Pair<Long, Long>? = null,
         val recurrenceFilterType: Long = 0,
         /** Applied in Kotlin: SQL cannot tell one kind of recurrence rule from another. */
         val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,

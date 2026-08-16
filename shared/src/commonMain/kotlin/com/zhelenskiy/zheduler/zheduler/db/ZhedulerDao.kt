@@ -581,6 +581,150 @@ interface ZhedulerDao {
         rangeMaxSeconds: Long,
     ): List<Tasks>
 
+    /**
+     * [getTasksFilteredWithGroupFilter] with the priority constrained to `[min, max)`.
+     *
+     * A separate query rather than another branch of the shared clause, because the shape is the
+     * point: written as a plain conjunction the planner seeks on
+     * `idx_tasks_priority`, whereas the same bounds guarded by `:filterType = 0 OR ...`
+     * compile to a scan — one plan has to serve every value the parameter might take.
+     *
+     * Callers pass `priorityFilterType = 0` so the guarded clause stands aside, and bounds
+     * that are real numbers rather than nulls, since a comparison against null matches nothing.
+     */
+    @Query("SELECT t.* FROM tasks t " + FILTERED_TASKS_WHERE + PRIORITY_RANGE)
+    suspend fun getTasksFilteredInPriorityRange(
+        spaceId: String,
+        searchQuery: String?,
+        searchInId: Long,
+        searchInTitle: Long,
+        searchInDescription: Long,
+        searchInTags: Long,
+        priorityFilterType: Long,
+        customPriorityMin: Long?,
+        customPriorityMax: Long?,
+        dueDateFilterType: Long,
+        nowMillis: Long,
+        todayStartMillis: Long,
+        todayEndMillis: Long,
+        weekEndMillis: Long,
+        monthEndMillis: Long,
+        customDueDateAfter: Long?,
+        customDueDateBefore: Long?,
+        estimatedTimeFilterType: Long,
+        estimatedTimeMinSeconds: Long?,
+        estimatedTimeMaxSeconds: Long?,
+        recurrenceFilterType: Long,
+        notificationsFilterType: Long,
+        autoUpdateStatusFilterType: Long,
+        groupPriorityFilterType: Long,
+        groupPriorityMin: Long?,
+        groupPriorityMax: Long?,
+        groupDueDateFilterType: Long,
+        groupDueDateMin: Long?,
+        groupDueDateMax: Long?,
+        groupIsRecurring: Long?,
+        groupAutoUpdateStatus: Long?,
+        groupHasNotifications: Long?,
+        groupEstimatedTimeFilterType: Long,
+        groupEstimatedTimeMinSeconds: Long?,
+        groupEstimatedTimeMaxSeconds: Long?,
+        groupHasConnections: Long?,
+        groupStatusFilterType: Long,
+        groupStatusOpen: Long,
+        groupStatusInProgress: Long,
+        groupStatusBlocked: Long,
+        groupStatusDone: Long,
+        groupStatusDeclined: Long,
+        criteriaStatusFilterType: Long,
+        criteriaStatusOpen: Long,
+        criteriaStatusInProgress: Long,
+        criteriaStatusBlocked: Long,
+        criteriaStatusDone: Long,
+        criteriaStatusDeclined: Long,
+        connectionFilterType: Long,
+        requireDependsOn: Long,
+        requireIsDependencyOf: Long,
+        requireRelatesTo: Long,
+        requireSubtaskOf: Long,
+        requireParentOf: Long,
+        requireNotSubtask: Long,
+        rangeMinPriority: Long,
+        rangeMaxPriority: Long,
+    ): List<Tasks>
+
+    /**
+     * [getTasksFilteredWithGroupFilter] with the due date constrained to `[min, max)`.
+     *
+     * A separate query rather than another branch of the shared clause, because the shape is the
+     * point: written as a plain conjunction the planner seeks on
+     * `idx_tasks_dueDate`, whereas the same bounds guarded by `:filterType = 0 OR ...`
+     * compile to a scan — one plan has to serve every value the parameter might take.
+     *
+     * Callers pass `dueDateFilterType = 0` so the guarded clause stands aside, and bounds
+     * that are real numbers rather than nulls, since a comparison against null matches nothing.
+     */
+    @Query("SELECT t.* FROM tasks t " + FILTERED_TASKS_WHERE + DUE_DATE_RANGE)
+    suspend fun getTasksFilteredInDueDateRange(
+        spaceId: String,
+        searchQuery: String?,
+        searchInId: Long,
+        searchInTitle: Long,
+        searchInDescription: Long,
+        searchInTags: Long,
+        priorityFilterType: Long,
+        customPriorityMin: Long?,
+        customPriorityMax: Long?,
+        dueDateFilterType: Long,
+        nowMillis: Long,
+        todayStartMillis: Long,
+        todayEndMillis: Long,
+        weekEndMillis: Long,
+        monthEndMillis: Long,
+        customDueDateAfter: Long?,
+        customDueDateBefore: Long?,
+        estimatedTimeFilterType: Long,
+        estimatedTimeMinSeconds: Long?,
+        estimatedTimeMaxSeconds: Long?,
+        recurrenceFilterType: Long,
+        notificationsFilterType: Long,
+        autoUpdateStatusFilterType: Long,
+        groupPriorityFilterType: Long,
+        groupPriorityMin: Long?,
+        groupPriorityMax: Long?,
+        groupDueDateFilterType: Long,
+        groupDueDateMin: Long?,
+        groupDueDateMax: Long?,
+        groupIsRecurring: Long?,
+        groupAutoUpdateStatus: Long?,
+        groupHasNotifications: Long?,
+        groupEstimatedTimeFilterType: Long,
+        groupEstimatedTimeMinSeconds: Long?,
+        groupEstimatedTimeMaxSeconds: Long?,
+        groupHasConnections: Long?,
+        groupStatusFilterType: Long,
+        groupStatusOpen: Long,
+        groupStatusInProgress: Long,
+        groupStatusBlocked: Long,
+        groupStatusDone: Long,
+        groupStatusDeclined: Long,
+        criteriaStatusFilterType: Long,
+        criteriaStatusOpen: Long,
+        criteriaStatusInProgress: Long,
+        criteriaStatusBlocked: Long,
+        criteriaStatusDone: Long,
+        criteriaStatusDeclined: Long,
+        connectionFilterType: Long,
+        requireDependsOn: Long,
+        requireIsDependencyOf: Long,
+        requireRelatesTo: Long,
+        requireSubtaskOf: Long,
+        requireParentOf: Long,
+        requireNotSubtask: Long,
+        rangeMinDueDate: Long,
+        rangeMaxDueDate: Long,
+    ): List<Tasks>
+
     /** How many tasks [getTasksFilteredWithGroupFilter] would return, without reading them. */
     @Query("SELECT COUNT(*) FROM tasks t " + FILTERED_TASKS_WHERE)
     suspend fun countTasksFilteredWithGroupFilter(
@@ -749,7 +893,27 @@ interface ZhedulerDao {
  * A constant rather than two copies of the text, so the query that reads the rows and the one
  * that counts them cannot drift. Kotlin folds it into each annotation at compile time.
  */
-/** Appended to [FILTERED_TASKS_WHERE] to make the estimate an index-seekable range. */
+/**
+ * Appended to [FILTERED_TASKS_WHERE] to make one filter an index-seekable range.
+ *
+ * Only one of these is ever appended. SQLite uses at most one index per table reference, so a
+ * second conjunctive range would be checked row by row anyway; the caller picks whichever is
+ * likeliest to narrow the search.
+ */
+private const val PRIORITY_RANGE = """
+          AND t.priority IS NOT NULL
+          AND t.priority >= :rangeMinPriority
+          AND t.priority < :rangeMaxPriority
+"""
+
+/** See [PRIORITY_RANGE]. */
+private const val DUE_DATE_RANGE = """
+          AND t.dueDate IS NOT NULL
+          AND t.dueDate >= :rangeMinDueDate
+          AND t.dueDate < :rangeMaxDueDate
+"""
+
+/** See [PRIORITY_RANGE]. */
 private const val ESTIMATED_TIME_RANGE = """
           AND t.estimatedTimeSeconds IS NOT NULL
           AND t.estimatedTimeSeconds >= :rangeMinSeconds
@@ -783,7 +947,11 @@ private const val FILTERED_TASKS_WHERE = """
             OR (:dueDateFilterType = 3 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :weekEndMillis)
             OR (:dueDateFilterType = 4 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :monthEndMillis)
             OR (:dueDateFilterType = 5 AND t.dueDate IS NULL)
-            OR (:dueDateFilterType = 6 AND ((:customDueDateAfter IS NULL OR t.dueDate >= :customDueDateAfter) AND (:customDueDateBefore IS NULL OR t.dueDate <= :customDueDateBefore)))
+            -- Custom. A task with no due date is outside any range, including an open one:
+            -- without IS NOT NULL, leaving both bounds empty matched every task instead.
+            OR (:dueDateFilterType = 6 AND t.dueDate IS NOT NULL
+              AND (:customDueDateAfter IS NULL OR t.dueDate >= :customDueDateAfter)
+              AND (:customDueDateBefore IS NULL OR t.dueDate <= :customDueDateBefore))
           )
           -- 1 = no estimate, 2 = bucket [min, max), 3 = custom [min, max]; bounds are optional.
           AND (
