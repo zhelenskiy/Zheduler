@@ -509,6 +509,78 @@ interface ZhedulerDao {
         requireNotSubtask: Long,
     ): List<Tasks>
 
+    /**
+     * [getTasksFilteredWithGroupFilter] with the estimated time constrained to `[min, max)`.
+     *
+     * A separate query rather than another branch of the shared clause, because the shape is the
+     * point: written as a plain conjunction the planner seeks on
+     * `idx_tasks_estimatedTimeSeconds`, whereas the same bounds guarded by `:filterType = 0 OR ...`
+     * compile to a scan — one plan has to serve every value the parameter might take.
+     *
+     * Callers pass `estimatedTimeFilterType = 0` so the guarded clause stands aside, and bounds
+     * that are real numbers rather than nulls, since a comparison against null matches nothing.
+     */
+    @Query("SELECT t.* FROM tasks t " + FILTERED_TASKS_WHERE + ESTIMATED_TIME_RANGE)
+    suspend fun getTasksFilteredInEstimatedRange(
+        spaceId: String,
+        searchQuery: String?,
+        searchInId: Long,
+        searchInTitle: Long,
+        searchInDescription: Long,
+        searchInTags: Long,
+        priorityFilterType: Long,
+        customPriorityMin: Long?,
+        customPriorityMax: Long?,
+        dueDateFilterType: Long,
+        nowMillis: Long,
+        todayStartMillis: Long,
+        todayEndMillis: Long,
+        weekEndMillis: Long,
+        monthEndMillis: Long,
+        customDueDateAfter: Long?,
+        customDueDateBefore: Long?,
+        estimatedTimeFilterType: Long,
+        estimatedTimeMinSeconds: Long?,
+        estimatedTimeMaxSeconds: Long?,
+        recurrenceFilterType: Long,
+        notificationsFilterType: Long,
+        autoUpdateStatusFilterType: Long,
+        groupPriorityFilterType: Long,
+        groupPriorityMin: Long?,
+        groupPriorityMax: Long?,
+        groupDueDateFilterType: Long,
+        groupDueDateMin: Long?,
+        groupDueDateMax: Long?,
+        groupIsRecurring: Long?,
+        groupAutoUpdateStatus: Long?,
+        groupHasNotifications: Long?,
+        groupEstimatedTimeFilterType: Long,
+        groupEstimatedTimeMinSeconds: Long?,
+        groupEstimatedTimeMaxSeconds: Long?,
+        groupHasConnections: Long?,
+        groupStatusFilterType: Long,
+        groupStatusOpen: Long,
+        groupStatusInProgress: Long,
+        groupStatusBlocked: Long,
+        groupStatusDone: Long,
+        groupStatusDeclined: Long,
+        criteriaStatusFilterType: Long,
+        criteriaStatusOpen: Long,
+        criteriaStatusInProgress: Long,
+        criteriaStatusBlocked: Long,
+        criteriaStatusDone: Long,
+        criteriaStatusDeclined: Long,
+        connectionFilterType: Long,
+        requireDependsOn: Long,
+        requireIsDependencyOf: Long,
+        requireRelatesTo: Long,
+        requireSubtaskOf: Long,
+        requireParentOf: Long,
+        requireNotSubtask: Long,
+        rangeMinSeconds: Long,
+        rangeMaxSeconds: Long,
+    ): List<Tasks>
+
     /** How many tasks [getTasksFilteredWithGroupFilter] would return, without reading them. */
     @Query("SELECT COUNT(*) FROM tasks t " + FILTERED_TASKS_WHERE)
     suspend fun countTasksFilteredWithGroupFilter(
@@ -677,6 +749,13 @@ interface ZhedulerDao {
  * A constant rather than two copies of the text, so the query that reads the rows and the one
  * that counts them cannot drift. Kotlin folds it into each annotation at compile time.
  */
+/** Appended to [FILTERED_TASKS_WHERE] to make the estimate an index-seekable range. */
+private const val ESTIMATED_TIME_RANGE = """
+          AND t.estimatedTimeSeconds IS NOT NULL
+          AND t.estimatedTimeSeconds >= :rangeMinSeconds
+          AND t.estimatedTimeSeconds < :rangeMaxSeconds
+"""
+
 private const val FILTERED_TASKS_WHERE = """
         WHERE t.spaceId = :spaceId
           -- Text search

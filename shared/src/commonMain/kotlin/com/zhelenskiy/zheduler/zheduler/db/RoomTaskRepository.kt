@@ -1125,6 +1125,17 @@ class RoomTaskRepository(
         val monthEnd = today.plus(1, DateTimeUnit.MONTH).atStartOfDayIn(tz)
         val estimatedTimeBounds = filterCriteria.estimatedTimeFilter.bucketSeconds
             ?: customEstimatedTimeBounds(filterCriteria)
+        // "Any" and "no estimate" are not ranges; every other case is, and each of them excludes
+        // tasks without an estimate, which is what lets it be written as a plain conjunction.
+        val estimatedTimeRange = when (filterCriteria.estimatedTimeFilter) {
+            EstimatedTimeFilter.Any, EstimatedTimeFilter.NoEstimate -> null
+            // A bucket's upper bound is already exclusive; a custom one is inclusive, and one
+            // second past it is the same range over whole seconds.
+            EstimatedTimeFilter.Custom -> (estimatedTimeBounds.first ?: Long.MIN_VALUE) to
+                    (estimatedTimeBounds.second?.plus(1) ?: Long.MAX_VALUE)
+            else -> (estimatedTimeBounds.first ?: Long.MIN_VALUE) to
+                    (estimatedTimeBounds.second ?: Long.MAX_VALUE)
+        }
 
         return FilterParams(
             searchQuery = filterCriteria.searchQuery.takeIf { it.isNotBlank() },
@@ -1167,6 +1178,7 @@ class RoomTaskRepository(
             },
             estimatedTimeMinSeconds = estimatedTimeBounds.first,
             estimatedTimeMaxSeconds = estimatedTimeBounds.second,
+            estimatedTimeRange = estimatedTimeRange,
             // SQL only separates recurring from non-recurring; see `recurrenceFilter` below.
             recurrenceFilterType = when (filterCriteria.recurrenceFilter) {
                 RecurrenceFilter.Any -> 0L
@@ -1499,7 +1511,11 @@ class RoomTaskRepository(
         val groupParams = mergeGroupFilterParams(groupFilterParamsList)
 
         // Execute main SQL query with all group filters
-        var rows = dao.getTasksFilteredWithGroupFilter(
+        // A range bound is passed as a plain conjunction so the planner can seek on
+        // idx_tasks_estimatedTimeSeconds; the guarded clause stands aside with type 0.
+        val range = filterParams.estimatedTimeRange
+        var rows = if (range == null) {
+            dao.getTasksFilteredWithGroupFilter(
             spaceId = spaceId,
             searchQuery = filterParams.searchQuery,
             searchInId = filterParams.searchInId,
@@ -1558,7 +1574,71 @@ class RoomTaskRepository(
             requireSubtaskOf = filterParams.requireSubtaskOf,
             requireParentOf = filterParams.requireParentOf,
             requireNotSubtask = filterParams.requireNotSubtask
-        )
+                    )
+        } else {
+            dao.getTasksFilteredInEstimatedRange(
+            spaceId = spaceId,
+            searchQuery = filterParams.searchQuery,
+            searchInId = filterParams.searchInId,
+            searchInTitle = filterParams.searchInTitle,
+            searchInDescription = filterParams.searchInDescription,
+            searchInTags = filterParams.searchInTags,
+            priorityFilterType = filterParams.priorityFilterType,
+            customPriorityMin = filterParams.customPriorityMin,
+            customPriorityMax = filterParams.customPriorityMax,
+            dueDateFilterType = filterParams.dueDateFilterType,
+            nowMillis = filterParams.nowMillis,
+            todayStartMillis = filterParams.todayStartMillis,
+            todayEndMillis = filterParams.todayEndMillis,
+            weekEndMillis = filterParams.weekEndMillis,
+            monthEndMillis = filterParams.monthEndMillis,
+            customDueDateAfter = filterParams.customDueDateAfter,
+            customDueDateBefore = filterParams.customDueDateBefore,
+            estimatedTimeFilterType = 0L,
+            estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+            estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
+            recurrenceFilterType = filterParams.recurrenceFilterType,
+            notificationsFilterType = filterParams.notificationsFilterType,
+            autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
+            // Group filter params
+            groupPriorityFilterType = groupParams.groupPriorityFilterType,
+            groupPriorityMin = groupParams.groupPriorityMin,
+            groupPriorityMax = groupParams.groupPriorityMax,
+            groupDueDateFilterType = groupParams.groupDueDateFilterType,
+            groupDueDateMin = groupParams.groupDueDateMin,
+            groupDueDateMax = groupParams.groupDueDateMax,
+            groupIsRecurring = groupParams.groupIsRecurring,
+            groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
+            groupHasNotifications = groupParams.groupHasNotifications,
+            groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
+            groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
+            groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
+            groupHasConnections = groupParams.groupHasConnections,
+            groupStatusFilterType = groupParams.groupStatusFilterType,
+            groupStatusOpen = groupParams.groupStatusOpen,
+            groupStatusInProgress = groupParams.groupStatusInProgress,
+            groupStatusBlocked = groupParams.groupStatusBlocked,
+            groupStatusDone = groupParams.groupStatusDone,
+            groupStatusDeclined = groupParams.groupStatusDeclined,
+            // TaskFilterCriteria: status filters
+            criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
+            criteriaStatusOpen = filterParams.criteriaStatusOpen,
+            criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
+            criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
+            criteriaStatusDone = filterParams.criteriaStatusDone,
+            criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
+            // TaskFilterCriteria: connection type filters
+            connectionFilterType = filterParams.connectionFilterType,
+            requireDependsOn = filterParams.requireDependsOn,
+            requireIsDependencyOf = filterParams.requireIsDependencyOf,
+            requireRelatesTo = filterParams.requireRelatesTo,
+            requireSubtaskOf = filterParams.requireSubtaskOf,
+            requireParentOf = filterParams.requireParentOf,
+            requireNotSubtask = filterParams.requireNotSubtask,
+            rangeMinSeconds = range.first,
+            rangeMaxSeconds = range.second,
+            )
+        }
 
         // The kind of rule is only visible once the rules are decoded; see RecurrenceFilter.matches.
         if (filterParams.recurrenceFilter.bucketedInSqlOnly) {
@@ -1826,6 +1906,11 @@ class RoomTaskRepository(
         val estimatedTimeFilterType: Long = 0,
         val estimatedTimeMinSeconds: Long? = null,
         val estimatedTimeMaxSeconds: Long? = null,
+        /**
+         * The same bound as a half-open `[first, second)` range, set whenever the filter is a range
+         * at all. Only this form can be seeked on; see `getTasksFilteredInEstimatedRange`.
+         */
+        val estimatedTimeRange: Pair<Long, Long>? = null,
         val recurrenceFilterType: Long = 0,
         /** Applied in Kotlin: SQL cannot tell one kind of recurrence rule from another. */
         val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,

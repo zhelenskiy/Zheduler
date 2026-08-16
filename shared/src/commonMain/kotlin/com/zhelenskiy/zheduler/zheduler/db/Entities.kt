@@ -22,8 +22,12 @@ import androidx.room3.PrimaryKey
  *    checks `prefixExists` before inserting a space.
  *
  * Three of the original indexes are gone: `idx_tasks_id_search` duplicated the primary key's
- * automatic index, and two more covered serialized JSON no query can seek on. They are dropped by
- * `DropUnusedTaskIndexes`, which is why the schema is at version 2 rather than SQLDelight's 1.
+ * automatic index, and two more covered serialized JSON no query can seek on.
+ *
+ * An index only earns its place if the planner can seek on it, which needs the predicate to be a
+ * plain conjunction: a range guarded by `:filterType = 0 OR ...` compiles to a scan, because one
+ * plan has to serve every value the parameter might take. `idx_tasks_estimatedTimeSeconds` is
+ * matched by the range variant of the filtered query for exactly that reason.
  */
 
 @Entity(tableName = "spaces")
@@ -53,6 +57,7 @@ data class Spaces(
         Index(name = "idx_tasks_dueDate", value = ["spaceId", "dueDate"]),
         Index(name = "idx_tasks_autoUpdateStatusFromSubtasks", value = ["spaceId", "autoUpdateStatusFromSubtasks"]),
         Index(name = "idx_tasks_isRecurring", value = ["spaceId", "isRecurring"]),
+        Index(name = "idx_tasks_estimatedTimeSeconds", value = ["spaceId", "estimatedTimeSeconds"]),
     ],
 )
 data class Tasks(

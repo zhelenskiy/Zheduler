@@ -53,10 +53,25 @@ internal val AddEstimatedTimeSeconds = object : Migration(2, 3) {
 }
 
 /**
+ * Indexes the estimate, now that a query exists which can seek on it.
+ *
+ * Room writes this index as `CREATE INDEX IF NOT EXISTS` over the same columns, so a database
+ * migrated here validates against one created from the entities.
+ */
+internal val IndexEstimatedTimeSeconds = object : Migration(3, 4) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_estimatedTimeSeconds` " +
+                "ON `tasks` (`spaceId`, `estimatedTimeSeconds`)"
+        )
+    }
+}
+
+/**
  * Every migration the app ships, applied wherever a [ZhedulerDatabase] is opened.
  *
  * Databases in the field were created by SQLDelight at version 1 and carry no `room_master_table`;
  * Room reads their `user_version`, runs what is missing, and stamps its identity hash afterwards.
  */
 internal fun RoomDatabase.Builder<ZhedulerDatabase>.withZhedulerMigrations(): RoomDatabase.Builder<ZhedulerDatabase> =
-    addMigrations(DropUnusedTaskIndexes, AddEstimatedTimeSeconds)
+    addMigrations(DropUnusedTaskIndexes, AddEstimatedTimeSeconds, IndexEstimatedTimeSeconds)

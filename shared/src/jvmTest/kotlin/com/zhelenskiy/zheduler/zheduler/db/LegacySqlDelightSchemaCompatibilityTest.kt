@@ -81,7 +81,7 @@ class LegacySqlDelightSchemaCompatibilityTest {
             assertEquals(1L, hasMasterTable, "Room should have adopted the database")
 
             val version = connection.prepare("PRAGMA user_version").use { it.step(); it.getLong(0) }
-            assertEquals(3L, version, "the adopted database should have been migrated")
+            assertEquals(4L, version, "the adopted database should have been migrated")
 
             // What the migration is for: the legacy file carried these, the current schema does not.
             listOf("idx_tasks_id_search", "idx_tasks_estimatedTimeJson", "idx_tasks_notificationsJson")
@@ -92,11 +92,13 @@ class LegacySqlDelightSchemaCompatibilityTest {
                     assertEquals(0L, present, "$index should have been dropped")
                 }
 
-            // The indexes that do earn their keep are untouched.
-            val kept = connection
-                .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_tasks_spaceId'")
-                .use { it.step(); it.getLong(0) }
-            assertEquals(1L, kept, "idx_tasks_spaceId should still be there")
+            // The indexes that do earn their keep are untouched, and the estimate has one now.
+            listOf("idx_tasks_spaceId", "idx_tasks_estimatedTimeSeconds").forEach { index ->
+                val present = connection
+                    .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = '$index'")
+                    .use { it.step(); it.getLong(0) }
+                assertEquals(1L, present, "$index should be present")
+            }
         }
     }
 
