@@ -593,6 +593,16 @@ interface TaskRepository {
 
     // ============ Recurrence operations ============
 
+    // Neither of the two entry points below has a caller yet, on purpose. The engine, the rule
+    // editor, storage and display are all finished; hooking them up waits on a real event system
+    // to drive them from. Until then a recurrence rule is recorded and shown but never advances,
+    // and that is the intended state — not an omission to be patched over by calling these from a
+    // screen or from app startup.
+    //
+    // Two things to settle whenever that work happens: firing a rule copies only the status and
+    // the rules, so `dueDate` is never moved on; and the sweep below selects tasks by `dueDate`,
+    // so a recurring task without one would never be picked up.
+
     /**
      * Process a recurrence trigger for a task.
      * Advances the recurrence state and resets the task for the next occurrence.
@@ -607,7 +617,8 @@ interface TaskRepository {
 
     /**
      * Process all date-based recurrences for tasks with past due dates.
-     * Should be called periodically (e.g., on app startup).
+     *
+     * Intended to be called periodically once there is something to call it; see the note above.
      * @param currentTime The current time
      * @return List of tasks that were updated
      */

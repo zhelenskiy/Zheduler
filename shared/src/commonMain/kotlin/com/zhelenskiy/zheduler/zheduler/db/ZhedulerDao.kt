@@ -50,8 +50,8 @@ interface ZhedulerDao {
     @Query(
         """
         SELECT * FROM spaces
-        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%')
-           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%')
+        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
+           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
         ORDER BY rowid
         LIMIT :limit OFFSET :offset
         """
@@ -67,8 +67,8 @@ interface ZhedulerDao {
     @Query(
         """
         SELECT COUNT(*) FROM spaces
-        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%')
-           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%')
+        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
+           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
         """
     )
     suspend fun countFilteredSpaces(searchInName: Long, query: String, searchInPrefix: Long): Int
@@ -86,7 +86,7 @@ interface ZhedulerDao {
         """
         SELECT * FROM tasks
         WHERE spaceId = :spaceId AND (:id IS NULL OR id != :id)
-          AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%')
+          AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
         ORDER BY rowid
         LIMIT :limit OFFSET :offset
         """
@@ -103,7 +103,7 @@ interface ZhedulerDao {
         """
         SELECT COUNT(*) FROM tasks
         WHERE spaceId = :spaceId AND (:id IS NULL OR id != :id)
-          AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%')
+          AND (:searchQuery = '' OR LOWER(id) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\' OR LOWER(title) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
         """
     )
     suspend fun countTasksForConnection(spaceId: String, id: String?, searchQuery: String): Int
@@ -351,7 +351,7 @@ interface ZhedulerDao {
         """
         SELECT name FROM tags
         WHERE spaceId = :spaceId
-          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%')
+          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
           AND name NOT IN (:excludeTags)
         ORDER BY name ASC
         LIMIT :limit OFFSET :offset
@@ -369,7 +369,7 @@ interface ZhedulerDao {
         """
         SELECT COUNT(*) FROM tags
         WHERE spaceId = :spaceId
-          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%')
+          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
           AND name NOT IN (:excludeTags)
         """
     )
@@ -926,10 +926,10 @@ private const val FILTERED_TASKS_WHERE = """
           AND (
             :searchQuery IS NULL
             OR :searchQuery = ''
-            OR (:searchInId = 1 AND LOWER(t.id) LIKE '%' || LOWER(:searchQuery) || '%')
-            OR (:searchInTitle = 1 AND LOWER(t.title) LIKE '%' || LOWER(:searchQuery) || '%')
-            OR (:searchInDescription = 1 AND LOWER(t.description) LIKE '%' || LOWER(:searchQuery) || '%')
-            OR (:searchInTags = 1 AND LOWER(t.tagsJson) LIKE '%' || LOWER(:searchQuery) || '%')
+            OR (:searchInId = 1 AND LOWER(t.id) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
+            OR (:searchInTitle = 1 AND LOWER(t.title) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
+            OR (:searchInDescription = 1 AND LOWER(t.description) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
+            OR (:searchInTags = 1 AND LOWER(t.tagsJson) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
           )
           -- TaskFilterCriteria filters
           AND (

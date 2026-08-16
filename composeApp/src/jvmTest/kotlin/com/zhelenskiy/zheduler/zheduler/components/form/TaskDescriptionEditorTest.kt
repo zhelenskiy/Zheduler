@@ -142,7 +142,13 @@ class TaskDescriptionEditorTest {
         }
         settle()
 
+        // As in the sibling cases, the negative is paired with a positive: without one, an editor
+        // that decoded the fence into nothing and composed an empty column would satisfy both
+        // "no fallback" and "text unchanged".
+        onNodeWithContentDescription("Bold").assertExists()
         onNodeWithText(FallbackPreviewMarker).assertDoesNotExist()
+        onNodeWithText("Run it:", substring = true).assertExists()
+        onNodeWithText("./gradlew run", substring = true).assertExists()
         assertEquals(original, description)
     }
 

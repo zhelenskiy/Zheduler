@@ -71,14 +71,14 @@ class FilterSemanticsComparisonTest {
     }
 
     @Test
-    fun `a percent sign is a character, not a wildcard`() = runTest {
+    fun `a percent sign is a character and not a wildcard`() = runTest {
         assertEquals(setOf("50% off sale"), searchFixture().titlesFor(search("50%")))
         // As a wildcard this matches everything; as text, nothing has it.
         assertEquals(emptySet(), searchFixture().titlesFor(search("%o%")))
     }
 
     @Test
-    fun `an underscore is a character, not a wildcard`() = runTest {
+    fun `an underscore is a character and not a wildcard`() = runTest {
         // "axb naming" is there too: as a wildcard, a_b matches it.
         assertEquals(setOf("a_b naming"), searchFixture().titlesFor(search("a_b")))
     }
@@ -119,7 +119,7 @@ class FilterSemanticsComparisonTest {
     }
 
     @Test
-    fun `subtask-of together with not-a-subtask matches everything, not nothing`() = runTest {
+    fun `subtask-of together with not-a-subtask matches everything rather than nothing`() = runTest {
         val contexts = both { spaceId ->
             val parent = addTask(spaceId, title = "parent")!!
             addTask(spaceId, title = "child", connections = persistentSetOf(TaskConnection(parent.id, ConnectionType.SubtaskOf)))

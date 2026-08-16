@@ -151,17 +151,18 @@ sealed class RecurrenceTimeZone {
      */
     @Serializable
     data class Specific(val zoneId: String) : RecurrenceTimeZone() {
-        init {
-            // Validate timezone ID
-            require(runCatching { TimeZone.of(zoneId) }.isSuccess) {
-                "Invalid timezone ID: $zoneId"
-            }
-        }
+        // No require on the id resolving. This constructor runs on decode, and the set of known
+        // zones is the *platform's*, not a constant: a rule saved on a machine with a current
+        // tzdb and opened on one with an older copy would fail to decode, taking the task — and
+        // with it the space — down. An unknown zone falls back to the system default instead,
+        // which is wrong by an offset rather than fatal. The picker only offers real zones.
     }
     
     fun toTimeZone(): TimeZone = when (this) {
         is SystemDefault -> TimeZone.currentSystemDefault()
-        is Specific -> TimeZone.of(zoneId)
+        // A zone this platform's database has never heard of resolves to the system default: the
+        // schedule is then off by an offset, where throwing would lose the whole task.
+        is Specific -> runCatching { TimeZone.of(zoneId) }.getOrElse { TimeZone.currentSystemDefault() }
     }
 }
 
@@ -688,8 +689,16 @@ data class RecurrenceState(
 /**
  * Service for calculating next occurrence dates and managing recurrence
  */
-/** How far ahead a fixed-point search looks before deciding a pattern has no next occurrence. */
-private const val MONTHS_SEARCHED_FOR_FIXED_POINTS = 24
+/**
+ * How far ahead a fixed-point search looks before deciding a pattern has no next occurrence.
+ *
+ * Long enough for any weekday-in-month pattern to come round: the calendar repeats on a 28-year
+ * cycle, so "the fifth Friday of February" — which needs a leap year beginning on a Friday — is
+ * inside it. At two years the search missed such patterns and returned nothing, and a rule with
+ * no next occurrence is treated as finished, so it would never have fired at all. The loop is a
+ * few hundred cheap iterations and runs only when a rule advances.
+ */
+private const val MONTHS_SEARCHED_FOR_FIXED_POINTS = 28 * 12
 
 object RecurrenceCalculator {
     

@@ -200,7 +200,7 @@ class RoomTaskRepository(
         return Page(
             items = dao.filterSpacesPaged(
                 searchInName = searchInNameFlag,
-                query = query,
+                query = query.escapedForLike(),
                 searchInPrefix = searchInPrefixFlag,
                 limit = limit,
                 offset = offset,
@@ -208,7 +208,7 @@ class RoomTaskRepository(
             offset = offset,
             totalCount = dao.countFilteredSpaces(
                 searchInName = searchInNameFlag,
-                query = query,
+                query = query.escapedForLike(),
                 searchInPrefix = searchInPrefixFlag,
             ),
         )
@@ -279,7 +279,7 @@ class RoomTaskRepository(
         val rows = dao.searchTasksForConnectionPaged(
             spaceId = spaceId,
             id = excludeTaskId,
-            searchQuery = searchQuery,
+            searchQuery = searchQuery.escapedForLike(),
             limit = limit,
             offset = offset,
         )
@@ -333,7 +333,7 @@ class RoomTaskRepository(
             val rows = dao.searchTasksForConnectionPaged(
                 spaceId = spaceId,
                 id = excludeTaskId,
-                searchQuery = searchQuery,
+                searchQuery = searchQuery.escapedForLike(),
                 limit = scanSize,
                 offset = scanOffset,
             )
@@ -534,13 +534,13 @@ class RoomTaskRepository(
     ): Page<String> = Page(
         items = dao.filterTagsForSpacePaged(
             spaceId = spaceId,
-            searchQuery = searchQuery,
+            searchQuery = searchQuery.escapedForLike(),
             excludeTags = excludeTags,
             limit = limit,
             offset = offset,
         ),
         offset = offset,
-        totalCount = dao.countFilteredTagsForSpace(spaceId, searchQuery, excludeTags),
+        totalCount = dao.countFilteredTagsForSpace(spaceId, searchQuery.escapedForLike(), excludeTags),
     )
 
     override suspend fun addTag(spaceId: String, tag: String): Boolean = mutex.withLock {
@@ -1121,25 +1121,6 @@ class RoomTaskRepository(
         tags.forEach { dao.insertTaskTag(taskId, it) }
 
         return task
-    }
-
-    /**
-     * Refuses [added] if any of them closes a dependency or subtask cycle.
-     *
-     * Each is judged against every other connection the task will end up with, so two new edges
-     * that only form a loop together are caught as well.
-     */
-    private suspend fun rejectCycles(
-        taskId: String,
-        finalConnections: Set<TaskConnection>,
-        added: Set<TaskConnection>,
-    ) {
-        added.forEach { connection ->
-            val others = finalConnections.filterNotTo(mutableSetOf()) { it == connection }
-            require(!wouldCreateCycle(taskId, connection.targetTaskId, connection.type, others)) {
-                "Connection ${connection.type} to ${connection.targetTaskId} would create a cycle"
-            }
-        }
     }
 
     private suspend fun addConnectionUnsafe(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean {
@@ -2429,7 +2410,7 @@ class RoomTaskRepository(
     // ============ Saved filter management ============
 
     override suspend fun getAllSavedFilters(spaceId: String): List<SavedFilter> =
-        dao.getAllSavedFilters(spaceId).map { it.toSavedFilterModel() }
+        dao.getAllSavedFilters(spaceId).mapNotNull { it.toSavedFilterModel() }
 
     override suspend fun getAllSavedFiltersWithViewModes(spaceId: String): List<SavedFilterWithViewMode> = mutex.withLock{
         val filters = getAllSavedFilters(spaceId)
@@ -2464,13 +2445,27 @@ class RoomTaskRepository(
     }
 }
 
-private fun SavedFilters.toSavedFilterModel() = SavedFilter(
-    id = id,
-    name = name,
-    spaceId = spaceId,
-    criteria = criteriaJson.toTaskFilterCriteria(),
-    viewModeId = viewModeId
-)
+/**
+ * A user's search text as the operand of a `LIKE`, with its wildcards made literal.
+ *
+ * `%` and `_` are pattern syntax, so typing "50%" matched everything beginning "50" and "a_b"
+ * matched "axb". The queries pair this with `ESCAPE '\'`. (The main filter box does not come
+ * through here at all — it is matched in Kotlin; see FilterParams.searchQuery.)
+ */
+private fun String.escapedForLike(): String =
+    replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+/** Null when the stored criteria cannot be read; see [RoomTaskRepository.getFilterState]. */
+private fun SavedFilters.toSavedFilterModel(): SavedFilter? {
+    val criteria = runCatching { criteriaJson.toTaskFilterCriteria() }.getOrNull() ?: return null
+    return SavedFilter(
+        id = id,
+        name = name,
+        spaceId = spaceId,
+        criteria = criteria,
+        viewModeId = viewModeId,
+    )
+}
 
 private fun Spaces.toModel() = Space(
     id = id,

@@ -165,10 +165,12 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     // ==================== RecurrenceTimeZone Edge Cases ====================
 
     @Test
-    fun `RecurrenceTimeZone Specific with invalid zone throws`() {
-        assertFailsWith<IllegalArgumentException> {
-            RecurrenceTimeZone.Specific("Invalid/Zone")
-        }
+    fun `RecurrenceTimeZone Specific with an unknown zone falls back rather than throwing`() {
+        // The set of known zones is the platform's, and it changes: a rule saved where the zone
+        // exists and opened where it does not must still decode, or one task takes the whole
+        // space down with it. Being wrong by an offset is the lesser failure.
+        val zone = RecurrenceTimeZone.Specific("Invalid/Zone")
+        assertEquals(TimeZone.currentSystemDefault(), zone.toTimeZone())
     }
 
     @Test
@@ -473,9 +475,9 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
             startFrom = instant(2024, 1, 1, 0, 0),
             timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
-        val display = rule.toBriefString()
-        // Should mention it's daily or list all days
-        assertTrue(display.isNotBlank())
+        // A rule covering all seven days is described as "Weekly" rather than listing them.
+        // "Not blank" accepted any description at all, including one naming a single day.
+        assertEquals("Weekly", rule.toBriefString())
     }
 
     @Test
@@ -526,8 +528,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
             period = RecurrencePeriod(years = 1, months = 6),
             firstOccurrence = instant(2024, 1, 1, 0, 0)
         ).toRule()
-        val display = rule.toBriefString()
-        assertTrue(display.isNotBlank())
+        // Both components have to survive; dropping the months went unnoticed under "not blank".
+        assertEquals("Every 1y 6mo", rule.toBriefString())
     }
 
     // ==================== Multiple Occurrences Sequence Test ====================

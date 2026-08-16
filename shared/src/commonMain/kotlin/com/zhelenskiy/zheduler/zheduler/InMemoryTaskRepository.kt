@@ -360,6 +360,10 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         )
         tagsBySpace.getOrPut(spaceId) { mutableSetOf() }.addAll(tags)
 
+        // Same check the database repository makes. This one is the oracle the comparison suites
+        // measure against, so leaving it out meant an identical save could be refused by one and
+        // accepted by the other.
+        rejectCycles(task.id, connections, connections)
         connections.forEach { connection ->
             addSymmetricConnectionUnsafe(task.id, connection)
         }
@@ -377,6 +381,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
 
         val addedConnections = task.connections.removingAll(oldTask.connections)
+        rejectCycles(task.id, task.connections, addedConnections)
         addedConnections.forEach { connection ->
             addSymmetricConnectionUnsafe(task.id, connection)
         }

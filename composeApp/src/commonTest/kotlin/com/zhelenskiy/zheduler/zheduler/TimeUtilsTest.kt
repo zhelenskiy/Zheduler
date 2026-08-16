@@ -84,7 +84,7 @@ class TimeUtilsTest {
     }
 
     @Test
-    fun `formatDueDate compares calendar days, not elapsed hours`() {
+    fun `formatDueDate compares calendar days and not elapsed hours`() {
         // 23 hours ahead of noon is tomorrow morning, not "today".
         assertEquals("Tomorrow at 11:00", format(LocalDateTime(2024, 3, 16, 11, 0)))
         // And half an hour before midnight is still today.
@@ -147,13 +147,14 @@ class TimeUtilsTest {
             "2w 4h 30m"
         )
 
+        // Every case must parse. Guarding the assertions behind `if (period != null)` meant a
+        // parser that rejected all nine — including the only multi-unit strings tested anywhere —
+        // passed this test having asserted nothing at all.
         for (input in testCases) {
-            val period = parseCompactTimeToPeriod(input)
-            if (period != null) {
-                val formatted = period.toBriefString()
-                val reparsed = parseCompactTimeToPeriod(formatted)
-                assertEquals(period, reparsed, "Roundtrip failed for: $input -> $formatted")
-            }
+            val period = assertNotNull(parseCompactTimeToPeriod(input), "did not parse: $input")
+            val formatted = period.toBriefString()
+            val reparsed = parseCompactTimeToPeriod(formatted)
+            assertEquals(period, reparsed, "Roundtrip failed for: $input -> $formatted")
         }
     }
 
@@ -161,10 +162,10 @@ class TimeUtilsTest {
 
     @Test
     fun `formatDueDate handles epoch instant`() {
-        val epoch = Instant.fromEpochMilliseconds(0)
-        val result = formatDueDate(epoch)
-        // Should produce some valid string without crashing
-        assertTrue(result.isNotBlank())
+        // Asserted against a fixed clock and an exact string: "not blank" was satisfied by any
+        // output at all, including the wrong date or the raw instant.
+        val epoch = LocalDateTime(1970, 1, 1, 3, 25).toInstant(TimeZone.currentSystemDefault())
+        assertEquals("January 1, 1970 at 03:25", formatDueDate(epoch, fixedClock))
     }
 
     @Test
@@ -185,10 +186,11 @@ class TimeUtilsTest {
 
     @Test
     fun `formatDueDate near midnight boundary`() {
-        val nearMidnight = Clock.System.now()
-        // Just ensure it doesn't crash near day boundaries
-        val result = formatDueDate(nearMidnight)
-        assertTrue(result.isNotBlank())
+        // Actually near midnight, and asserted. Using Clock.System.now() meant the boundary this
+        // test is named for was only exercised if it happened to run just before midnight.
+        assertEquals("Today at 23:59", format(LocalDateTime(2024, 3, 15, 23, 59)))
+        assertEquals("Tomorrow at 00:00", format(LocalDateTime(2024, 3, 16, 0, 0)))
+        assertEquals("Yesterday at 23:59", format(LocalDateTime(2024, 3, 14, 23, 59)))
     }
 
     // ==================== parseCompactTimeToPeriod - Overflow Conversion Tests ====================

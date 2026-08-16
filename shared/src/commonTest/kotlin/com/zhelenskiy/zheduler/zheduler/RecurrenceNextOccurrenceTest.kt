@@ -222,7 +222,7 @@ class RecurrenceNextOccurrenceTest {
     }
 
     @Test
-    fun `a yearly rule naming no months never occurs, rather than throwing`() {
+    fun `a yearly rule naming no months never occurs rather than throwing`() {
         // Such a rule cannot be built in the dialog but can be stored or imported. A require in
         // the constructor would make the row undecodable and take the whole space down with it.
         val pattern = FixedPointPattern.YearlyOnDate(months = persistentSetOf(), dayOfMonth = 1)

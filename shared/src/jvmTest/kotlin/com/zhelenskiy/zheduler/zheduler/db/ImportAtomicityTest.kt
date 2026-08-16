@@ -29,9 +29,11 @@ class ImportAtomicityTest {
         source.addTask(sourceSpace.id, title = "First")
         source.addTask(sourceSpace.id, title = "Second")
 
-        // Task ids are remapped by their trailing number, so making both tasks end in -1 sends two
-        // rows to the same new id and the second insert is rejected part-way through the import.
-        val corrupted = source.exportSpaceToJson(sourceSpace.id)!!.replace("SRC-2", "OTHER-1")
+        // Two tasks carrying the same id. Remapping gives them one new id between them, so the
+        // second insert is rejected part-way through the import. (Ids that merely share a
+        // trailing number no longer collide — they are handed distinct new ids — so that is no
+        // longer a way to make this fail.)
+        val corrupted = source.exportSpaceToJson(sourceSpace.id)!!.replace("SRC-2", "SRC-1")
 
         val target = createDatabaseRepository()
         assertFails { target.importSpaceFromJson(corrupted) }

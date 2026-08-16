@@ -1661,9 +1661,10 @@ class ViewModeModelsTest {
 
         val result = viewMode.applyTo(tasks, today())
 
-        // All have numeric value 0 (no digits), so they should remain in order
-        // or be sorted by the default 0 value
-        assertEquals(3, result[0].tasks.size)
+        // Asserting only the count let any ordering pass — reversed, unstable, anything — which
+        // is the whole of what this test is named for. Ids without digits all rank equal, so the
+        // sort must be stable and leave them as given.
+        assertEquals(listOf("ABC", "XYZ", "DEF"), result[0].tasks.map { it.task.id })
     }
 
     @Test

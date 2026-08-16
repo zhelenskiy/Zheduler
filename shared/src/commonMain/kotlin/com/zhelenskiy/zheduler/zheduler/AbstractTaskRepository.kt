@@ -831,34 +831,63 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         updateParentStatusIfNeeded(parentTaskId, mutableSetOf())
 
     /**
-     * [visited] carries the tasks this cascade has already restated.
+     * [ancestry] is the chain this recursion is currently inside, not everything it has seen.
      *
      * The recursion stops when a parent's derived status settles, which assumes the subtask graph
-     * is acyclic — and it should be, since every path that writes a connection now refuses cycles.
-     * Should one exist anyway, in data written before that or by hand, a derived status carrying
-     * text grows on each pass ("X: c" then "X: X: c"), never equals the last, and the recursion
-     * would not end: an unbounded loop writing a timeline row per turn, holding the repository
-     * lock. Restating a task once per cascade bounds it.
+     * is acyclic. Should a cycle exist anyway — in data written before the connection paths began
+     * refusing them, or by hand — a derived status carrying text grows on each pass ("X: c" then
+     * "X: X: c"), never equals the last, and the recursion would not end: an unbounded loop
+     * writing a timeline row per turn while holding the repository lock.
+     *
+     * Entries are removed on the way back out, so this catches a task that is its own ancestor
+     * without preventing an honest second visit. A shared "already restated" set would prevent
+     * one: where two of a task's subtask chains meet again further up, the first branch reaches
+     * the common ancestor before the second has moved, finds nothing to change, and would lock it
+     * out of the re-derivation the second branch then needs — leaving it stale for good.
      */
-    private suspend fun updateParentStatusIfNeeded(parentTaskId: String, visited: MutableSet<String>) {
-        if (!visited.add(parentTaskId)) return
+    private suspend fun updateParentStatusIfNeeded(parentTaskId: String, ancestry: MutableSet<String>) {
+        if (!ancestry.add(parentTaskId)) return
+        try {
+            val parentTask = getTaskById(parentTaskId) ?: return
+            if (!parentTask.autoUpdateStatusFromSubtasks) return
 
-        val parentTask = getTaskById(parentTaskId) ?: return
-        if (!parentTask.autoUpdateStatusFromSubtasks) return
+            val subtasks = getSubtasks(parentTaskId)
+            val calculatedStatus = calculateStatusFromSubtasks(subtasks.map { it.status })
+            if (calculatedStatus != null && calculatedStatus != parentTask.status) {
+                recordStatusChange(
+                    taskId = parentTaskId,
+                    previousStatus = parentTask.status,
+                    newStatus = calculatedStatus,
+                    automaticChangeReason = AutomaticChangeReason.UpdatedFromSubtasks(subtasks.mapToPersistentList { it.id })
+                )
+                val updated = parentTask.copy(status = calculatedStatus)
+                persistTaskUpdate(updated)
+                getParentTasks(parentTaskId).forEach { updateParentStatusIfNeeded(it.id, ancestry) }
+                unblockTasksBlockedBy(parentTaskId)
+            }
+        } finally {
+            ancestry.remove(parentTaskId)
+        }
+    }
 
-        val subtasks = getSubtasks(parentTaskId)
-        val calculatedStatus = calculateStatusFromSubtasks(subtasks.map { it.status })
-        if (calculatedStatus != null && calculatedStatus != parentTask.status) {
-            recordStatusChange(
-                taskId = parentTaskId,
-                previousStatus = parentTask.status,
-                newStatus = calculatedStatus,
-                automaticChangeReason = AutomaticChangeReason.UpdatedFromSubtasks(subtasks.mapToPersistentList { it.id })
-            )
-            val updated = parentTask.copy(status = calculatedStatus)
-            persistTaskUpdate(updated)
-            getParentTasks(parentTaskId).forEach { updateParentStatusIfNeeded(it.id, visited) }
-            unblockTasksBlockedBy(parentTaskId)
+    /**
+     * Refuses [added] if any of them closes a dependency or subtask cycle.
+     *
+     * Each is judged against every other connection the task will end up with, so two new edges
+     * that only form a loop together are caught as well. Both repositories call this: saving a
+     * form writes its whole connection set at once, and the picker that filled it can only judge
+     * the snapshot it was opened with.
+     */
+    protected suspend fun rejectCycles(
+        taskId: String,
+        finalConnections: Set<TaskConnection>,
+        added: Set<TaskConnection>,
+    ) {
+        added.forEach { connection ->
+            val others = finalConnections.filterNotTo(mutableSetOf()) { it == connection }
+            require(!wouldCreateCycle(taskId, connection.targetTaskId, connection.type, others)) {
+                "Connection ${connection.type} to ${connection.targetTaskId} would create a cycle"
+            }
         }
     }
 
@@ -958,10 +987,35 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * @return A map from old task ID to new task ID
      */
     protected fun createTaskIdMapping(tasks: List<Task>, newPrefix: String): Map<String, String> {
-        return tasks.associate { task ->
-            val oldIdNum = task.id.substringAfterLast("-").toIntOrNull() ?: 0
-            task.id to "$newPrefix-$oldIdNum"
+        // Every source task gets its own new id. Deriving the number from the id's suffix alone
+        // put "T-1" and "T-01" — and every id whose suffix is not a number at all, which all fell
+        // to 0 — on the same new id: the second task then overwrote the first in memory and hit
+        // the primary key in the database, so an import either lost a task silently or failed.
+        // A suffix nothing else claims is still kept, so ordinary exports keep their numbering.
+        val preferred = tasks.map { task ->
+            task to task.id.substringAfterLast("-").toIntOrNull()?.takeIf { it >= 0 }
         }
+        val unique = preferred.mapNotNull { it.second }
+            .groupingBy { it }
+            .eachCount()
+            .filterValues { it == 1 }
+            .keys
+
+        val assigned = mutableMapOf<String, String>()
+        val used = mutableSetOf<Int>()
+        preferred.forEach { (task, number) ->
+            if (number != null && number in unique) {
+                assigned[task.id] = "$newPrefix-$number"
+                used += number
+            }
+        }
+        var next = 1
+        preferred.forEach { (task, _) ->
+            if (task.id in assigned) return@forEach
+            while (!used.add(next)) next++
+            assigned[task.id] = "$newPrefix-$next"
+        }
+        return assigned
     }
 
     /**
