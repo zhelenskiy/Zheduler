@@ -996,10 +996,16 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
 
             // Update blocked status if blocker is being deleted
             val status = task.status
+            var unblocked = false
             if (status is TaskStatus.Blocked) {
                 val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.removing(id) }
                 if (remainingBlockers != status.blockerTaskIds) {
-                    val newStatus = if (remainingBlockers.isEmpty()) {
+                    // Same test as handleBlockerDeleted, not merely "none left". A task whose only
+                    // remaining blocker is already Done is not waiting for anything, and nothing
+                    // would ever re-run this check for it: that blocker's status will not change
+                    // again, so the task stayed Blocked for good.
+                    val newStatus = if (areAllBlockersResolved(remainingBlockers)) {
+                        unblocked = true
                         TaskStatus.InProgress
                     } else {
                         TaskStatus.Blocked(remainingBlockers, status.comment)
@@ -1010,7 +1016,17 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             }
 
             if (modified) {
+                if (unblocked) {
+                    // Automatic transitions are recorded and cascade, wherever they happen.
+                    recordStatusChange(
+                        taskId = task.id,
+                        previousStatus = status,
+                        newStatus = updatedTask.status,
+                        automaticChangeReason = AutomaticChangeReason.Unblocked,
+                    )
+                }
                 persistTaskUpdate(updatedTask)
+                if (unblocked) updateParentTasksStatus(task.id)
             }
         }
     }
@@ -1140,6 +1156,39 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 subtaskOfTaskIds.isNotBlank() || parentOfTaskIds.isNotBlank()
 
     /**
+     * The terms a search-box query is made of. Empty when nothing is being searched for.
+     */
+    protected fun searchTermsOf(criteria: TaskFilterCriteria): List<String> =
+        criteria.searchQuery.trim().takeIf { it.isNotEmpty() }?.split(whitespace).orEmpty()
+
+    /**
+     * Whether a task's text matches a search: every term, each in any of the enabled fields.
+     *
+     * One definition, used by the in-memory filter and by the database repository over the rows
+     * its query returns. SQL cannot do this itself — the number of terms varies, `LIKE` treats a
+     * typed `%` or `_` as a wildcard, and SQLite's `LOWER` folds only ASCII, so a case-insensitive
+     * match on anything else disagrees with Kotlin's. Stating it once is what keeps the two from
+     * answering the same query differently.
+     */
+    protected fun matchesSearchTerms(
+        terms: List<String>,
+        fields: Set<TaskTextSearchField>,
+        id: String,
+        title: String,
+        description: String,
+        tags: Set<String>,
+    ): Boolean = terms.all { term ->
+        fields.any { field ->
+            when (field) {
+                TaskTextSearchField.Id -> id.contains(term, ignoreCase = true)
+                TaskTextSearchField.Title -> title.contains(term, ignoreCase = true)
+                TaskTextSearchField.Description -> description.contains(term, ignoreCase = true)
+                TaskTextSearchField.Tags -> tags.any { it.contains(term, ignoreCase = true) }
+            }
+        }
+    }
+
+    /**
      * The half-open instant range a relative due-date filter selects, or null when the filter is
      * not a range at all ([DueDateFilter.Any], [DueDateFilter.NoDueDate], [DueDateFilter.Custom]).
      *
@@ -1172,10 +1221,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     ): List<TaskWithTotals> {
         val now = clock.now()
         // Derived from the criteria, so parsed once here rather than per task.
-        val searchTerms = criteria.searchQuery.trim()
-            .takeIf { it.isNotEmpty() }
-            ?.split(whitespace)
-            .orEmpty()
+        val searchTerms = searchTermsOf(criteria)
         val blockedByIds = parseTaskIds(criteria.blockedByTaskIds)
         val connectionIdFilters = connectionIdFilters(criteria)
 
@@ -1183,19 +1229,14 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             val task = taskWithTotals.task
 
             // Text search filter - searches across ALL selected fields simultaneously
-            val matchesTextSearch = if (searchTerms.isEmpty()) true
-            else {
-                searchTerms.all { query ->
-                    criteria.textSearchFields.any { field ->
-                        when (field) {
-                            TaskTextSearchField.Id -> task.id.contains(query, ignoreCase = true)
-                            TaskTextSearchField.Title -> task.title.contains(query, ignoreCase = true)
-                            TaskTextSearchField.Tags -> task.tags.any { it.contains(query, ignoreCase = true) }
-                            TaskTextSearchField.Description -> task.description.contains(query, ignoreCase = true)
-                        }
-                    }
-                }
-            }
+            val matchesTextSearch = matchesSearchTerms(
+                terms = searchTerms,
+                fields = criteria.textSearchFields,
+                id = task.id,
+                title = task.title,
+                description = task.description,
+                tags = task.tags,
+            )
 
             // Status filter (if any status selected, task must match one of them)
             val matchesStatus = matchesStatusCriteria(task.status, criteria, blockedByIds)

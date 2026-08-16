@@ -1021,38 +1021,46 @@ private const val FILTERED_TASKS_WHERE = """
             OR (:groupHasConnections = 0 AND NOT EXISTS (SELECT 1 FROM task_connections WHERE sourceTaskId = t.id))
           )
           -- Group filter: Status values (multiple patterns with OR, up to 5 status types)
-          -- Status is serialized as {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"} etc.
+          --
+          -- Status is serialized as {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"},
+          -- with the class discriminator always first, so these match on the leading text and the
+          -- closing quote. Matching the bare name anywhere in the column also matched it inside
+          -- the free text a Blocked comment or a Declined reason carries: declining a task with
+          -- the words "TaskStatus.Done" in the reason listed it under Done.
           AND (
             :groupStatusFilterType = 0 -- Not applied
             OR (
-              (:groupStatusOpen = 1 AND t.status LIKE '%TaskStatus.Open%')
-              OR (:groupStatusInProgress = 1 AND t.status LIKE '%TaskStatus.InProgress%')
-              OR (:groupStatusBlocked = 1 AND t.status LIKE '%TaskStatus.Blocked%')
-              OR (:groupStatusDone = 1 AND t.status LIKE '%TaskStatus.Done%')
-              OR (:groupStatusDeclined = 1 AND t.status LIKE '%TaskStatus.Declined%')
+              (:groupStatusOpen = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"%')
+              OR (:groupStatusInProgress = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.InProgress"%')
+              OR (:groupStatusBlocked = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Blocked"%')
+              OR (:groupStatusDone = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Done"%')
+              OR (:groupStatusDeclined = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Declined"%')
             )
           )
           -- TaskFilterCriteria: Status filters (additional filtering by status types)
           AND (
             :criteriaStatusFilterType = 0
             OR (
-              (:criteriaStatusOpen = 1 AND t.status LIKE '%TaskStatus.Open%')
-              OR (:criteriaStatusInProgress = 1 AND t.status LIKE '%TaskStatus.InProgress%')
-              OR (:criteriaStatusBlocked = 1 AND t.status LIKE '%TaskStatus.Blocked%')
-              OR (:criteriaStatusDone = 1 AND t.status LIKE '%TaskStatus.Done%')
-              OR (:criteriaStatusDeclined = 1 AND t.status LIKE '%TaskStatus.Declined%')
+              (:criteriaStatusOpen = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"%')
+              OR (:criteriaStatusInProgress = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.InProgress"%')
+              OR (:criteriaStatusBlocked = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Blocked"%')
+              OR (:criteriaStatusDone = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Done"%')
+              OR (:criteriaStatusDeclined = 1 AND t.status LIKE '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Declined"%')
             )
           )
-          -- TaskFilterCriteria: Connection type filters
+          -- TaskFilterCriteria: Connection type filters.
+          -- The chips are a multi-select, and the shared Kotlin predicate matches a task that has
+          -- ANY of the ticked kinds. Requiring all of them at once made two ticks narrower than
+          -- one, and "Subtask of" together with "Not a subtask" unsatisfiable — an empty board.
           AND (
             :connectionFilterType = 0 -- Not applied
             OR (
-              (:requireDependsOn = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'DependsOn'))
-              AND (:requireIsDependencyOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'IsDependencyOf'))
-              AND (:requireRelatesTo = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'RelatesTo'))
-              AND (:requireSubtaskOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
-              AND (:requireParentOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'ParentOf'))
-              AND (:requireNotSubtask = 0 OR NOT EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
+              (:requireDependsOn = 1 AND EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'DependsOn'))
+              OR (:requireIsDependencyOf = 1 AND EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'IsDependencyOf'))
+              OR (:requireRelatesTo = 1 AND EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'RelatesTo'))
+              OR (:requireSubtaskOf = 1 AND EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
+              OR (:requireParentOf = 1 AND EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'ParentOf'))
+              OR (:requireNotSubtask = 1 AND NOT EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
             )
           )
 """

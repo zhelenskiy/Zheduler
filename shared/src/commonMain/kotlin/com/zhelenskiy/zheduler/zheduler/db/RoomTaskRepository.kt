@@ -38,6 +38,9 @@ private const val MAX_CACHED_QUERIES = 64
  */
 private const val IMPOSSIBLE_FLAG = 2L
 
+/** A range-filter kind outside the 0..3 the query knows, so no row can satisfy it. */
+private const val IMPOSSIBLE_RANGE_TYPE = 4L
+
 /**
  * Room-based implementation of TaskRepository
  * Uses SQLite for persistence with proper indexing across all platforms.
@@ -1193,7 +1196,8 @@ class RoomTaskRepository(
         }
 
         return FilterParams(
-            searchQuery = filterCriteria.searchQuery.takeIf { it.isNotBlank() },
+            searchQuery = null,
+            searchTerms = searchTermsOf(filterCriteria),
             searchInId = if (TaskTextSearchField.Id in filterCriteria.textSearchFields) 1L else 0L,
             searchInTitle = if (TaskTextSearchField.Title in filterCriteria.textSearchFields) 1L else 0L,
             searchInDescription = if (TaskTextSearchField.Description in filterCriteria.textSearchFields) 1L else 0L,
@@ -1399,7 +1403,8 @@ class RoomTaskRepository(
      * needed; otherwise the database can answer with just a count or a list of ids.
      */
     private fun sqlAnswersFully(groupFilters: List<GroupFilter>, filterParams: FilterParams): Boolean =
-        !filterParams.recurrenceFilter.bucketedInSqlOnly &&
+        filterParams.searchTerms.isEmpty() &&
+                !filterParams.recurrenceFilter.bucketedInSqlOnly &&
                 !(filterParams.selectedTags.isNotEmpty() && filterParams.tagMatchMode == TagMatchMode.All) &&
                 !filterParams.criteria.refinesStatusText() &&
                 !filterParams.criteria.refinesByConnectionIds() &&
@@ -1831,6 +1836,20 @@ class RoomTaskRepository(
             )
         }
 
+        // The search box, matched here rather than in SQL. See FilterParams.searchQuery.
+        if (filterParams.searchTerms.isNotEmpty()) {
+            rows = rows.filter { row ->
+                matchesSearchTerms(
+                    terms = filterParams.searchTerms,
+                    fields = filterParams.criteria.textSearchFields,
+                    id = row.id,
+                    title = row.title,
+                    description = row.description,
+                    tags = row.tagsJson.toStringSet(),
+                )
+            }
+        }
+
         // The kind of rule is only visible once the rules are decoded; see RecurrenceFilter.matches.
         if (filterParams.recurrenceFilter.bucketedInSqlOnly) {
             rows = rows.filter { filterParams.recurrenceFilter.matches(it.recurrenceRulesJson.toRecurrenceRuleList()) }
@@ -2095,7 +2114,17 @@ class RoomTaskRepository(
      * Data class to hold filter parameters for SQL dao.
      */
     private data class FilterParams(
+        /**
+         * Always null: the search box is matched in Kotlin, over the rows the query returns.
+         *
+         * The clause it fed could not be made to agree with [matchesSearchTerms]. It matched the
+         * whole query as one substring where Kotlin requires each whitespace-separated term, it
+         * let a typed `%` or `_` act as a wildcard, and SQLite's `LOWER` folds only ASCII — so it
+         * could also *miss* rows, which rules out leaving it in as a cheap pre-filter.
+         */
         val searchQuery: String? = null,
+        /** The search box, split into terms; see [matchesSearchTerms]. */
+        val searchTerms: List<String> = emptyList(),
         val searchInId: Long = 1,
         val searchInTitle: Long = 1,
         val searchInDescription: Long = 0,
@@ -2179,14 +2208,20 @@ class RoomTaskRepository(
     )
 
     /**
-     * Convert a boolean value to SQL Long parameter (1 for true, 0 for false, null for null).
+     * A boolean group's values as a SQL parameter: 1 for true, 0 for false, null for no restriction.
+     *
+     * Every value in the set counts. Reading only the first meant a group admitting both "true"
+     * and "false" — which the editor offers and validation accepts — filtered on one of them and
+     * pushed the rest of the space into Uncategorized; a value that is not a boolean at all
+     * disabled the clause, matching everything where the Kotlin predicate matches nothing.
      */
     private fun booleanToSqlParam(values: Set<String>): Long? {
-        val value = values.firstOrNull()?.toBooleanStrictOrNull()
-        return when (value) {
-            true -> 1L
-            false -> 0L
-            null -> null
+        val admitted = values.mapNotNullTo(mutableSetOf()) { it.toBooleanStrictOrNull() }
+        return when {
+            admitted.size == 2 -> null // both, so nothing to restrict
+            true in admitted -> 1L
+            false in admitted -> 0L
+            else -> IMPOSSIBLE_FLAG
         }
     }
 
@@ -2279,6 +2314,24 @@ class RoomTaskRepository(
         fun highest(a: Long?, b: Long?) = if (a == null || b == null) a ?: b else maxOf(a, b)
         fun lowest(a: Long?, b: Long?) = if (a == null || b == null) a ?: b else minOf(a, b)
 
+        /**
+         * Intersecting two range filters.
+         *
+         * The value says which rows the level admits: 0 none of this kind of restriction, 1 only
+         * rows with no value, 2 only rows inside the bounds, 3 either. Two levels admit what both
+         * admit, so this is set intersection over {null, in-range} — taking the larger of the two
+         * instead widened every mixed pair: "no priority" nested inside "1-25" came out as 3 and
+         * matched both, where the two have nothing in common at all.
+         */
+        fun rangeTypes(a: Long, b: Long): Long = when {
+            a == 0L -> b
+            b == 0L -> a
+            // 1 = {null}, 2 = {in range}, 3 = both; intersect as bit sets. An empty intersection
+            // is not 0 — that is "no restriction", which would match everything — but a value the
+            // query recognises as nothing at all.
+            else -> (a and b).takeIf { it != 0L } ?: IMPOSSIBLE_RANGE_TYPE
+        }
+
         /** A flag two levels disagree on cannot be satisfied; 2 is the "match nothing" marker. */
         fun bothOrNothing(a: Long?, b: Long?) = when {
             a == null || b == null -> a ?: b
@@ -2289,16 +2342,16 @@ class RoomTaskRepository(
         var result = GroupFilterParams()
         for (p in params) {
             result = result.copy(
-                groupPriorityFilterType = maxOf(p.groupPriorityFilterType, result.groupPriorityFilterType),
+                groupPriorityFilterType = rangeTypes(p.groupPriorityFilterType, result.groupPriorityFilterType),
                 groupPriorityMin = highest(p.groupPriorityMin, result.groupPriorityMin),
                 groupPriorityMax = lowest(p.groupPriorityMax, result.groupPriorityMax),
-                groupDueDateFilterType = maxOf(p.groupDueDateFilterType, result.groupDueDateFilterType),
+                groupDueDateFilterType = rangeTypes(p.groupDueDateFilterType, result.groupDueDateFilterType),
                 groupDueDateMin = highest(p.groupDueDateMin, result.groupDueDateMin),
                 groupDueDateMax = lowest(p.groupDueDateMax, result.groupDueDateMax),
                 groupIsRecurring = bothOrNothing(p.groupIsRecurring, result.groupIsRecurring),
                 groupAutoUpdateStatus = bothOrNothing(p.groupAutoUpdateStatus, result.groupAutoUpdateStatus),
                 groupHasNotifications = bothOrNothing(p.groupHasNotifications, result.groupHasNotifications),
-                groupEstimatedTimeFilterType = maxOf(p.groupEstimatedTimeFilterType, result.groupEstimatedTimeFilterType),
+                groupEstimatedTimeFilterType = rangeTypes(p.groupEstimatedTimeFilterType, result.groupEstimatedTimeFilterType),
                 groupEstimatedTimeMinSeconds = highest(p.groupEstimatedTimeMinSeconds, result.groupEstimatedTimeMinSeconds),
                 groupEstimatedTimeMaxSeconds = lowest(p.groupEstimatedTimeMaxSeconds, result.groupEstimatedTimeMaxSeconds),
                 groupHasConnections = bothOrNothing(p.groupHasConnections, result.groupHasConnections),
