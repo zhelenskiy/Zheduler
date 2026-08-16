@@ -403,7 +403,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         val connection = TaskConnection(toTaskId, type)
         if (connection in fromTask.connections) return@withLock true
 
-        if (wouldCreateCycle(fromTaskId, toTaskId, type)) {
+        // See RoomTaskRepository.addConnectionUnsafe: the task's committed edges are what the
+        // cycle check would otherwise be blind to.
+        if (wouldCreateCycle(fromTaskId, toTaskId, type, fromTask.connections)) {
             return@withLock false
         }
 

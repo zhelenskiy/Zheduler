@@ -1107,7 +1107,9 @@ class RoomTaskRepository(
         val connection = TaskConnection(toTaskId, type)
         if (fromTask.connections.contains(connection)) return true
 
-        if (wouldCreateCycle(fromTaskId, toTaskId, type)) return false
+        // The task's own edges have to be handed over: the check treats the task being edited as
+        // described by this set alone, so leaving it empty hid every edge already committed.
+        if (wouldCreateCycle(fromTaskId, toTaskId, type, fromTask.connections)) return false
 
         dao.insertConnection(fromTaskId, toTaskId, type.name)
         addSymmetricConnectionUnsafe(fromTaskId, connection)

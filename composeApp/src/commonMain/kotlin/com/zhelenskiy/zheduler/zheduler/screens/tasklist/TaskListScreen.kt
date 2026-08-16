@@ -69,20 +69,37 @@ private data class TaskListUiData(
     val isFilterPanelOpen: Boolean,
 )
 
+/**
+ * The filter panel, restored from storage and saved back as it is edited.
+ *
+ * The stored criteria arrive after the screen is composed, so the panel starts on its defaults.
+ * Two rules keep that from destroying what was stored:
+ *
+ * Nothing is saved until the stored criteria have been applied — otherwise the very first
+ * composition writes the defaults over them, and a space's filter is lost by opening it.
+ *
+ * They are applied once. Every save comes back through the store as a new value here, and
+ * re-applying that echo puts a stale snapshot on top of what has been typed since: the search
+ * field would jump back a few characters mid-word, and the revert would itself be saved.
+ */
 @Composable
-private fun rememberPersistedFilterState(
-    onLoadFilterState: () -> TaskFilterCriteria,
+internal fun rememberPersistedFilterState(
+    onLoadFilterState: () -> TaskFilterCriteria?,
     onSaveFilterState: (TaskFilterCriteria) -> Unit
 ): TaskFilterState {
     val filterState = rememberTaskFilterState()
+    var restored by remember { mutableStateOf(false) }
 
-    // Load filter state when it becomes available
-    val loadedCriteria = onLoadFilterState()
-    LaunchedEffect(loadedCriteria) {
-        filterState.loadFromCriteria(loadedCriteria)
+    val storedCriteria = onLoadFilterState()
+    LaunchedEffect(storedCriteria) {
+        if (storedCriteria != null && !restored) {
+            filterState.loadFromCriteria(storedCriteria)
+            restored = true
+        }
     }
 
     LaunchedEffect(
+        restored,
         filterState.searchQuery, filterState.textSearchFields, filterState.statusFilters,
         filterState.dueDateFilter, filterState.priorityFilter, filterState.estimatedTimeFilter,
         filterState.recurrenceFilter, filterState.notificationsFilter, filterState.autoUpdateStatusFilter,
@@ -93,7 +110,7 @@ private fun rememberPersistedFilterState(
         filterState.subtaskOfTaskIds, filterState.parentOfTaskIds,
         filterState.blockedByTaskIds, filterState.blockedByComment, filterState.declinedReason
     ) {
-        onSaveFilterState(filterState.toCriteria())
+        if (restored) onSaveFilterState(filterState.toCriteria())
     }
 
     return filterState
@@ -282,6 +299,14 @@ private fun TaskListEmptyStates(
  */
 private data class LoadedGroupData(
     val groupInfo: TaskGroupInfo,
+    /**
+     * Position of this group within the tree, as a dotted path — "0", "0.2", "0.2.1".
+     *
+     * Identity has to come from the shape of the tree rather than from labels. Two groups may
+     * carry the same label, and one may be called "Uncategorized" like the automatic bucket: the
+     * key is a LazyColumn item key, so a collision is a duplicate-key crash rather than a muddle.
+     * Labels containing the separator used to alias across levels as well.
+     */
     val groupKey: String,
     val level: Int,
     val parentFilters: PersistentList<GroupFilter>
@@ -349,12 +374,10 @@ internal fun DynamicTaskList(
 
         return if (nextLevelIndex < viewMode.groupingLevels.size) {
             val subgroups = onGetTaskGroups(viewMode, nextLevelIndex, newFilters, filterCriteria)
-            groupData.groupKey to subgroups.map { groupInfo ->
-                val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
-                val subgroupKey = "${groupData.groupKey}_$displayLabel"
+            groupData.groupKey to subgroups.mapIndexed { position, groupInfo ->
                 LoadedGroupData(
                     groupInfo = groupInfo,
-                    groupKey = subgroupKey,
+                    groupKey = "${groupData.groupKey}.$position",
                     level = nextLevelIndex,
                     parentFilters = newFilters
                 )
@@ -378,11 +401,10 @@ internal fun DynamicTaskList(
             // Load root level
             val groups = onGetTaskGroups(viewMode, 0, persistentListOf(), filterCriteria)
             onMatchingCountChange(groups.sumOf { it.taskCount })
-            val rootGroups = groups.map { groupInfo ->
-                val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
+            val rootGroups = groups.mapIndexed { position, groupInfo ->
                 LoadedGroupData(
                     groupInfo = groupInfo,
-                    groupKey = displayLabel,
+                    groupKey = position.toString(),
                     level = 0,
                     parentFilters = persistentListOf()
                 )
@@ -795,7 +817,7 @@ fun TaskListScreen(
     }
 
     val filterState = rememberPersistedFilterState(
-        onLoadFilterState = { state.filterState ?: TaskFilterCriteria() },
+        onLoadFilterState = { state.filterState },
         onSaveFilterState = { criteria ->
             container.store.intent(TaskListIntent.SaveFilterState(criteria))
         }
