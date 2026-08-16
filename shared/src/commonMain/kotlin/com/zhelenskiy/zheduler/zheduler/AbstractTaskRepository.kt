@@ -542,7 +542,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         private val nodesById = nodes.associateBy { it.id }
         private val universe = LinkedHashMap<String, TotalsNode>(nodes.size + blockedNodes.size).apply {
             nodes.forEach { put(it.id, it) }
-            blockedNodes.forEach { putIfAbsent(it.id, it) }
+            blockedNodes.forEach { if (it.id !in this) put(it.id, it) }
         }
 
         private val successors: Map<String, List<String>> = buildMap<String, MutableList<String>> {

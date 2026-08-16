@@ -373,7 +373,8 @@ private fun TagList(
                     .heightIn(max = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                items(it.sorted()) { tag ->
+                // Keyed, or the item animation follows positions and a deletion slides the wrong rows.
+                items(it.sorted(), key = { tag -> tag }) { tag ->
                     TagListItem(
                         tag = tag,
                         modifier = Modifier.animateItem(),

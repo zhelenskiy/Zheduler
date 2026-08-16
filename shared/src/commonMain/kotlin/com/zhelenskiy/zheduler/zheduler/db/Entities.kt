@@ -20,6 +20,11 @@ import androidx.room3.PrimaryKey
  *    implicit autoindex that Room cannot see or express. Declaring an explicit unique index here
  *    would reject every existing database, so uniqueness is left to the repository, which already
  *    checks `prefixExists` before inserting a space.
+ *
+ * Three indexes below earn nothing and are kept only because existing databases have them:
+ * `idx_tasks_id_search` duplicates the primary key's automatic index, and the two on JSON columns
+ * index text no query can seek on. Each costs a write on every insert. Dropping them means
+ * migrating, giving up adopting an existing database untouched — a deliberate trade, not tidying.
  */
 
 @Entity(tableName = "spaces")

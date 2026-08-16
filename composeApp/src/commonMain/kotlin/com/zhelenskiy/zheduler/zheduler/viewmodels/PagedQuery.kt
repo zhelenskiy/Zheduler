@@ -32,12 +32,19 @@ class PagedQuery<Q : Any, T : Any>(
     private val pagingSource: (Q) -> PagingSource<Int, T>,
 ) {
     private val query = MutableStateFlow(initialQuery)
-    private var currentFactory: InvalidatingPagingSourceFactory<Int, T>? = null
+
+    /**
+     * The factory backing the current query, so a repository change can invalidate it.
+     *
+     * Written by whoever collects [pages] and read by the subscription below: two coroutines, which
+     * share a dispatcher today but need not always.
+     */
+    private val currentFactory = MutableStateFlow<InvalidatingPagingSourceFactory<Int, T>?>(null)
 
     val pages: Flow<PagingData<T>> = query
         .flatMapLatest { current ->
             val factory = InvalidatingPagingSourceFactory { pagingSource(current) }
-            currentFactory = factory
+            currentFactory.value = factory
             // Called through a lambda rather than passed directly: the factory type is only a
             // function type on JVM, and this module also compiles for js/wasmJs/native.
             Pager(config, pagingSourceFactory = { factory() }).flow
@@ -46,7 +53,7 @@ class PagedQuery<Q : Any, T : Any>(
 
     init {
         scope.launch {
-            changes.collect { currentFactory?.invalidate() }
+            changes.collect { currentFactory.value?.invalidate() }
         }
     }
 

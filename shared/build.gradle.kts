@@ -154,17 +154,10 @@ room3 {
 tasks.withType<Test>().matching { it.name.contains("AndroidHostTest", ignoreCase = true) }
     .configureEach {
         systemProperty("robolectric.logging", "stdout")
-        exclude("**/DatabaseTaskRepositoryTest.class")
-        exclude("**/DatabaseTaskAdvancedRepositoryTest.class")
-        exclude("**/DatabaseTaskAutomationRepositoryTest.class")
-        exclude("**/DatabaseTaskFiltersRepositoryTest.class")
-        exclude("**/DatabaseRecurrenceRepositoryTest.class")
-        exclude("**/DatabaseRecurrenceEdgeCasesRepositoryTest.class")
-        exclude("**/DatabaseConcurrencyRepositoryTest.class")
-        exclude("**/DatabaseCalculateStatusFromSubtasksRepositoryTest.class")
-        exclude("**/DatabaseIsMissedRepositoryTest.class")
-        exclude("**/DatabaseSearchTasksForConnectionTest.class")
-        exclude("**/DatabaseSavedFilterRepositoryTest.class")
+        // The database-backed suites need a real SQLite, which this variant does not have: they
+        // die on "openOrCreateDatabase not mocked". The jvm suite covers the same classes against
+        // the bundled driver. Matched by name rather than listed one by one, so adding a suite
+        // does not quietly add a failing Android test.
+        exclude("**/Database*Test.class")
         exclude("**/GroupedTaskQueriesComparisonTest.class")
-        exclude("**/DatabasePaginationRepositoryTest.class")
     }
