@@ -15,10 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
-import kotlinx.serialization.json.Json
+import com.zhelenskiy.zheduler.zheduler.components.common.jsonSaver
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,7 +45,9 @@ fun StatusSelectionDialog(
 ) {
     // Saved: the status picked, and any blocker comment or decline reason typed alongside it, are
     // gone the moment the activity is recreated, and nothing has reached the form yet.
-    var selectedStatusType by rememberSaveable(stateSaver = TaskStatusSaver) { mutableStateOf(currentStatus) }
+    var selectedStatusType by rememberSaveable(stateSaver = jsonSaver { currentStatus }) {
+        mutableStateOf(currentStatus)
+    }
     val lastSelectedForType = remember { SnapshotStateMap<String, TaskStatus>() }
     LaunchedEffect(selectedStatusType) {
         lastSelectedForType[selectedStatusType.displayName] = selectedStatusType
@@ -316,14 +316,3 @@ private fun ColumnScope.DeclinedStatusOption(
         )
     }
 }
-
-/**
- * A [TaskStatus] as saved state, through the same JSON the database stores.
- *
- * A status carries structure — the tasks a Blocked one waits on, the reason a Declined one was
- * refused — so it is not one of the handful of types a platform can save on its own.
- */
-private val TaskStatusSaver: Saver<TaskStatus, Any> = listSaver(
-    save = { listOf(Json.encodeToString(it)) },
-    restore = { saved -> runCatching { Json.decodeFromString<TaskStatus>(saved[0] as String) }.getOrNull() },
-)

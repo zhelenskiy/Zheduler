@@ -81,10 +81,20 @@ private val persistedEditorSettings: EditorSettingsState by lazy {
     // dispatcher, so of two quick switches the older could reach the file last and be what came
     // back on restart. Each value is the whole map, so dropping a superseded one loses nothing.
     val writes = Channel<Map<String, DescriptionEditorKind>>(Channel.CONFLATED)
-    scope.launch { for (byTask in writes) store.set(EditorSettings(byTask)) }
+    // Each write is guarded on its own. This scope has no exception handler, so a single refused
+    // write — a full disk, a read-only volume, a browser quota — took the whole writer down with
+    // it on Android, and every later choice was shown as applied and quietly never stored.
+    scope.launch {
+        for (byTask in writes) runCatching { store.set(EditorSettings(byTask)) }
+    }
 
     val state = EditorSettingsState(onPersist = { writes.trySend(it) })
-    scope.launch { state.restore(store.get()?.descriptionEditorByTask.orEmpty()) }
+    // Likewise the read: a settings file that will not decode is worth no more than no file at
+    // all, and throwing here killed the process the first time a description was shown.
+    scope.launch {
+        val stored = runCatching { store.get()?.descriptionEditorByTask }.getOrNull()
+        state.restore(stored.orEmpty())
+    }
     state
 }
 

@@ -151,7 +151,15 @@ private fun FilterCategoryChipsRow(
             title = "Connections",
             isExpanded = expandedCategory == FilterCategory.Connections,
             onClick = { onCategoryClick(FilterCategory.Connections) },
-            hasActiveFilter = filterState.connectionTypeFilters.isNotEmpty()
+            // Ids count as an active filter here too: they narrow the list on their own, and
+            // their boxes are only visible once this category is expanded, so an unlit chip was
+            // the last place the filter could have been noticed.
+            hasActiveFilter = filterState.connectionTypeFilters.isNotEmpty() ||
+                    filterState.dependsOnTaskIds.isNotBlank() ||
+                    filterState.isDependencyOfTaskIds.isNotBlank() ||
+                    filterState.relatesToTaskIds.isNotBlank() ||
+                    filterState.subtaskOfTaskIds.isNotBlank() ||
+                    filterState.parentOfTaskIds.isNotBlank()
         )
 
         // Also when the space has no tags left to offer but some are still selected. Deleting a tag

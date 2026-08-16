@@ -5,6 +5,7 @@ package com.zhelenskiy.zheduler.zheduler.screens.newtask
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
@@ -13,6 +14,8 @@ import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import com.zhelenskiy.zheduler.zheduler.components.common.BackHandler
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
+import com.zhelenskiy.zheduler.zheduler.components.form.LocalPendingEdits
+import com.zhelenskiy.zheduler.zheduler.components.form.PendingEdits
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormState
 import com.zhelenskiy.zheduler.zheduler.components.form.persistedIn
@@ -64,8 +67,13 @@ fun NewTaskScreen(
     val formState = rememberFormStateFromData(state.taskToCopy, initialConnections)
     formState.persistedIn(container.formPersistence)
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
+    // What the description editor is holding but has not reported yet; see PendingEdits.
+    val pendingEdits = remember { PendingEdits() }
 
     fun handleBackPress() {
+        // The rich editor reports on a pause, so the last keystrokes are still in it: without
+        // this, leaving straight after typing found nothing to discard and discarded it.
+        pendingEdits.flush()
         if (formState.hasAnyContent(initialConnections)) {
             showDiscardChangesDialog = true
         } else {
@@ -92,6 +100,9 @@ fun NewTaskScreen(
 
     fun saveTask() {
         if (saving) return
+        // Before reading the form: see PendingEdits. The description otherwise stops at whatever
+        // the user last paused after.
+        pendingEdits.flush()
         val parsed = formState.toParsedValues() ?: return
         saving = true
         container.store.intent(
@@ -131,6 +142,7 @@ fun NewTaskScreen(
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             if (state.nextId != null) {
+                CompositionLocalProvider(LocalPendingEdits provides pendingEdits) {
                 TaskFormContent(
                     formState = formState,
                     isNewTask = true,
@@ -153,6 +165,7 @@ fun NewTaskScreen(
                     // No id until it is created, so the choice applies to this form only.
                     taskId = null
                 )
+                }
             }
         }
     }

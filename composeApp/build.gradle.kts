@@ -73,6 +73,7 @@ kotlin {
     jvm()
 
     js {
+        // The per-test timeout is raised in karma.config.d; see the note there.
         browser()
         binaries.executable()
     }

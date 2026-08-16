@@ -5,6 +5,7 @@ package com.zhelenskiy.zheduler.zheduler.screens.taskedit
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.Alignment
@@ -18,6 +19,8 @@ import com.zhelenskiy.zheduler.zheduler.ConnectionType
 import com.zhelenskiy.zheduler.zheduler.components.common.BackHandler
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
+import com.zhelenskiy.zheduler.zheduler.components.form.LocalPendingEdits
+import com.zhelenskiy.zheduler.zheduler.components.form.PendingEdits
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
 import com.zhelenskiy.zheduler.zheduler.components.form.persistedIn
 import com.zhelenskiy.zheduler.zheduler.components.form.rememberTaskFormState
@@ -96,8 +99,13 @@ fun TaskEditScreen(
     }
 
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
+    // What the description editor is holding but has not reported yet; see PendingEdits.
+    val pendingEdits = remember { PendingEdits() }
 
     fun saveChanges() {
+        // Before reading the form: see PendingEdits. The description otherwise stops at whatever
+        // the user last paused after.
+        pendingEdits.flush()
         val parsed = formState.toParsedValues() ?: return
         val updatedTask = currentTask.copy(
             title = parsed.title,
@@ -116,6 +124,9 @@ fun TaskEditScreen(
     }
 
     fun handleBackPress() {
+        // As in saveChanges: leaving straight after typing found nothing to discard, and left
+        // without those keystrokes.
+        pendingEdits.flush()
         if (formState.hasUnsavedChanges(currentTask)) {
             showDiscardChangesDialog = true
         } else {
@@ -167,6 +178,7 @@ fun TaskEditScreen(
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
+            CompositionLocalProvider(LocalPendingEdits provides pendingEdits) {
             TaskFormContent(
                 formState = formState,
                 isNewTask = false,
@@ -188,6 +200,7 @@ fun TaskEditScreen(
                 allSpacePrefixes = state.allSpacePrefixes,
                 taskId = currentTask.id
             )
+            }
         }
     }
 }

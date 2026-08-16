@@ -749,6 +749,14 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
 
         return mutex.withLock {
+            // The same refusal the database makes: a file naming one id twice is rejected before
+            // anything is written. The id mapping has one entry per id, so both copies would be
+            // imported under the same new id — which the primary key refuses over there, while
+            // here one quietly overwrote the other and the space came back a task short.
+            require(exportData.tasks.distinctBy { it.id }.size == exportData.tasks.size) {
+                "The file names the same task id more than once"
+            }
+
             val newPrefix = uniqueSpacePrefix(exportData.space.idPrefix) { candidate ->
                 spaces.values.any { it.idPrefix == candidate }
             }
@@ -778,7 +786,12 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                     id = newTaskId,
                     spaceId = newSpaceId,
                     connections = remappedConnections,
-                    status = remappedStatus
+                    status = remappedStatus,
+                    // Rounded as every other write path rounds it. The database import goes
+                    // through addTask and so does this already; writing the file's instant
+                    // straight in left this repository holding a precision its own writes can no
+                    // longer produce, and the database a different one for the same file.
+                    dueDate = storableDueDate(task.dueDate),
                 )
                 tasks[newTaskId] = newTask
 

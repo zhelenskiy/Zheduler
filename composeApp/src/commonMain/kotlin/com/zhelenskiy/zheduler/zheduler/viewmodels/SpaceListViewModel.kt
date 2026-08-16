@@ -8,6 +8,7 @@ import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
@@ -221,7 +222,15 @@ class SpaceListContainer(
     }
 
     private suspend fun SpaceListPipelineContext.importSpaceFromJson(requestId: Long, jsonString: String) {
-        val space = repository.importSpaceFromJson(jsonString)
+        // A file can be refused two ways: politely, with null for something that will not decode,
+        // and rudely, by throwing — a file naming one task id twice reaches the database, whose
+        // primary key rejects it and rolls the import back. Both are the same thing to the user,
+        // and only the first was being reported: the throw went to the failure snackbar behind the
+        // dialog, while the dialog itself waited for a result that never came, looking as though
+        // the button had done nothing at all.
+        val space = runCatching { repository.importSpaceFromJson(jsonString) }
+            .onFailure { failure -> if (failure is CancellationException) throw failure }
+            .getOrNull()
         if (space != null) {
             loadSpaces()
         }

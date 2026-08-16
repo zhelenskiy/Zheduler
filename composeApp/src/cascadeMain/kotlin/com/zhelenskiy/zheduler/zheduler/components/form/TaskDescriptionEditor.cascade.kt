@@ -230,14 +230,23 @@ actual fun TaskDescriptionEditor(
     }
 
     // The debounce above means the newest edits have not reached the form yet when the editor
-    // goes away — on Save, on back, on switching to the raw Markdown field. Cancelling the effect
-    // would simply drop them: pressing back within the debounce window reported no unsaved
-    // changes and left without them.
+    // goes away — on back, on switching to the raw Markdown field. Cancelling the effect would
+    // simply drop them: pressing back within the debounce window reported no unsaved changes and
+    // left without them.
     val flushPendingEdits by rememberUpdatedState {
         applyEncoded(stateHolder.toMarkdownWithReport(textStates, spanStates, profile))
     }
-    DisposableEffect(Unit) {
-        onDispose { flushPendingEdits() }
+    // Going away is not the only time they are needed. Save reads the form and writes the task
+    // there and then, while this editor is still on screen and still holding the last few
+    // keystrokes; the flush below happens afterwards, into a form nobody will read again. So the
+    // form is given a way to ask first.
+    val pendingEdits = LocalPendingEdits.current
+    DisposableEffect(pendingEdits) {
+        val unregister = pendingEdits.register { flushPendingEdits() }
+        onDispose {
+            unregister()
+            flushPendingEdits()
+        }
     }
 
     val scheme = MaterialTheme.colorScheme

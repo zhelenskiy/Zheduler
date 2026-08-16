@@ -42,6 +42,26 @@ class UnboundedGroupRangeComparisonTest {
     }
 
     @Test
+    fun `a custom priority bound too large to be a priority is no bound`() = runTest {
+        // The field takes free text. A number past Int.MAX_VALUE was a real bound to the SQL and
+        // no bound at all to the shared predicate, so the same filter gave two different lists.
+        val criteria = TaskFilterCriteria(
+            priorityFilter = PriorityFilter.Custom,
+            customPriorityMin = "3000000000",
+        )
+
+        val titles = listOf(InMemoryTaskRepository(Clock.System), createDatabaseRepository(Clock.System)).map { repository ->
+            val space = repository.createSpace("Test", "TEST")!!
+            repository.addTask(space.id, title = "has a priority", priority = Priority(30))
+            repository.getTasksForGroup(space.id, persistentListOf(), persistentListOf(), criteria)
+                .map { it.task.title }
+        }
+
+        assertEquals(listOf("has a priority"), titles[0])
+        assertEquals(titles[0], titles[1])
+    }
+
+    @Test
     fun `the group count agrees with the tasks in it`() = runTest {
         for (repository in listOf(InMemoryTaskRepository(Clock.System), createDatabaseRepository(Clock.System))) {
             val space = repository.createSpace("Test", "TEST")!!

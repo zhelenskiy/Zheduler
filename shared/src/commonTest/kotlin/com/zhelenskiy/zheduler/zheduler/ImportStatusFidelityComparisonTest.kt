@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertNotNull
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -79,6 +80,25 @@ class ImportStatusFidelityComparisonTest {
 
         assertEquals(listOf(TaskStatus.Open), histories[0], "a task with no history at all cannot say when it began")
         assertEquals(histories[0], histories[1])
+    }
+
+    @Test
+    fun `a file naming the same task twice is refused by both`() = runTest {
+        // Hand-made and third-party files can repeat an id. The database refuses the second copy
+        // on its primary key and rolls the whole import back; the in-memory repository used to
+        // quietly keep one of them. (That the refusal now reaches the dialog rather than a
+        // snackbar behind it is the view model's part; see SpaceListViewModel.)
+        val json = """
+            {"space":{"id":"space-0-SRC","name":"Source","idPrefix":"SRC"},
+             "tasks":[{"id":"SRC-1","title":"first","spaceId":"space-0-SRC"},
+                      {"id":"SRC-1","title":"second","spaceId":"space-0-SRC"}],
+             "statusTimelines":{},"nextId":2,"tags":[]}
+        """.trimIndent()
+
+        for (repository in repositories()) {
+            assertFails("$repository: the duplicate was accepted") { repository.importSpaceFromJson(json) }
+            assertEquals(emptyList(), repository.getAllSpaces(), "$repository: a space was left behind")
+        }
     }
 
     @Test

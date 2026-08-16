@@ -1353,8 +1353,12 @@ class RoomTaskRepository(
             PriorityFilter.Medium -> 50L to 75L
             PriorityFilter.Low -> 1L to 50L
             // Custom bounds are inclusive; one past the top is the same range over whole numbers.
-            PriorityFilter.Custom -> (filterCriteria.customPriorityMin.toLongOrNull() ?: -OPEN_BOUND) to
-                    (filterCriteria.customPriorityMax.toLongOrNull()?.plus(1) ?: OPEN_BOUND)
+            // Read as Int, as the shared predicate reads them: a priority is an Int, so a bound too
+            // large to be one is no bound at all. Reading them as Long here made a number above
+            // Int.MAX_VALUE a real bound on this side and no bound on the other, so the grouped
+            // list and the flat list answered the same filter differently.
+            PriorityFilter.Custom -> (filterCriteria.customPriorityMin.toIntOrNull()?.toLong() ?: -OPEN_BOUND) to
+                    (filterCriteria.customPriorityMax.toIntOrNull()?.let { it + 1L } ?: OPEN_BOUND)
         }
         val dueDateRange: Pair<Long, Long>? = when (filterCriteria.dueDateFilter) {
             DueDateFilter.Any, DueDateFilter.NoDueDate -> null

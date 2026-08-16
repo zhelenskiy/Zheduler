@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -82,7 +83,9 @@ private fun StatusSection(
     onFilterTasksForSelection: (String) -> Unit,
     onLoadTask: (String) -> Unit
 ) {
-    var showStatusDialog by remember { mutableStateOf(false) }
+    // Saved, like the dialogs themselves: a recreation that closed one and did not bring it back
+    // left the user staring at the form, with whatever they had chosen in it gone.
+    var showStatusDialog by rememberSaveable { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -186,7 +189,7 @@ private fun EstimatedTimeField(formState: TaskFormState) {
 
 @Composable
 private fun DueDatePicker(formState: TaskFormState) {
-    var showDatePicker by remember { mutableStateOf(false) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -228,7 +231,7 @@ private fun RecurrenceSection(
     onFilterTasksForSelection: (String) -> Unit,
     onLoadTask: (String) -> Unit
 ) {
-    var editingRuleIndex by remember { mutableStateOf<Int?>(null) }
+    var editingRuleIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     val showWarning = formState.autoUpdateStatusFromSubtasks && formState.recurrenceRules.isNotEmpty()
 
     Column {
@@ -579,7 +582,7 @@ private fun TagsSection(
     filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit
 ) {
-    var showTagDialog by remember { mutableStateOf(false) }
+    var showTagDialog by rememberSaveable { mutableStateOf(false) }
 
     AnimatedContent(
         formState.tags,
@@ -648,7 +651,7 @@ private fun ConnectionsSection(
     onSearchTasksForConnection: (String, Set<String>, ConnectionType, Set<TaskConnection>) -> Unit,
     onCreateNewTaskWithConnection: ((ConnectionType) -> Unit)?
 ) {
-    var showConnectionDialog by remember { mutableStateOf(false) }
+    var showConnectionDialog by rememberSaveable { mutableStateOf(false) }
 
     AnimatedContent(
         formState.connections,

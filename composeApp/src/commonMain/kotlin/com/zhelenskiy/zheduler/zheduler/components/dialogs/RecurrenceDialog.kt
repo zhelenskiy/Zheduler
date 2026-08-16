@@ -14,6 +14,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.zhelenskiy.zheduler.zheduler.components.common.jsonSaver
+import com.zhelenskiy.zheduler.zheduler.components.common.nullableJsonSaver
+import kotlinx.serialization.json.Json
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
@@ -57,13 +63,52 @@ sealed class FormResult<out T> {
     data object NoData : FormResult<Nothing>()
 }
 
+/** Saved state for the schedule the dialog has managed to build so far, if any. */
+private val TimeTriggerResultSaver: Saver<FormResult<TimeRecurrenceTrigger>, Any> =
+    listSaver<FormResult<TimeRecurrenceTrigger>, Any?>(
+        save = { result ->
+            when (result) {
+                is FormResult.Success -> listOf(
+                    "success",
+                    Json.encodeToString<TimeRecurrenceTrigger>(result.value),
+                )
+                FormResult.Failure -> listOf("failure")
+                FormResult.NoData -> listOf("nodata")
+            }
+        },
+        restore = { saved ->
+            when (saved.firstOrNull()) {
+                // Never null: this saver is used through `stateSaver`, where a null restore is
+                // put into the state as though it were a value rather than falling back to the
+                // caller's initial one. A schedule that will not decode reads as none chosen.
+                "success" -> runCatching {
+                    FormResult.Success(Json.decodeFromString<TimeRecurrenceTrigger>(saved[1] as String))
+                }.getOrElse { FormResult.NoData }
+                "failure" -> FormResult.Failure
+                else -> FormResult.NoData
+            }
+        },
+    )
+
+/** Saved state for which kind of schedule is being filled in, before it makes a whole one. */
+private val TriggerTypeSaver: Saver<RecurrenceTriggerType?, Any> = listSaver<RecurrenceTriggerType?, Any?>(
+    save = { listOf(it?.name) },
+    restore = { saved ->
+        (saved.firstOrNull() as String?)?.let { name ->
+            RecurrenceTriggerType.entries.firstOrNull { it.name == name }
+        }
+    },
+)
+
 @Composable
 fun TimeRecurrenceTriggerSelector(
     oldTimeTrigger: TimeRecurrenceTrigger?,
     terminationCount: Int?,
     onTriggerSelected: (FormResult<TimeRecurrenceTrigger>) -> Unit
 ) {
-    var selectedTimeBasedType by remember {
+    // Saved too: a type chosen but not yet filled in produces no trigger to restore from, and
+    // coming back to "no kind of schedule chosen" hides where the user had got to.
+    var selectedTimeBasedType by rememberSaveable(stateSaver = TriggerTypeSaver) {
         mutableStateOf(
             when (oldTimeTrigger) {
                 null -> null
@@ -166,18 +211,26 @@ fun SingleRecurrenceRuleDialog(
     onDismiss: () -> Unit,
     onRecurrenceSelected: (RecurrenceRule?) -> Unit
 ) {
-    var selectedTimeTrigger by remember {
+    // All four are saved rather than remembered. Nothing here reaches the task until Save, so an
+    // activity recreation — a rotation, a theme change — used to close the dialog and take the
+    // whole rule being configured with it, silently. The editors below start from whatever
+    // `selectedTimeTrigger` holds, so restoring it restores them too.
+    var selectedTimeTrigger by rememberSaveable(stateSaver = TimeTriggerResultSaver) {
         mutableStateOf(currentRule?.timeRecurrenceTrigger?.let(::Success) ?: NoData)
     }
 
     // Trigger statuses (the statuses that trigger recurrence)
     // null means "any status"
-    var statusChangesTrigger by remember { mutableStateOf(currentRule?.statusChangeTrigger) }
+    var statusChangesTrigger by rememberSaveable(stateSaver = nullableJsonSaver<StatusChange>()) {
+        mutableStateOf(currentRule?.statusChangeTrigger)
+    }
 
     // Reset status (what status to set when recurrence happens)
-    var resetToStatus by remember { mutableStateOf(currentRule?.resetToStatus ?: TaskStatus.Open) }
+    var resetToStatus by rememberSaveable(stateSaver = jsonSaver { TaskStatus.Open }) {
+        mutableStateOf(currentRule?.resetToStatus ?: TaskStatus.Open)
+    }
 
-    var termination by remember {
+    var termination by rememberSaveable(stateSaver = jsonSaver { RecurrenceTermination() }) {
         mutableStateOf(
             RecurrenceTermination(
                 afterOccurrences = currentRule?.termination?.maxOccurrences?.let(::AfterOccurrences),

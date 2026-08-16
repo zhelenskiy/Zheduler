@@ -378,10 +378,11 @@ internal fun DynamicTaskList(
 
         return if (nextLevelIndex < viewMode.groupingLevels.size) {
             val subgroups = onGetTaskGroups(viewMode, nextLevelIndex, newFilters, filterCriteria)
+            val keys = groupKeysFor(groupData.groupKey, subgroups)
             groupData.groupKey to subgroups.mapIndexed { position, groupInfo ->
                 LoadedGroupData(
                     groupInfo = groupInfo,
-                    groupKey = "${groupData.groupKey}.$position",
+                    groupKey = keys[position],
                     level = nextLevelIndex,
                     parentFilters = newFilters
                 )
@@ -405,10 +406,11 @@ internal fun DynamicTaskList(
             // Load root level
             val groups = onGetTaskGroups(viewMode, 0, persistentListOf(), filterCriteria)
             onMatchingCountChange(groups.sumOf { it.taskCount })
+            val rootKeys = groupKeysFor(parentKey = "", groups = groups)
             val rootGroups = groups.mapIndexed { position, groupInfo ->
                 LoadedGroupData(
                     groupInfo = groupInfo,
-                    groupKey = position.toString(),
+                    groupKey = rootKeys[position],
                     level = 0,
                     parentFilters = persistentListOf()
                 )
@@ -983,4 +985,28 @@ private suspend fun applySavedFilter(
     val viewMode = container.getViewModeById(attachedViewModeId) ?: return
     uiState.value = uiState.value.mapData { it.copy(activeViewMode = viewMode) }
     container.store.intent(TaskListIntent.SetActiveViewMode(viewMode.id))
+}
+
+/**
+ * Keys for one level of groups: each named by what it is, not by where it sits.
+ *
+ * These keys are what "the user collapsed this group" is remembered by, and they have to survive
+ * the list being reloaded. A group is left out when it has no tasks and the view mode does not ask
+ * for empty ones, and the trailing Uncategorized group comes and goes with its contents — so with
+ * positions as keys, one task changing status shifted every group below it onto its neighbour's
+ * key: a collapsed group sprang open, and the one that took its place snapped shut.
+ *
+ * Sibling groups may share a label; the later ones are numbered. A dot in a label is escaped,
+ * since a dot is what separates a child's key from its parent's.
+ */
+internal fun groupKeysFor(parentKey: String, groups: List<TaskGroupInfo>): List<String> {
+    val seen = mutableMapOf<String, Int>()
+    return groups.map { group ->
+        val name = if (group.isUncategorized) "~uncategorized" else group.label
+        val occurrence = seen.getOrElse(name) { 0 }
+        seen[name] = occurrence + 1
+        val escaped = name.replace("\\", "\\\\").replace(".", "\\.")
+        val own = if (occurrence == 0) escaped else "$escaped#$occurrence"
+        if (parentKey.isEmpty()) own else "$parentKey.$own"
+    }
 }

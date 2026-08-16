@@ -125,9 +125,14 @@ fun rememberThemeState(): ThemeState {
     // Load settings on startup
     LaunchedEffect(Unit) {
         if (!themeState.settingsLoaded) {
-            val settings = themeSettingsStore.updates.first() ?: ThemeSettings()
-            loadedThemeSettings = settings
-            themeState.adopt(settings)
+            // A settings file that will not read is worth no more than the defaults. The `?: `
+            // below covers a file that is not there; a file that is there but unreadable — hand
+            // edited, half written, or holding a value some later build understood — threw out of
+            // here before the first frame, which on Android is a process that dies on every launch
+            // with nothing the user can do about it. A theme is not worth that.
+            val settings = runCatching { themeSettingsStore.updates.first() }.getOrNull()
+            loadedThemeSettings = settings ?: ThemeSettings()
+            themeState.adopt(settings ?: ThemeSettings())
         }
     }
 
@@ -140,7 +145,9 @@ fun rememberThemeState(): ThemeState {
                 customSeedColorArgb = themeState.colorSettings.savedColor.toArgb()
             )
             loadedThemeSettings = settings
-            themeSettingsStore.set(settings)
+            // A disk that will not take it — full, read-only, a browser quota — is not worth the
+            // app: the theme stays as chosen for this run and is simply not remembered.
+            runCatching { themeSettingsStore.set(settings) }
         }
     }
 
