@@ -1507,4 +1507,47 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
 
         assertEquals(2, result.size)
     }
+
+    @Test
+    fun `connections survive loading more tasks than fit in one IN clause`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val hub = repo.addTask(spaceId, title = "Hub")!!
+
+        // Past the point where connections are read per-id rather than per-space.
+        val spokes = List(520) { index ->
+            repo.addTask(
+                spaceId,
+                title = "Spoke $index",
+                connections = persistentSetOf(TaskConnection(hub.id, ConnectionType.RelatesTo)),
+            )!!
+        }
+
+        val loaded = repo.getAllTasks(spaceId).associateBy { it.id }
+
+        assertEquals(spokes.size + 1, loaded.size)
+        spokes.forEach { spoke ->
+            assertEquals(
+                setOf(TaskConnection(hub.id, ConnectionType.RelatesTo)),
+                loaded.getValue(spoke.id).connections,
+                "spoke ${spoke.id} lost its connection",
+            )
+        }
+        assertEquals(spokes.size, loaded.getValue(hub.id).connections.size, "hub lost its back-links")
+    }
+
+    @Test
+    fun `getTasksByIds accepts more ids than SQLite can bind at once`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val existing = repo.addTask(spaceId, title = "Real task")!!
+
+        // Past SQLite's bound-parameter ceiling. The ids need not exist; binding them is what failed.
+        val ids = buildSet {
+            add(existing.id)
+            repeat(40_000) { add("TEST-${it + 1000}") }
+        }
+
+        val found = repo.getTasksByIds(ids)
+
+        assertEquals(listOf(existing.id), found.map { it.id })
+    }
 }

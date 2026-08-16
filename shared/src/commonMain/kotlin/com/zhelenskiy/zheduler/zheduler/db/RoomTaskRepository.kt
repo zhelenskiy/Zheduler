@@ -220,7 +220,7 @@ class RoomTaskRepository(
     }
 
     override suspend fun getTasksInSpace(spaceId: String): List<Task> =
-        dao.getTasksBySpace(spaceId).map { loadTaskWithConnections(it) }
+        hydrateTasks(spaceId, dao.getTasksBySpace(spaceId))
 
     override suspend fun removeConnectionsToDeletedTasks(taskId: String, connections: List<TaskConnection>) {
         connections.forEach { connection ->
@@ -232,7 +232,7 @@ class RoomTaskRepository(
         dao.hasAnyTasks(spaceId)
 
     override suspend fun getAllTasks(spaceId: String): List<Task> =
-        dao.getTasksBySpace(spaceId).map { loadTaskWithConnections(it) }
+        hydrateTasks(spaceId, dao.getTasksBySpace(spaceId))
 
     override suspend fun filterTasksForSelectionPage(
         spaceId: String,
@@ -357,8 +357,27 @@ class RoomTaskRepository(
 
     override suspend fun getTasksByIds(ids: Set<String>): List<Task> {
         if (ids.isEmpty()) return emptyList()
-        return dao.getTasksByIds(ids).map { loadTaskWithConnections(it) }
+        return hydrateTasksAcrossSpaces(byIds(ids))
     }
+
+    /**
+     * Runs an `IN (...)` [query] over [ids] in batches SQLite can bind.
+     *
+     * Nothing bounds these id sets — a dependency graph, a month of status changes, a space's
+     * timelines — and past the parameter ceiling SQLite rejects the statement outright.
+     */
+    private suspend fun <T> chunkedByIds(
+        ids: Collection<String>,
+        query: suspend (List<String>) -> List<T>,
+    ): List<T> = when {
+        ids.isEmpty() -> emptyList()
+        ids.size <= MAX_SQL_PARAMETERS -> query(ids.toList())
+        else -> ids.chunked(MAX_SQL_PARAMETERS).flatMap { query(it) }
+    }
+
+    /** The task rows for [ids], read in bindable batches. */
+    private suspend fun byIds(ids: Collection<String>): List<Tasks> =
+        chunkedByIds(ids) { dao.getTasksByIds(it) }
 
     private suspend fun collectNeededTaskIds(task: Task, blockedTasks: List<Task>): Set<String> {
         val blockerToBlockedTasks = mutableMapOf<String, MutableList<Task>>()
@@ -432,6 +451,13 @@ class RoomTaskRepository(
         return rows.map { row -> row.toTask(connectionsBySource[row.id] ?: persistentSetOf()) }
     }
 
+    /** [hydrateTasks] for rows that need not share a space: blocked tasks, parents, link targets. */
+    private suspend fun hydrateTasksAcrossSpaces(rows: List<Tasks>): List<Task> {
+        if (rows.isEmpty()) return emptyList()
+        val connectionsBySource = connectionsBySource(chunkedByIds(rows.map { it.id }) { dao.getConnectionsForTasks(it) })
+        return rows.map { row -> row.toTask(connectionsBySource[row.id] ?: persistentSetOf()) }
+    }
+
     /**
      * Connections of [ids], which must all belong to [spaceId]: past SQLite's bound-parameter
      * limit it is cheaper (and safer) to read the space's connections in one go than to chunk the
@@ -446,11 +472,14 @@ class RoomTaskRepository(
         } else {
             dao.getConnectionsBySpace(spaceId)
         }
-        return rows.groupBy { it.sourceTaskId }
+        return connectionsBySource(rows)
+    }
+
+    private fun connectionsBySource(rows: List<TaskConnections>): Map<String, PersistentSet<TaskConnection>> =
+        rows.groupBy { it.sourceTaskId }
             .mapValues { (_, connections) ->
                 connections.mapToPersistentSet { TaskConnection(it.targetTaskId, ConnectionType.valueOf(it.type)) }
             }
-    }
 
     /** The totals view of a row; see [TotalsNode]. */
     private fun Tasks.toTotalsNode(dependentIds: List<String>): TotalsNode = TotalsNode(
@@ -610,7 +639,7 @@ class RoomTaskRepository(
     }
 
     override suspend fun getBlockedTasks(): List<Task> =
-        dao.getBlockedTasks().map { loadTaskWithConnections(it) }
+        hydrateTasksAcrossSpaces(dao.getBlockedTasks())
 
     private suspend fun addSymmetricConnectionUnsafe(sourceTaskId: String, connection: TaskConnection) {
         val targetTask = getByIdUnsafe(connection.targetTaskId) ?: return
@@ -655,10 +684,10 @@ class RoomTaskRepository(
     }
 
     override suspend fun getParentTasks(taskId: String): List<Task> =
-        dao.getParentTasks(taskId).map { loadTaskWithConnections(it) }
+        hydrateTasksAcrossSpaces(dao.getParentTasks(taskId))
 
     override suspend fun getSubtasks(taskId: String): List<Task> =
-        dao.getSubtasks(taskId).map { loadTaskWithConnections(it) }
+        hydrateTasksAcrossSpaces(dao.getSubtasks(taskId))
 
     override suspend fun deleteTask(id: String): Boolean = mutex.withLock {
         val task = getByIdUnsafe(id) ?: return@withLock false
@@ -709,7 +738,7 @@ class RoomTaskRepository(
 
         // Only the tasks the month's changes actually refer to, loaded in two queries
         val taskIds = statusChanges.mapTo(mutableSetOf()) { it.taskId }
-        val tasksById = hydrateTasks(spaceId, dao.getTasksByIds(taskIds)).associateBy { it.id }
+        val tasksById = hydrateTasks(spaceId, byIds(taskIds)).associateBy { it.id }
 
         statusChanges.forEach { changeEntity ->
             val task = tasksById[changeEntity.taskId] ?: return@forEach
@@ -828,13 +857,13 @@ class RoomTaskRepository(
 
     override suspend fun exportSpaceToJson(spaceId: String, prettyPrint: Boolean): String? {
         val space = getSpaceById(spaceId) ?: return null
-        val spaceTasks = dao.getTasksBySpace(spaceId).map { loadTaskWithConnections(it) }
+        val spaceTasks = hydrateTasks(spaceId, dao.getTasksBySpace(spaceId))
         val taskIds = spaceTasks.map { it.id }.toSet()
         // Batch fetch all status timelines in a single query
         val spaceTimelines = if (taskIds.isEmpty()) {
             emptyMap()
         } else {
-            dao.getStatusTimelinesForTasks(taskIds)
+            chunkedByIds(taskIds) { dao.getStatusTimelinesForTasks(it) }
                 .groupBy({ it.taskId }) { statusChange ->
                     StatusChange(
                         timestamp = Instant.fromEpochMilliseconds(statusChange.timestamp),
@@ -1037,8 +1066,7 @@ class RoomTaskRepository(
     }
 
     override suspend fun getRecurringTasksDueBefore(time: Instant): List<Task> =
-        dao.getRecurringTasksDueBefore(time.toEpochMilliseconds())
-            .map { loadTaskWithConnections(it) }
+        hydrateTasksAcrossSpaces(dao.getRecurringTasksDueBefore(time.toEpochMilliseconds()))
 
     // Override methods from AbstractTaskRepository that do read-modify-write to add mutex protection.
     // Note: processDateBasedRecurrences calls processRecurrenceTrigger internally, so we only
@@ -1561,9 +1589,7 @@ class RoomTaskRepository(
 
         // Only the window is read back as rows; chunked because the whole-set window (limit =
         // UNLIMITED) would otherwise blow past SQLite's bound-parameter limit.
-        val rowsById = windowIds.chunked(MAX_SQL_PARAMETERS)
-            .flatMap { dao.getTasksByIds(it) }
-            .associateBy { it.id }
+        val rowsById = byIds(windowIds).associateBy { it.id }
         val windowRows = windowIds.mapNotNull { rowsById[it] }
 
         val tasks = hydrateTasks(spaceId, windowRows)
