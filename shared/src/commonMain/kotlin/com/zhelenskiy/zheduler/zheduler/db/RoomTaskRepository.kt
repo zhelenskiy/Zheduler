@@ -33,6 +33,12 @@ private const val CANDIDATE_SCAN_SIZE = 100
 private const val MAX_CACHED_QUERIES = 64
 
 /**
+ * Bound for a boolean group filter that two levels disagree on. The SQL compares equality
+ * against 0 or 1, so any other value matches no row -- which is the correct intersection.
+ */
+private const val IMPOSSIBLE_FLAG = 2L
+
+/**
  * Room-based implementation of TaskRepository
  * Uses SQLite for persistence with proper indexing across all platforms.
  * All compound operations (read-modify-write) are protected by a coroutine Mutex
@@ -91,6 +97,15 @@ class RoomTaskRepository(
     override fun onDataChanged() {
         dataVersion++
     }
+
+    /**
+     * Announces a change once the transaction that made it has committed.
+     *
+     * Signalling from inside the transaction let a collector re-query and read the state from
+     * before the commit, with no second signal to correct it — and a rollback announced a change
+     * that never happened.
+     */
+    private inline fun <T> T.alsoNotifyIf(changed: (T) -> Boolean): T = also { if (changed(it)) notifyChanged() }
 
     /** Drop memoised rankings if anything has changed since they were computed. Call under [mutex]. */
     private fun evictStaleCaches() {
@@ -219,10 +234,8 @@ class RoomTaskRepository(
             )
 
             dao.deleteSpace(spaceId)
-            notifyChanged()
-
             true
-        }
+        }.alsoNotifyIf { it }
     }
 
     override suspend fun getTasksInSpace(spaceId: String): List<Task> =
@@ -574,8 +587,8 @@ class RoomTaskRepository(
             addTaskUnsafe(
                 spaceId, title, description, status, dueDate, priority, estimatedTime,
                 tags, connections, notifications, customId, recurrenceRules, autoUpdateStatusFromSubtasks
-            )?.also { notifyChanged() }
-        }
+            )
+        }.alsoNotifyIf { it != null }
     }
 
     private suspend fun syncToDatabase(task: Task) {
@@ -608,6 +621,11 @@ class RoomTaskRepository(
         removedConnections.forEach { connection ->
             dao.deleteConnection(task.id, connection.targetTaskId, connection.type.name)
             dao.deleteConnection(connection.targetTaskId, task.id, connection.type.symmetric.name)
+            // Detaching a subtask changes what its parent derives its status from. The add path
+            // does this through addSymmetricConnectionUnsafe; removal had no counterpart.
+            if (connection.type == ConnectionType.SubtaskOf) {
+                updateParentStatusIfNeeded(connection.targetTaskId)
+            }
         }
 
         val addedConnections = task.connections.removingAll(oldTask.connections)
@@ -631,10 +649,9 @@ class RoomTaskRepository(
         }
 
         handleStatusCascadeOnUpdate(finalTask.id, oldTask.status, finalTask.status)
-        notifyChanged()
 
         finalTask
-        }
+        }.alsoNotifyIf { it != null }
     }
 
     override suspend fun recordStatusChange(
@@ -676,23 +693,27 @@ class RoomTaskRepository(
     }
 
     override suspend fun addConnection(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean = mutex.withLock {
-        addConnectionUnsafe(fromTaskId, toTaskId, type).also { added -> if (added) notifyChanged() }
+        // Both directions of the link, and any parent status it changes, are one edit.
+        database.withWriteTransaction {
+            addConnectionUnsafe(fromTaskId, toTaskId, type)
+        }.alsoNotifyIf { it }
     }
 
     override suspend fun removeConnection(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean = mutex.withLock {
-        val fromTask = getByIdUnsafe(fromTaskId) ?: return@withLock false
-        val connection = TaskConnection(toTaskId, type)
-        if (!fromTask.connections.contains(connection)) return@withLock true
+        // As in addConnection: both directions and the parent restatement commit together.
+        database.withWriteTransaction {
+            val fromTask = getByIdUnsafe(fromTaskId) ?: return@withWriteTransaction false
+            val connection = TaskConnection(toTaskId, type)
+            if (!fromTask.connections.contains(connection)) return@withWriteTransaction true
 
-        dao.deleteConnection(fromTaskId, toTaskId, type.name)
-        dao.deleteConnection(toTaskId, fromTaskId, type.symmetric.name)
+            dao.deleteConnection(fromTaskId, toTaskId, type.name)
+            dao.deleteConnection(toTaskId, fromTaskId, type.symmetric.name)
 
-        if (type == ConnectionType.SubtaskOf) {
-            updateParentStatusIfNeeded(toTaskId)
-        }
-        notifyChanged()
-
-        true
+            if (type == ConnectionType.SubtaskOf) {
+                updateParentStatusIfNeeded(toTaskId)
+            }
+            true
+        }.alsoNotifyIf { it }
     }
 
     override suspend fun getConnectionsForTaskSync(taskId: String): PersistentSet<TaskConnection>? {
@@ -728,10 +749,8 @@ class RoomTaskRepository(
 
             // Update parent tasks' statuses after subtask deletion
             updateParentStatuses(parentTasks)
-            notifyChanged()
-
             true
-        }
+        }.alsoNotifyIf { it }
     }
 
     override suspend fun getStatusTimeline(taskId: String): List<StatusChange> =
@@ -976,10 +995,9 @@ class RoomTaskRepository(
             }
 
             exportData.tags.forEach { dao.insertTagForSpace(newSpaceId, it) }
-            notifyChanged()
 
             newSpace
-            }
+            }.alsoNotifyIf { it != null }
         }
     }
 
@@ -1084,9 +1102,11 @@ class RoomTaskRepository(
         return true
     }
 
-    override suspend fun clearAllData() {
-        dao.getAllSpaces().forEach { space ->
-            dao.deleteSpace(space.id)
+    override suspend fun clearAllData() = mutex.withLock {
+        // Under the lock and in one transaction like every other mutation: a partial clear is
+        // observable, and a cache built concurrently from half-deleted data outlives it.
+        database.withWriteTransaction {
+            dao.getAllSpaces().forEach { space -> dao.deleteSpace(space.id) }
         }
         notifyChanged()
     }
@@ -1209,6 +1229,7 @@ class RoomTaskRepository(
                 else -> 2L
             },
             recurrenceFilter = filterCriteria.recurrenceFilter,
+            criteria = filterCriteria,
             notificationsFilterType = when (filterCriteria.notificationsFilter) {
                 NotificationsFilter.Any -> 0L
                 NotificationsFilter.NoNotifications -> 1L
@@ -1366,6 +1387,8 @@ class RoomTaskRepository(
     private fun sqlAnswersFully(groupFilters: List<GroupFilter>, filterParams: FilterParams): Boolean =
         !filterParams.recurrenceFilter.bucketedInSqlOnly &&
                 !(filterParams.selectedTags.isNotEmpty() && filterParams.tagMatchMode == TagMatchMode.All) &&
+                !filterParams.criteria.refinesStatusText() &&
+                !filterParams.criteria.refinesByConnectionIds() &&
                 groupFilters.none { it is GroupFilter.HasTags || it is GroupFilter.Not } &&
                 filterParams.selectedTags.isEmpty()
 
@@ -1799,6 +1822,23 @@ class RoomTaskRepository(
             rows = rows.filter { filterParams.recurrenceFilter.matches(it.recurrenceRulesJson.toRecurrenceRuleList()) }
         }
 
+        // A blocker id, a blocker comment and a declined reason all live inside the serialized
+        // status, which SQL narrows only to the status class.
+        val criteria = filterParams.criteria
+        if (criteria.refinesStatusText()) {
+            val blockedByIds = parseTaskIds(criteria.blockedByTaskIds)
+            rows = rows.filter { matchesStatusCriteria(it.status.toTaskStatus(), criteria, blockedByIds) }
+        }
+
+        // Naming particular connected tasks needs each candidate's connections, read in one query.
+        if (criteria.refinesByConnectionIds()) {
+            val idFilters = connectionIdFilters(criteria)
+            val connections = connectionsForTasksInSpace(spaceId, rows.map { it.id })
+            rows = rows.filter {
+                matchesConnectionsByTaskIds(connections[it.id].orEmpty(), idFilters)
+            }
+        }
+
         // Handle HasTags filters (from group filters) - get matching task IDs via SQL
         for (tagsFilter in hasTagsFilters) {
             rows = filterRowsByTagsAny(spaceId, rows, tagsFilter.tags)
@@ -2072,6 +2112,11 @@ class RoomTaskRepository(
         val recurrenceFilterType: Long = 0,
         /** Applied in Kotlin: SQL cannot tell one kind of recurrence rule from another. */
         val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,
+        /**
+         * The criteria themselves, for the parts no query can express: text inside a status, and
+         * the ids of particular connected tasks.
+         */
+        val criteria: TaskFilterCriteria = TaskFilterCriteria(),
         val notificationsFilterType: Long = 0,
         val autoUpdateStatusFilterType: Long = 0,
         // Status filters from TaskFilterCriteria
@@ -2205,37 +2250,65 @@ class RoomTaskRepository(
     /**
      * Merge multiple group filter params into one (ANDing the conditions).
      */
+    /**
+     * Combines the group filters of every level into one set of parameters, ANDed.
+     *
+     * Nesting can put the same field at more than one level — a "high priority" level split again
+     * by a narrower priority range — and the levels have to intersect. Taking the later value
+     * instead meant the inner group showed tasks the outer one excludes.
+     */
     private fun mergeGroupFilterParams(params: List<GroupFilterParams>): GroupFilterParams {
         if (params.isEmpty()) return GroupFilterParams()
         if (params.size == 1) return params.first()
 
+        /** Intersecting two lower bounds keeps the higher; two upper bounds keep the lower. */
+        fun highest(a: Long?, b: Long?) = if (a == null || b == null) a ?: b else maxOf(a, b)
+        fun lowest(a: Long?, b: Long?) = if (a == null || b == null) a ?: b else minOf(a, b)
+
+        /** A flag two levels disagree on cannot be satisfied; 2 is the "match nothing" marker. */
+        fun bothOrNothing(a: Long?, b: Long?) = when {
+            a == null || b == null -> a ?: b
+            a == b -> a
+            else -> IMPOSSIBLE_FLAG
+        }
+
         var result = GroupFilterParams()
         for (p in params) {
-            // For each filter type, if it's applied (non-zero/non-null), use its value
-            // If both have values, they must both match (AND semantics)
             result = result.copy(
-                groupPriorityFilterType = if (p.groupPriorityFilterType != 0L) p.groupPriorityFilterType else result.groupPriorityFilterType,
-                groupPriorityMin = p.groupPriorityMin ?: result.groupPriorityMin,
-                groupPriorityMax = p.groupPriorityMax ?: result.groupPriorityMax,
-                groupDueDateFilterType = if (p.groupDueDateFilterType != 0L) p.groupDueDateFilterType else result.groupDueDateFilterType,
-                groupDueDateMin = p.groupDueDateMin ?: result.groupDueDateMin,
-                groupDueDateMax = p.groupDueDateMax ?: result.groupDueDateMax,
-                groupIsRecurring = p.groupIsRecurring ?: result.groupIsRecurring,
-                groupAutoUpdateStatus = p.groupAutoUpdateStatus ?: result.groupAutoUpdateStatus,
-                groupHasNotifications = p.groupHasNotifications ?: result.groupHasNotifications,
-                groupEstimatedTimeFilterType = if (p.groupEstimatedTimeFilterType != 0L) p.groupEstimatedTimeFilterType else result.groupEstimatedTimeFilterType,
-                groupEstimatedTimeMinSeconds = p.groupEstimatedTimeMinSeconds ?: result.groupEstimatedTimeMinSeconds,
-                groupEstimatedTimeMaxSeconds = p.groupEstimatedTimeMaxSeconds ?: result.groupEstimatedTimeMaxSeconds,
-                groupHasConnections = p.groupHasConnections ?: result.groupHasConnections,
-                groupStatusFilterType = if (p.groupStatusFilterType != 0L) p.groupStatusFilterType else result.groupStatusFilterType,
-                groupStatusOpen = if (p.groupStatusFilterType != 0L) p.groupStatusOpen else result.groupStatusOpen,
-                groupStatusInProgress = if (p.groupStatusFilterType != 0L) p.groupStatusInProgress else result.groupStatusInProgress,
-                groupStatusBlocked = if (p.groupStatusFilterType != 0L) p.groupStatusBlocked else result.groupStatusBlocked,
-                groupStatusDone = if (p.groupStatusFilterType != 0L) p.groupStatusDone else result.groupStatusDone,
-                groupStatusDeclined = if (p.groupStatusFilterType != 0L) p.groupStatusDeclined else result.groupStatusDeclined,
+                groupPriorityFilterType = maxOf(p.groupPriorityFilterType, result.groupPriorityFilterType),
+                groupPriorityMin = highest(p.groupPriorityMin, result.groupPriorityMin),
+                groupPriorityMax = lowest(p.groupPriorityMax, result.groupPriorityMax),
+                groupDueDateFilterType = maxOf(p.groupDueDateFilterType, result.groupDueDateFilterType),
+                groupDueDateMin = highest(p.groupDueDateMin, result.groupDueDateMin),
+                groupDueDateMax = lowest(p.groupDueDateMax, result.groupDueDateMax),
+                groupIsRecurring = bothOrNothing(p.groupIsRecurring, result.groupIsRecurring),
+                groupAutoUpdateStatus = bothOrNothing(p.groupAutoUpdateStatus, result.groupAutoUpdateStatus),
+                groupHasNotifications = bothOrNothing(p.groupHasNotifications, result.groupHasNotifications),
+                groupEstimatedTimeFilterType = maxOf(p.groupEstimatedTimeFilterType, result.groupEstimatedTimeFilterType),
+                groupEstimatedTimeMinSeconds = highest(p.groupEstimatedTimeMinSeconds, result.groupEstimatedTimeMinSeconds),
+                groupEstimatedTimeMaxSeconds = lowest(p.groupEstimatedTimeMaxSeconds, result.groupEstimatedTimeMaxSeconds),
+                groupHasConnections = bothOrNothing(p.groupHasConnections, result.groupHasConnections),
+                // Two status levels intersect to the statuses both allow.
+                groupStatusFilterType = maxOf(p.groupStatusFilterType, result.groupStatusFilterType),
+                groupStatusOpen = bothAllow(p, result) { it.groupStatusOpen },
+                groupStatusInProgress = bothAllow(p, result) { it.groupStatusInProgress },
+                groupStatusBlocked = bothAllow(p, result) { it.groupStatusBlocked },
+                groupStatusDone = bothAllow(p, result) { it.groupStatusDone },
+                groupStatusDeclined = bothAllow(p, result) { it.groupStatusDeclined },
             )
         }
         return result
+    }
+
+    /** A status is allowed only where both levels allow it; a level that does not filter allows all. */
+    private inline fun bothAllow(
+        a: GroupFilterParams,
+        b: GroupFilterParams,
+        flag: (GroupFilterParams) -> Long,
+    ): Long = when {
+        a.groupStatusFilterType == 0L -> flag(b)
+        b.groupStatusFilterType == 0L -> flag(a)
+        else -> if (flag(a) == 1L && flag(b) == 1L) 1L else 0L
     }
 
     // ============ Saved filter management ============

@@ -1087,6 +1087,56 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     }
 
     /**
+     * Whether a status satisfies the status criteria, including the free text inside it.
+     *
+     * The blocker ids, the blocker comment and the declined reason live inside the serialized
+     * status, so SQL can only narrow to the status *class*; this decides the rest. Both
+     * repositories call it, which is what keeps the filter panel meaning the same thing on the
+     * grouped path as on the plain one.
+     */
+    protected fun matchesStatusCriteria(
+        status: TaskStatus,
+        criteria: TaskFilterCriteria,
+        blockedByIds: Set<String> = parseTaskIds(criteria.blockedByTaskIds),
+    ): Boolean {
+        if (criteria.statusFilters.isEmpty()) return true
+        return criteria.statusFilters.any { statusFilter ->
+            when (statusFilter) {
+                is TaskStatus.Open -> status is TaskStatus.Open
+                is TaskStatus.InProgress -> status is TaskStatus.InProgress
+                is TaskStatus.Done -> status is TaskStatus.Done
+                is TaskStatus.Blocked -> status is TaskStatus.Blocked &&
+                        (blockedByIds.isEmpty() || status.blockerTaskIds.any { it.uppercase() in blockedByIds }) &&
+                        (criteria.blockedByComment.isBlank() ||
+                                status.comment.contains(criteria.blockedByComment, ignoreCase = true))
+
+                is TaskStatus.Declined -> status is TaskStatus.Declined &&
+                        (criteria.declinedReason.isBlank() ||
+                                status.reason.contains(criteria.declinedReason, ignoreCase = true))
+            }
+        }
+    }
+
+    /** The connection-id criteria, parsed once; see [matchesConnectionsByTaskIds]. */
+    protected fun connectionIdFilters(criteria: TaskFilterCriteria): Map<ConnectionType, Set<String>> = mapOf(
+        ConnectionType.DependsOn to parseTaskIds(criteria.dependsOnTaskIds),
+        ConnectionType.IsDependencyOf to parseTaskIds(criteria.isDependencyOfTaskIds),
+        ConnectionType.RelatesTo to parseTaskIds(criteria.relatesToTaskIds),
+        ConnectionType.SubtaskOf to parseTaskIds(criteria.subtaskOfTaskIds),
+        ConnectionType.ParentOf to parseTaskIds(criteria.parentOfTaskIds),
+    )
+
+    /** Whether the status criteria name text that only a decoded status can be matched against. */
+    protected fun TaskFilterCriteria.refinesStatusText(): Boolean =
+        statusFilters.isNotEmpty() &&
+                (blockedByTaskIds.isNotBlank() || blockedByComment.isNotBlank() || declinedReason.isNotBlank())
+
+    /** Whether the criteria name particular connected tasks, which needs a task's connections. */
+    protected fun TaskFilterCriteria.refinesByConnectionIds(): Boolean =
+        dependsOnTaskIds.isNotBlank() || isDependencyOfTaskIds.isNotBlank() || relatesToTaskIds.isNotBlank() ||
+                subtaskOfTaskIds.isNotBlank() || parentOfTaskIds.isNotBlank()
+
+    /**
      * Filter tasks based on the provided criteria.
      * This is the shared filtering logic used by both repository implementations.
      */
@@ -1102,13 +1152,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             ?.split(whitespace)
             .orEmpty()
         val blockedByIds = parseTaskIds(criteria.blockedByTaskIds)
-        val connectionIdFilters = mapOf(
-            ConnectionType.DependsOn to parseTaskIds(criteria.dependsOnTaskIds),
-            ConnectionType.IsDependencyOf to parseTaskIds(criteria.isDependencyOfTaskIds),
-            ConnectionType.RelatesTo to parseTaskIds(criteria.relatesToTaskIds),
-            ConnectionType.SubtaskOf to parseTaskIds(criteria.subtaskOfTaskIds),
-            ConnectionType.ParentOf to parseTaskIds(criteria.parentOfTaskIds),
-        )
+        val connectionIdFilters = connectionIdFilters(criteria)
 
         return tasks.filter { taskWithTotals ->
             val task = taskWithTotals.task
@@ -1129,35 +1173,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             }
 
             // Status filter (if any status selected, task must match one of them)
-            val matchesStatus = if (criteria.statusFilters.isEmpty()) true
-            else criteria.statusFilters.any { statusFilter ->
-                when (statusFilter) {
-                    is TaskStatus.Open -> task.status is TaskStatus.Open
-                    is TaskStatus.Blocked -> {
-                        if (task.status !is TaskStatus.Blocked) return@any false
-
-                        // Check blockedByTaskIds filter
-                        val matchesBlockerIds = blockedByIds.isEmpty() ||
-                                task.status.blockerTaskIds.any { it.uppercase() in blockedByIds }
-
-                        // Check blockedByComment filter
-                        val matchesComment = criteria.blockedByComment.isBlank() ||
-                                task.status.comment.contains(criteria.blockedByComment, ignoreCase = true)
-
-                        matchesBlockerIds && matchesComment
-                    }
-
-                    is TaskStatus.InProgress -> task.status is TaskStatus.InProgress
-                    is TaskStatus.Done -> task.status is TaskStatus.Done
-                    is TaskStatus.Declined -> {
-                        if (task.status !is TaskStatus.Declined) return@any false
-
-                        // Check declinedReason filter
-                        criteria.declinedReason.isBlank() ||
-                                task.status.reason.contains(criteria.declinedReason, ignoreCase = true)
-                    }
-                }
-            }
+            val matchesStatus = matchesStatusCriteria(task.status, criteria, blockedByIds)
 
             // Due date filter
             val dueDate = task.dueDate

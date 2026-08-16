@@ -158,6 +158,9 @@ tasks.withType<Test>().matching { it.name.contains("AndroidHostTest", ignoreCase
         // die on "openOrCreateDatabase not mocked". The jvm suite covers the same classes against
         // the bundled driver. Matched by name rather than listed one by one, so adding a suite
         // does not quietly add a failing Android test.
+        // Suites that open a database: `Database*Test` are the per-implementation ones, which
+        // AndroidDatabaseTests re-declares with a Robolectric runner, and `*ComparisonTest` are
+        // the ones that drive both implementations at once and have no per-platform subclass.
         exclude("**/Database*Test.class")
-        exclude("**/GroupedTaskQueriesComparisonTest.class")
+        exclude("**/*ComparisonTest.class")
     }

@@ -23,13 +23,12 @@ val commonTimezones = listOf(
     "America/Los_Angeles",
     "America/Anchorage",
     "America/Juneau",
-    "America/Honolulu",
+    "Pacific/Honolulu",
     // North America - Canada
     "America/Toronto",
     "America/Vancouver",
     "America/Montreal",
     "America/Edmonton",
-    "America/Calgary",
     "America/Winnipeg",
     "America/Halifax",
     "America/St_Johns",
@@ -46,7 +45,7 @@ val commonTimezones = listOf(
     // South America
     "America/Bogota",
     "America/Lima",
-    "America/Quito",
+    "America/Guayaquil",
     "America/Santiago",
     "America/Buenos_Aires",
     "America/Sao_Paulo",
@@ -62,7 +61,6 @@ val commonTimezones = listOf(
     "Europe/Lisbon",
     "Europe/Paris",
     "Europe/Madrid",
-    "Europe/Barcelona",
     "Europe/Berlin",
     "Europe/Amsterdam",
     "Europe/Brussels",
@@ -70,7 +68,6 @@ val commonTimezones = listOf(
     "Europe/Zurich",
     "Europe/Vienna",
     "Europe/Rome",
-    "Europe/Milan",
     "Europe/Monaco",
     // Central Europe
     "Europe/Prague",
@@ -83,7 +80,7 @@ val commonTimezones = listOf(
     "Europe/Sarajevo",
     "Europe/Skopje",
     "Europe/Podgorica",
-    "Europe/Tirana",
+    "Europe/Tirane",
     // Northern Europe
     "Europe/Stockholm",
     "Europe/Oslo",
@@ -92,7 +89,7 @@ val commonTimezones = listOf(
     "Europe/Tallinn",
     "Europe/Riga",
     "Europe/Vilnius",
-    "Europe/Reykjavik",
+    "Atlantic/Reykjavik",
     // Eastern Europe
     "Europe/Athens",
     "Europe/Bucharest",
@@ -123,14 +120,11 @@ val commonTimezones = listOf(
     "Africa/Khartoum",
     // Africa - South
     "Africa/Johannesburg",
-    "Africa/Cape_Town",
     "Africa/Harare",
     "Africa/Lusaka",
     // Middle East
     "Asia/Dubai",
-    "Asia/Abu_Dhabi",
     "Asia/Riyadh",
-    "Asia/Jeddah",
     "Asia/Tehran",
     "Asia/Jerusalem",
     "Asia/Tel_Aviv",
@@ -153,13 +147,8 @@ val commonTimezones = listOf(
     "Asia/Yerevan",
     // South Asia
     "Asia/Kolkata",
-    "Asia/Mumbai",
-    "Asia/Delhi",
-    "Asia/Bangalore",
-    "Asia/Chennai",
     "Asia/Dhaka",
     "Asia/Karachi",
-    "Asia/Lahore",
     "Asia/Colombo",
     "Asia/Kathmandu",
     "Asia/Thimphu",
@@ -169,7 +158,6 @@ val commonTimezones = listOf(
     "Asia/Singapore",
     "Asia/Kuala_Lumpur",
     "Asia/Ho_Chi_Minh",
-    "Asia/Hanoi",
     "Asia/Manila",
     "Asia/Phnom_Penh",
     "Asia/Vientiane",
@@ -180,12 +168,10 @@ val commonTimezones = listOf(
     "Asia/Macau",
     "Asia/Taipei",
     "Asia/Shanghai",
-    "Asia/Beijing",
     "Asia/Chongqing",
     "Asia/Seoul",
     "Asia/Pyongyang",
     "Asia/Tokyo",
-    "Asia/Osaka",
     "Asia/Ulaanbaatar",
     // Russia - Asian
     "Asia/Vladivostok",
@@ -208,9 +194,7 @@ val commonTimezones = listOf(
     "Australia/Canberra",
     // Pacific
     "Pacific/Auckland",
-    "Pacific/Wellington",
     "Pacific/Fiji",
-    "Pacific/Honolulu",
     "Pacific/Guam",
     "Pacific/Port_Moresby",
     "Pacific/Noumea",
@@ -221,7 +205,6 @@ val commonTimezones = listOf(
     "Atlantic/Azores",
     "Atlantic/Canary",
     "Atlantic/Bermuda",
-    "Atlantic/Reykjavik"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

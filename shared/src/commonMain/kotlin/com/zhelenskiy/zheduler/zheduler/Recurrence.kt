@@ -654,6 +654,9 @@ data class RecurrenceState(
 /**
  * Service for calculating next occurrence dates and managing recurrence
  */
+/** How far ahead a fixed-point search looks before deciding a pattern has no next occurrence. */
+private const val MONTHS_SEARCHED_FOR_FIXED_POINTS = 24
+
 object RecurrenceCalculator {
     
     /**
@@ -712,7 +715,7 @@ object RecurrenceCalculator {
         trigger: RecurrenceTrigger.AtFixedPoints,
         currentState: RecurrenceState,
         fromTime: Instant
-    ): Instant {
+    ): Instant? {
         val tz = trigger.timezone.toTimeZone()
         // Find the maximum of the three instants
         val searchFrom = listOf(
@@ -793,7 +796,7 @@ object RecurrenceCalculator {
         pattern: FixedPointPattern.NthDayOfWeekInMonth,
         from: Instant,
         tz: TimeZone
-    ): Instant {
+    ): Instant? {
         val fromDateTime = from.toLocalDateTime(tz)
         var currentMonth = LocalDate(fromDateTime.date.year, fromDateTime.date.month, 1)
         val targetTime = LocalTime(pattern.timeOfDay.hour, pattern.timeOfDay.minute, pattern.timeOfDay.second)
@@ -810,15 +813,23 @@ object RecurrenceCalculator {
                 return targetDateTime.toInstant(tz)
             }
         }
-        
-        // Move to next month
-        currentMonth = currentMonth.plus(1, DateTimeUnit.MONTH)
-        val nextTargetDate = findNthDayOfWeekInMonth(
-            currentMonth.year, currentMonth.month,
-            pattern.ordinal, pattern.dayOfWeek
-        ) ?: error("Could not find nth day of week in month")
 
-        return LocalDateTime(nextTargetDate, targetTime).toInstant(tz)
+        // Keep looking month by month. Most months have no fifth Tuesday, so checking only the
+        // next one and giving up threw for any FIFTH pattern whose following month lacks it --
+        // from inside the recurrence sweep, where nothing catches it. Two years is the same
+        // horizon findNextNthDayOfWeekInMonths searches.
+        repeat(MONTHS_SEARCHED_FOR_FIXED_POINTS) {
+            currentMonth = currentMonth.plus(1, DateTimeUnit.MONTH)
+            val candidate = findNthDayOfWeekInMonth(
+                currentMonth.year, currentMonth.month,
+                pattern.ordinal, pattern.dayOfWeek
+            )
+            if (candidate != null) {
+                val candidateTime = LocalDateTime(candidate, targetTime).toInstant(tz)
+                if (candidateTime > from) return candidateTime
+            }
+        }
+        return null
     }
     
     private fun findNextYearlyDate(
@@ -856,7 +867,7 @@ object RecurrenceCalculator {
         pattern: FixedPointPattern.NthDayOfWeekInMonths,
         from: Instant,
         tz: TimeZone
-    ): Instant {
+    ): Instant? {
         val fromDateTime = from.toLocalDateTime(tz)
         val targetTime = LocalTime(pattern.timeOfDay.hour, pattern.timeOfDay.minute, pattern.timeOfDay.second)
         
@@ -864,8 +875,8 @@ object RecurrenceCalculator {
         var year = fromDateTime.year
         var month = fromDateTime.month
         
-        // Search up to 24 months ahead
-        for (i in 0 until 24) {
+        // Search up to two years ahead
+        for (i in 0 until MONTHS_SEARCHED_FOR_FIXED_POINTS) {
             val recMonth = RecurrenceMonth.fromKotlinxMonth(month)
             if (recMonth in pattern.months) {
                 val targetDate = findNthDayOfWeekInMonth(year, month, pattern.ordinal, pattern.dayOfWeek)
@@ -886,8 +897,9 @@ object RecurrenceCalculator {
             }
         }
         
-        // Fallback - shouldn't reach here normally
-        return from
+        // No occurrence within the horizon. Returning `from` instead made the task permanently
+        // due: every later event saw a next date already in the past and fired the rule again.
+        return null
     }
     
     private fun findNthDayOfWeekInMonth(

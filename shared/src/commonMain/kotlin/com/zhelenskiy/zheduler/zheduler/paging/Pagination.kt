@@ -44,11 +44,19 @@ class OffsetPagingSource<T : Any>(
     override val jumpingSupported: Boolean get() = true
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, T> = try {
-        val offset = (params.key ?: 0).coerceAtLeast(0)
-        val page = loadPage(offset, params.loadSize)
+        val key = (params.key ?: 0).coerceAtLeast(0)
+        // A prepend's key is where the data already loaded begins, so it reads the window *ending*
+        // there. Reading forward from the key instead assumed every load was the same size, and a
+        // refresh is not: with a 60-item refresh followed by 30-item prepends, prevKey pointed 60
+        // back while only 30 were fetched, leaving 30 items that were never loaded at all.
+        val prepend = params is LoadParams.Prepend
+        val offset = if (prepend) (key - params.loadSize).coerceAtLeast(0) else key
+        val limit = if (prepend) key - offset else params.loadSize
+
+        val page = if (limit == 0) Page(emptyList(), offset, totalCount = null) else loadPage(offset, limit)
         LoadResult.Page(
             data = page.items,
-            prevKey = if (offset == 0) null else (offset - params.loadSize).coerceAtLeast(0),
+            prevKey = if (offset == 0) null else offset,
             nextKey = if (page.hasMore && page.items.isNotEmpty()) offset + page.items.size else null,
         )
     } catch (e: CancellationException) {
@@ -60,9 +68,8 @@ class OffsetPagingSource<T : Any>(
     override fun getRefreshKey(state: PagingState<Int, T>): Int? {
         val anchorPosition = state.anchorPosition ?: return null
         val anchorPage = state.closestPageToPosition(anchorPosition) ?: return null
-        return anchorPage.prevKey?.plus(state.config.pageSize)
-            ?: anchorPage.nextKey?.minus(state.config.pageSize)
-            ?: 0
+        // prevKey is the page's own offset; for the first page it is null and the offset is 0.
+        return anchorPage.prevKey ?: anchorPage.nextKey?.minus(anchorPage.data.size) ?: 0
     }
 }
 

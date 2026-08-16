@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -79,10 +78,13 @@ fun TaskDescriptionField(
                 val shortcut = event.isMetaPressed || event.isCtrlPressed
                 when {
                     !shortcut -> false
-                    event.key == Key.Z && event.isShiftPressed -> history.redo()?.let(restore) != null
-                    event.key == Key.Z -> history.undo()?.let(restore) != null
+                    // Consumed either way: a null result means the mounted editor's own history
+                    // handled the step, and letting the event through would run the field's
+                    // built-in undo on top of it — two steps for one keystroke.
+                    event.key == Key.Z && event.isShiftPressed -> { history.redo()?.let(restore); true }
+                    event.key == Key.Z -> { history.undo()?.let(restore); true }
                     // Windows and Linux redo.
-                    event.key == Key.Y -> history.redo()?.let(restore) != null
+                    event.key == Key.Y -> { history.redo()?.let(restore); true }
                     else -> false
                 }
             },
