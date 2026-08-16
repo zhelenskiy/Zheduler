@@ -1,6 +1,10 @@
 package com.zhelenskiy.zheduler.zheduler.db
 
 import androidx.room3.Room
+import com.zhelenskiy.zheduler.zheduler.EstimatedTimeFilter
+import com.zhelenskiy.zheduler.zheduler.RecurrencePeriod
+import com.zhelenskiy.zheduler.zheduler.TaskFilterCriteria
+import kotlinx.collections.immutable.persistentListOf
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
@@ -49,6 +53,18 @@ class LegacySqlDelightSchemaCompatibilityTest {
                 assertEquals(setOf("legacy"), task.tags)
                 assertEquals(1, repository.getStatusTimeline("LEG-1").size)
 
+                assertEquals(RecurrencePeriod(hours = 2), task.estimatedTime)
+
+                // The estimate is filtered on through the column the migration backfilled, so this
+                // only finds the task if the backfill computed it from the legacy JSON.
+                val longTasks = repository.getTasksForGroup(
+                    spaceId = spaces.single().id,
+                    filters = persistentListOf(),
+                    orderingRules = persistentListOf(),
+                    filterCriteria = TaskFilterCriteria(estimatedTimeFilter = EstimatedTimeFilter.Long),
+                )
+                assertEquals(listOf("LEG-1"), longTasks.map { it.task.id })
+
                 // Writing still works against the adopted file.
                 assertTrue(repository.addTask(spaces.single().id, "New task", "", task.status) != null)
                 assertEquals(2, repository.getAllTasks(spaces.single().id).size)
@@ -65,7 +81,7 @@ class LegacySqlDelightSchemaCompatibilityTest {
             assertEquals(1L, hasMasterTable, "Room should have adopted the database")
 
             val version = connection.prepare("PRAGMA user_version").use { it.step(); it.getLong(0) }
-            assertEquals(2L, version, "the adopted database should have been migrated")
+            assertEquals(3L, version, "the adopted database should have been migrated")
 
             // What the migration is for: the legacy file carried these, the current schema does not.
             listOf("idx_tasks_id_search", "idx_tasks_estimatedTimeJson", "idx_tasks_notificationsJson")
@@ -98,7 +114,8 @@ class LegacySqlDelightSchemaCompatibilityTest {
                               tagsJson, notificationsJson, spaceId, recurrenceRulesJson,
                               autoUpdateStatusFromSubtasks, isRecurring, isBlocked)
             VALUES ('LEG-1', 'Old task', '', '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"}',
-                    NULL, NULL, NULL, '["legacy"]', '[]', 'space-0-LEG', '[]', 0, 0, 0)
+                    NULL, NULL, '{"years":0,"months":0,"weeks":0,"days":0,"hours":2,"minutes":0,"seconds":0}',
+                    '["legacy"]', '[]', 'space-0-LEG', '[]', 0, 0, 0)
             """
         )
         connection.execSQL("INSERT INTO task_tags(taskId, tag) VALUES ('LEG-1', 'legacy')")

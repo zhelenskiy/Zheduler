@@ -9,6 +9,7 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentList
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -34,9 +35,58 @@ class TaskFormState(
     var dueDate by mutableStateOf(initialDueDate)
     var status by mutableStateOf(initialStatus)
     var connections by mutableStateOf(initialConnections)
-    var notifications by mutableStateOf(initialNotifications)
-    var recurrenceRules by mutableStateOf(initialRecurrenceRules)
     var autoUpdateStatusFromSubtasks by mutableStateOf(initialAutoUpdateStatusFromSubtasks)
+
+    private var nextEntryId = 0L
+
+    var notifications by mutableStateOf(initialNotifications)
+        private set
+    var recurrenceRules by mutableStateOf(initialRecurrenceRules)
+        private set
+
+    /**
+     * An identity per entry, kept alongside the two editable lists and reused as their list keys.
+     *
+     * Neither list has anything to be keyed by: notifications are plain strings that repeat, and a
+     * rule is only its own definition. Keyed by position instead, deleting from the middle animates
+     * as though the last row went, because every row below it changes key.
+     */
+    var notificationIds by mutableStateOf(freshIds(initialNotifications.size))
+        private set
+    var recurrenceRuleIds by mutableStateOf(freshIds(initialRecurrenceRules.size))
+        private set
+
+    private fun freshIds(count: Int): PersistentList<Long> =
+        List(count) { nextEntryId++ }.toPersistentList()
+
+    fun addNotification() {
+        notifications = notifications.adding("")
+        notificationIds = notificationIds.adding(nextEntryId++)
+    }
+
+    fun updateNotification(index: Int, value: String) {
+        notifications = notifications.replacingAt(index, value)
+    }
+
+    fun removeNotification(index: Int) {
+        notifications = notifications.removingAt(index)
+        notificationIds = notificationIds.removingAt(index)
+    }
+
+    /** Replaces the rule at [index], or appends it when [index] is past the end. */
+    fun setRecurrenceRule(index: Int, entry: Pair<RecurrenceRule, RecurrenceState>) {
+        if (index < recurrenceRules.size) {
+            recurrenceRules = recurrenceRules.replacingAt(index, entry)
+        } else {
+            recurrenceRules = recurrenceRules.adding(entry)
+            recurrenceRuleIds = recurrenceRuleIds.adding(nextEntryId++)
+        }
+    }
+
+    fun removeRecurrenceRule(index: Int) {
+        recurrenceRules = recurrenceRules.removingAt(index)
+        recurrenceRuleIds = recurrenceRuleIds.removingAt(index)
+    }
 
     val isFormValid: Boolean
         get() = title.isNotBlank() &&
@@ -83,6 +133,8 @@ class TaskFormState(
         connections = task.connections
         notifications = task.notifications.mapToPersistentList { it.timeBeforeDeadline.toBriefString() }
         recurrenceRules = task.recurrenceRules
+        notificationIds = freshIds(notifications.size)
+        recurrenceRuleIds = freshIds(recurrenceRules.size)
         autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
     }
 

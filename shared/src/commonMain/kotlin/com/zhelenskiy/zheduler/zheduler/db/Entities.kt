@@ -70,6 +70,13 @@ data class Tasks(
     @ColumnInfo(defaultValue = "0") val autoUpdateStatusFromSubtasks: Long,
     @ColumnInfo(defaultValue = "0") val isRecurring: Long,
     @ColumnInfo(defaultValue = "0") val isBlocked: Long,
+    /**
+     * [estimatedTimeJson] totalled into seconds, the way RecurrencePeriod.toApproximateSeconds
+     * does it. Derived like [isRecurring] and [isBlocked]: the filters compare estimates as a
+     * single number, and summing seven components out of JSON in every one of them was both
+     * unreadable and impossible to index.
+     */
+    val estimatedTimeSeconds: Long?,
 )
 
 /** Normalized counterpart of [Tasks.tagsJson], used for efficient tag lookups. */

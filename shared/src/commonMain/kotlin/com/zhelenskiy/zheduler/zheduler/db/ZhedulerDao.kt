@@ -118,10 +118,10 @@ interface ZhedulerDao {
         """
         INSERT INTO tasks(id, title, description, status, dueDate, priority, estimatedTimeJson,
                            tagsJson, notificationsJson, spaceId, recurrenceRulesJson, autoUpdateStatusFromSubtasks,
-                           isRecurring, isBlocked)
+                           isRecurring, isBlocked, estimatedTimeSeconds)
         VALUES (:id, :title, :description, :status, :dueDate, :priority, :estimatedTimeJson,
                 :tagsJson, :notificationsJson, :spaceId, :recurrenceRulesJson, :autoUpdateStatusFromSubtasks,
-                :isRecurring, :isBlocked)
+                :isRecurring, :isBlocked, :estimatedTimeSeconds)
         """
     )
     suspend fun insertTask(
@@ -139,6 +139,7 @@ interface ZhedulerDao {
         autoUpdateStatusFromSubtasks: Long,
         isRecurring: Long,
         isBlocked: Long,
+        estimatedTimeSeconds: Long?,
     )
 
     @Query(
@@ -156,7 +157,8 @@ interface ZhedulerDao {
             recurrenceRulesJson = :recurrenceRulesJson,
             autoUpdateStatusFromSubtasks = :autoUpdateStatusFromSubtasks,
             isRecurring = :isRecurring,
-            isBlocked = :isBlocked
+            isBlocked = :isBlocked,
+            estimatedTimeSeconds = :estimatedTimeSeconds
         WHERE id = :id
         """
     )
@@ -174,6 +176,7 @@ interface ZhedulerDao {
         autoUpdateStatusFromSubtasks: Long,
         isRecurring: Long,
         isBlocked: Long,
+        estimatedTimeSeconds: Long?,
         id: String,
     )
 
@@ -190,6 +193,27 @@ interface ZhedulerDao {
 
     @Query("SELECT * FROM tasks WHERE isBlocked = 1")
     suspend fun getBlockedTasks(): List<Tasks>
+
+    /**
+     * Candidates for "blocked by this task": every row whose status mentions the id in quotes.
+     *
+     * Deliberately a superset. Blockers live in a JSON array inside the status, and matching the
+     * quoted id against the whole column also matches one written in a comment. Both callers
+     * already re-check membership against the decoded status, so a few extra rows cost nothing,
+     * whereas a missed row would leave a task blocked by something already resolved.
+     *
+     * Matching this way rather than with `json_each` keeps the query working on Android's own
+     * SQLite, which the host tests run against and which has no JSON functions. Quoting the id is
+     * what makes it exact enough to be worth doing: `"TEST-1"` does not occur inside `"TEST-10"`.
+     * Task ids are letters, digits and a dash, so none of them are LIKE wildcards.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE isBlocked = 1 AND status LIKE '%"' || :blockerTaskId || '"%'
+        """
+    )
+    suspend fun getTasksBlockedBy(blockerTaskId: String): List<Tasks>
 
     // ============ Connection queries ============
 
@@ -426,208 +450,7 @@ interface ZhedulerDao {
     // filter is not applied.
 
     /** Filtered tasks matching group filter conditions. */
-    @Query(
-        """
-        SELECT t.* FROM tasks t
-        WHERE t.spaceId = :spaceId
-          -- Text search
-          AND (
-            :searchQuery IS NULL
-            OR :searchQuery = ''
-            OR (:searchInId = 1 AND LOWER(t.id) LIKE '%' || LOWER(:searchQuery) || '%')
-            OR (:searchInTitle = 1 AND LOWER(t.title) LIKE '%' || LOWER(:searchQuery) || '%')
-            OR (:searchInDescription = 1 AND LOWER(t.description) LIKE '%' || LOWER(:searchQuery) || '%')
-            OR (:searchInTags = 1 AND LOWER(t.tagsJson) LIKE '%' || LOWER(:searchQuery) || '%')
-          )
-          -- TaskFilterCriteria filters
-          AND (
-            :priorityFilterType = 0
-            OR (:priorityFilterType = 1 AND t.priority >= 75)
-            OR (:priorityFilterType = 2 AND t.priority >= 50 AND t.priority < 75)
-            OR (:priorityFilterType = 3 AND t.priority >= 1 AND t.priority < 50)
-            OR (:priorityFilterType = 4 AND t.priority IS NULL)
-            OR (:priorityFilterType = 5 AND (t.priority IS NOT NULL AND (:customPriorityMin IS NULL OR t.priority >= :customPriorityMin) AND (:customPriorityMax IS NULL OR t.priority <= :customPriorityMax)))
-          )
-          AND (
-            :dueDateFilterType = 0
-            OR (:dueDateFilterType = 1 AND t.dueDate IS NOT NULL AND t.dueDate < :nowMillis)
-            OR (:dueDateFilterType = 2 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :todayEndMillis)
-            OR (:dueDateFilterType = 3 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :weekEndMillis)
-            OR (:dueDateFilterType = 4 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :monthEndMillis)
-            OR (:dueDateFilterType = 5 AND t.dueDate IS NULL)
-            OR (:dueDateFilterType = 6 AND ((:customDueDateAfter IS NULL OR t.dueDate >= :customDueDateAfter) AND (:customDueDateBefore IS NULL OR t.dueDate <= :customDueDateBefore)))
-          )
-          -- Estimated time filter. RecurrencePeriod is stored as its component fields, so the
-          -- total has to be summed the same way RecurrencePeriod.toApproximateSeconds does
-          -- (365-day years, 30-day months). There is no stored total to read.
-          -- 1 = no estimate, 2 = bucket [min, max), 3 = custom [min, max]; bounds are optional.
-          AND (
-            :estimatedTimeFilterType = 0
-            OR (:estimatedTimeFilterType = 1 AND t.estimatedTimeJson IS NULL)
-            OR (:estimatedTimeFilterType = 2 AND t.estimatedTimeJson IS NOT NULL
-              AND (:estimatedTimeMinSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) >= :estimatedTimeMinSeconds)
-              AND (:estimatedTimeMaxSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) < :estimatedTimeMaxSeconds))
-            OR (:estimatedTimeFilterType = 3 AND t.estimatedTimeJson IS NOT NULL
-              AND (:estimatedTimeMinSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) >= :estimatedTimeMinSeconds)
-              AND (:estimatedTimeMaxSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) <= :estimatedTimeMaxSeconds))
-          )
-          -- SQL only separates "recurs" from "does not"; which kind of rule lives inside
-          -- recurrenceRulesJson and is refined in Kotlin by RecurrenceFilter.matches.
-          AND (
-            :recurrenceFilterType = 0
-            OR (:recurrenceFilterType = 1 AND t.isRecurring = 0)
-            OR (:recurrenceFilterType = 2 AND t.isRecurring = 1)
-          )
-          AND (
-            :notificationsFilterType = 0
-            OR (:notificationsFilterType = 1 AND t.notificationsJson = '[]')
-            OR (:notificationsFilterType = 2 AND t.notificationsJson != '[]')
-          )
-          AND (
-            :autoUpdateStatusFilterType = 0
-            OR (:autoUpdateStatusFilterType = 1 AND t.autoUpdateStatusFromSubtasks = 1)
-            OR (:autoUpdateStatusFilterType = 2 AND t.autoUpdateStatusFromSubtasks = 0)
-          )
-          -- Group filter: Priority range
-          AND (
-            :groupPriorityFilterType = 0 -- Not applied
-            OR (:groupPriorityFilterType = 1 AND t.priority IS NULL) -- Include null only
-            OR (:groupPriorityFilterType = 2 AND t.priority IS NOT NULL AND (:groupPriorityMin IS NULL OR t.priority >= :groupPriorityMin) AND (:groupPriorityMax IS NULL OR t.priority <= :groupPriorityMax)) -- Range only
-            OR (:groupPriorityFilterType = 3 AND (t.priority IS NULL OR ((:groupPriorityMin IS NULL OR t.priority >= :groupPriorityMin) AND (:groupPriorityMax IS NULL OR t.priority <= :groupPriorityMax)))) -- Null + Range
-          )
-          -- Group filter: Due date range (days from today)
-          AND (
-            :groupDueDateFilterType = 0 -- Not applied
-            OR (:groupDueDateFilterType = 1 AND t.dueDate IS NULL) -- Include null only
-            OR (:groupDueDateFilterType = 2 AND t.dueDate IS NOT NULL AND (:groupDueDateMin IS NULL OR t.dueDate >= :groupDueDateMin) AND (:groupDueDateMax IS NULL OR t.dueDate <= :groupDueDateMax)) -- Range only
-            OR (:groupDueDateFilterType = 3 AND (t.dueDate IS NULL OR ((:groupDueDateMin IS NULL OR t.dueDate >= :groupDueDateMin) AND (:groupDueDateMax IS NULL OR t.dueDate <= :groupDueDateMax)))) -- Null + Range
-          )
-          -- Group filter: Boolean fields
-          AND (:groupIsRecurring IS NULL OR t.isRecurring = :groupIsRecurring)
-          AND (:groupAutoUpdateStatus IS NULL OR t.autoUpdateStatusFromSubtasks = :groupAutoUpdateStatus)
-          AND (:groupHasNotifications IS NULL OR ((:groupHasNotifications = 1 AND t.notificationsJson != '[]') OR (:groupHasNotifications = 0 AND t.notificationsJson = '[]')))
-          -- Group filter: Estimated time range (in seconds)
-          -- RecurrencePeriod JSON has fields: years, months, weeks, days, hours, minutes, seconds
-          AND (
-            :groupEstimatedTimeFilterType = 0 -- Not applied
-            OR (:groupEstimatedTimeFilterType = 1 AND t.estimatedTimeJson IS NULL) -- Include null only
-            OR (:groupEstimatedTimeFilterType = 2 AND t.estimatedTimeJson IS NOT NULL AND (
-              :groupEstimatedTimeMinSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) >= :groupEstimatedTimeMinSeconds
-            ) AND (
-              :groupEstimatedTimeMaxSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) <= :groupEstimatedTimeMaxSeconds
-            )) -- Range only
-            OR (:groupEstimatedTimeFilterType = 3 AND (t.estimatedTimeJson IS NULL OR (
-              (:groupEstimatedTimeMinSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) >= :groupEstimatedTimeMinSeconds) AND
-              (:groupEstimatedTimeMaxSeconds IS NULL OR (
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.years') AS INTEGER), 0) * 365 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.months') AS INTEGER), 0) * 30 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.weeks') AS INTEGER), 0) * 7 * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.days') AS INTEGER), 0) * 24 * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.hours') AS INTEGER), 0) * 3600 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.minutes') AS INTEGER), 0) * 60 +
-                COALESCE(CAST(json_extract(t.estimatedTimeJson, '$.seconds') AS INTEGER), 0)
-              ) <= :groupEstimatedTimeMaxSeconds)
-            ))) -- Null + Range
-          )
-          -- Group filter: Has connections
-          AND (
-            :groupHasConnections IS NULL
-            OR (:groupHasConnections = 1 AND EXISTS (SELECT 1 FROM task_connections WHERE sourceTaskId = t.id))
-            OR (:groupHasConnections = 0 AND NOT EXISTS (SELECT 1 FROM task_connections WHERE sourceTaskId = t.id))
-          )
-          -- Group filter: Status values (multiple patterns with OR, up to 5 status types)
-          -- Status is serialized as {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"} etc.
-          AND (
-            :groupStatusFilterType = 0 -- Not applied
-            OR (
-              (:groupStatusOpen = 1 AND t.status LIKE '%TaskStatus.Open%')
-              OR (:groupStatusInProgress = 1 AND t.status LIKE '%TaskStatus.InProgress%')
-              OR (:groupStatusBlocked = 1 AND t.status LIKE '%TaskStatus.Blocked%')
-              OR (:groupStatusDone = 1 AND t.status LIKE '%TaskStatus.Done%')
-              OR (:groupStatusDeclined = 1 AND t.status LIKE '%TaskStatus.Declined%')
-            )
-          )
-          -- TaskFilterCriteria: Status filters (additional filtering by status types)
-          AND (
-            :criteriaStatusFilterType = 0
-            OR (
-              (:criteriaStatusOpen = 1 AND t.status LIKE '%TaskStatus.Open%')
-              OR (:criteriaStatusInProgress = 1 AND t.status LIKE '%TaskStatus.InProgress%')
-              OR (:criteriaStatusBlocked = 1 AND t.status LIKE '%TaskStatus.Blocked%')
-              OR (:criteriaStatusDone = 1 AND t.status LIKE '%TaskStatus.Done%')
-              OR (:criteriaStatusDeclined = 1 AND t.status LIKE '%TaskStatus.Declined%')
-            )
-          )
-          -- TaskFilterCriteria: Connection type filters
-          AND (
-            :connectionFilterType = 0 -- Not applied
-            OR (
-              (:requireDependsOn = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'DependsOn'))
-              AND (:requireIsDependencyOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'IsDependencyOf'))
-              AND (:requireRelatesTo = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'RelatesTo'))
-              AND (:requireSubtaskOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
-              AND (:requireParentOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'ParentOf'))
-              AND (:requireNotSubtask = 0 OR NOT EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
-            )
-          )
-        """
-    )
+    @Query("SELECT t.* FROM tasks t " + FILTERED_TASKS_WHERE)
     suspend fun getTasksFilteredWithGroupFilter(
         spaceId: String,
         searchQuery: String?,
@@ -686,6 +509,126 @@ interface ZhedulerDao {
         requireNotSubtask: Long,
     ): List<Tasks>
 
+    /** How many tasks [getTasksFilteredWithGroupFilter] would return, without reading them. */
+    @Query("SELECT COUNT(*) FROM tasks t " + FILTERED_TASKS_WHERE)
+    suspend fun countTasksFilteredWithGroupFilter(
+        spaceId: String,
+        searchQuery: String?,
+        searchInId: Long,
+        searchInTitle: Long,
+        searchInDescription: Long,
+        searchInTags: Long,
+        priorityFilterType: Long,
+        customPriorityMin: Long?,
+        customPriorityMax: Long?,
+        dueDateFilterType: Long,
+        nowMillis: Long,
+        todayStartMillis: Long,
+        todayEndMillis: Long,
+        weekEndMillis: Long,
+        monthEndMillis: Long,
+        customDueDateAfter: Long?,
+        customDueDateBefore: Long?,
+        estimatedTimeFilterType: Long,
+        estimatedTimeMinSeconds: Long?,
+        estimatedTimeMaxSeconds: Long?,
+        recurrenceFilterType: Long,
+        notificationsFilterType: Long,
+        autoUpdateStatusFilterType: Long,
+        groupPriorityFilterType: Long,
+        groupPriorityMin: Long?,
+        groupPriorityMax: Long?,
+        groupDueDateFilterType: Long,
+        groupDueDateMin: Long?,
+        groupDueDateMax: Long?,
+        groupIsRecurring: Long?,
+        groupAutoUpdateStatus: Long?,
+        groupHasNotifications: Long?,
+        groupEstimatedTimeFilterType: Long,
+        groupEstimatedTimeMinSeconds: Long?,
+        groupEstimatedTimeMaxSeconds: Long?,
+        groupHasConnections: Long?,
+        groupStatusFilterType: Long,
+        groupStatusOpen: Long,
+        groupStatusInProgress: Long,
+        groupStatusBlocked: Long,
+        groupStatusDone: Long,
+        groupStatusDeclined: Long,
+        criteriaStatusFilterType: Long,
+        criteriaStatusOpen: Long,
+        criteriaStatusInProgress: Long,
+        criteriaStatusBlocked: Long,
+        criteriaStatusDone: Long,
+        criteriaStatusDeclined: Long,
+        connectionFilterType: Long,
+        requireDependsOn: Long,
+        requireIsDependencyOf: Long,
+        requireRelatesTo: Long,
+        requireSubtaskOf: Long,
+        requireParentOf: Long,
+        requireNotSubtask: Long,
+    ): Int
+
+    /** Ids of what [getTasksFilteredWithGroupFilter] would return, without its columns. */
+    @Query("SELECT t.id FROM tasks t " + FILTERED_TASKS_WHERE)
+    suspend fun getTaskIdsFilteredWithGroupFilter(
+        spaceId: String,
+        searchQuery: String?,
+        searchInId: Long,
+        searchInTitle: Long,
+        searchInDescription: Long,
+        searchInTags: Long,
+        priorityFilterType: Long,
+        customPriorityMin: Long?,
+        customPriorityMax: Long?,
+        dueDateFilterType: Long,
+        nowMillis: Long,
+        todayStartMillis: Long,
+        todayEndMillis: Long,
+        weekEndMillis: Long,
+        monthEndMillis: Long,
+        customDueDateAfter: Long?,
+        customDueDateBefore: Long?,
+        estimatedTimeFilterType: Long,
+        estimatedTimeMinSeconds: Long?,
+        estimatedTimeMaxSeconds: Long?,
+        recurrenceFilterType: Long,
+        notificationsFilterType: Long,
+        autoUpdateStatusFilterType: Long,
+        groupPriorityFilterType: Long,
+        groupPriorityMin: Long?,
+        groupPriorityMax: Long?,
+        groupDueDateFilterType: Long,
+        groupDueDateMin: Long?,
+        groupDueDateMax: Long?,
+        groupIsRecurring: Long?,
+        groupAutoUpdateStatus: Long?,
+        groupHasNotifications: Long?,
+        groupEstimatedTimeFilterType: Long,
+        groupEstimatedTimeMinSeconds: Long?,
+        groupEstimatedTimeMaxSeconds: Long?,
+        groupHasConnections: Long?,
+        groupStatusFilterType: Long,
+        groupStatusOpen: Long,
+        groupStatusInProgress: Long,
+        groupStatusBlocked: Long,
+        groupStatusDone: Long,
+        groupStatusDeclined: Long,
+        criteriaStatusFilterType: Long,
+        criteriaStatusOpen: Long,
+        criteriaStatusInProgress: Long,
+        criteriaStatusBlocked: Long,
+        criteriaStatusDone: Long,
+        criteriaStatusDeclined: Long,
+        connectionFilterType: Long,
+        requireDependsOn: Long,
+        requireIsDependencyOf: Long,
+        requireRelatesTo: Long,
+        requireSubtaskOf: Long,
+        requireParentOf: Long,
+        requireNotSubtask: Long,
+    ): List<String>
+
     /**
      * Task ids having at least one of the given tags (for the HasTags group filter).
      * Uses the normalized task_tags table for efficient lookups.
@@ -725,3 +668,144 @@ interface ZhedulerDao {
     @Query("DELETE FROM saved_filters WHERE spaceId = :spaceId AND id = :id")
     suspend fun deleteSavedFilter(spaceId: String, id: String)
 }
+
+
+/**
+ * Everything a filtered task query selects on: the filter panel's criteria and the group
+ * filters, as one clause.
+ *
+ * A constant rather than two copies of the text, so the query that reads the rows and the one
+ * that counts them cannot drift. Kotlin folds it into each annotation at compile time.
+ */
+private const val FILTERED_TASKS_WHERE = """
+        WHERE t.spaceId = :spaceId
+          -- Text search
+          AND (
+            :searchQuery IS NULL
+            OR :searchQuery = ''
+            OR (:searchInId = 1 AND LOWER(t.id) LIKE '%' || LOWER(:searchQuery) || '%')
+            OR (:searchInTitle = 1 AND LOWER(t.title) LIKE '%' || LOWER(:searchQuery) || '%')
+            OR (:searchInDescription = 1 AND LOWER(t.description) LIKE '%' || LOWER(:searchQuery) || '%')
+            OR (:searchInTags = 1 AND LOWER(t.tagsJson) LIKE '%' || LOWER(:searchQuery) || '%')
+          )
+          -- TaskFilterCriteria filters
+          AND (
+            :priorityFilterType = 0
+            OR (:priorityFilterType = 1 AND t.priority >= 75)
+            OR (:priorityFilterType = 2 AND t.priority >= 50 AND t.priority < 75)
+            OR (:priorityFilterType = 3 AND t.priority >= 1 AND t.priority < 50)
+            OR (:priorityFilterType = 4 AND t.priority IS NULL)
+            OR (:priorityFilterType = 5 AND (t.priority IS NOT NULL AND (:customPriorityMin IS NULL OR t.priority >= :customPriorityMin) AND (:customPriorityMax IS NULL OR t.priority <= :customPriorityMax)))
+          )
+          AND (
+            :dueDateFilterType = 0
+            OR (:dueDateFilterType = 1 AND t.dueDate IS NOT NULL AND t.dueDate < :nowMillis)
+            OR (:dueDateFilterType = 2 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :todayEndMillis)
+            OR (:dueDateFilterType = 3 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :weekEndMillis)
+            OR (:dueDateFilterType = 4 AND t.dueDate IS NOT NULL AND t.dueDate >= :todayStartMillis AND t.dueDate < :monthEndMillis)
+            OR (:dueDateFilterType = 5 AND t.dueDate IS NULL)
+            OR (:dueDateFilterType = 6 AND ((:customDueDateAfter IS NULL OR t.dueDate >= :customDueDateAfter) AND (:customDueDateBefore IS NULL OR t.dueDate <= :customDueDateBefore)))
+          )
+          -- 1 = no estimate, 2 = bucket [min, max), 3 = custom [min, max]; bounds are optional.
+          AND (
+            :estimatedTimeFilterType = 0
+            OR (:estimatedTimeFilterType = 1 AND t.estimatedTimeSeconds IS NULL)
+            OR (:estimatedTimeFilterType = 2 AND t.estimatedTimeSeconds IS NOT NULL
+              AND (:estimatedTimeMinSeconds IS NULL OR t.estimatedTimeSeconds >= :estimatedTimeMinSeconds)
+              AND (:estimatedTimeMaxSeconds IS NULL OR t.estimatedTimeSeconds < :estimatedTimeMaxSeconds))
+            OR (:estimatedTimeFilterType = 3 AND t.estimatedTimeSeconds IS NOT NULL
+              AND (:estimatedTimeMinSeconds IS NULL OR t.estimatedTimeSeconds >= :estimatedTimeMinSeconds)
+              AND (:estimatedTimeMaxSeconds IS NULL OR t.estimatedTimeSeconds <= :estimatedTimeMaxSeconds))
+          )
+          -- SQL only separates "recurs" from "does not"; which kind of rule lives inside
+          -- recurrenceRulesJson and is refined in Kotlin by RecurrenceFilter.matches.
+          AND (
+            :recurrenceFilterType = 0
+            OR (:recurrenceFilterType = 1 AND t.isRecurring = 0)
+            OR (:recurrenceFilterType = 2 AND t.isRecurring = 1)
+          )
+          AND (
+            :notificationsFilterType = 0
+            OR (:notificationsFilterType = 1 AND t.notificationsJson = '[]')
+            OR (:notificationsFilterType = 2 AND t.notificationsJson != '[]')
+          )
+          AND (
+            :autoUpdateStatusFilterType = 0
+            OR (:autoUpdateStatusFilterType = 1 AND t.autoUpdateStatusFromSubtasks = 1)
+            OR (:autoUpdateStatusFilterType = 2 AND t.autoUpdateStatusFromSubtasks = 0)
+          )
+          -- Group filter: Priority range
+          AND (
+            :groupPriorityFilterType = 0 -- Not applied
+            OR (:groupPriorityFilterType = 1 AND t.priority IS NULL) -- Include null only
+            OR (:groupPriorityFilterType = 2 AND t.priority IS NOT NULL AND (:groupPriorityMin IS NULL OR t.priority >= :groupPriorityMin) AND (:groupPriorityMax IS NULL OR t.priority <= :groupPriorityMax)) -- Range only
+            OR (:groupPriorityFilterType = 3 AND (t.priority IS NULL OR ((:groupPriorityMin IS NULL OR t.priority >= :groupPriorityMin) AND (:groupPriorityMax IS NULL OR t.priority <= :groupPriorityMax)))) -- Null + Range
+          )
+          -- Group filter: Due date range (days from today)
+          AND (
+            :groupDueDateFilterType = 0 -- Not applied
+            OR (:groupDueDateFilterType = 1 AND t.dueDate IS NULL) -- Include null only
+            OR (:groupDueDateFilterType = 2 AND t.dueDate IS NOT NULL AND (:groupDueDateMin IS NULL OR t.dueDate >= :groupDueDateMin) AND (:groupDueDateMax IS NULL OR t.dueDate <= :groupDueDateMax)) -- Range only
+            OR (:groupDueDateFilterType = 3 AND (t.dueDate IS NULL OR ((:groupDueDateMin IS NULL OR t.dueDate >= :groupDueDateMin) AND (:groupDueDateMax IS NULL OR t.dueDate <= :groupDueDateMax)))) -- Null + Range
+          )
+          -- Group filter: Boolean fields
+          AND (:groupIsRecurring IS NULL OR t.isRecurring = :groupIsRecurring)
+          AND (:groupAutoUpdateStatus IS NULL OR t.autoUpdateStatusFromSubtasks = :groupAutoUpdateStatus)
+          AND (:groupHasNotifications IS NULL OR ((:groupHasNotifications = 1 AND t.notificationsJson != '[]') OR (:groupHasNotifications = 0 AND t.notificationsJson = '[]')))
+          -- Group filter: Estimated time range (in seconds)
+          -- RecurrencePeriod JSON has fields: years, months, weeks, days, hours, minutes, seconds
+          AND (
+            :groupEstimatedTimeFilterType = 0 -- Not applied
+            OR (:groupEstimatedTimeFilterType = 1 AND t.estimatedTimeSeconds IS NULL) -- Include null only
+            OR (:groupEstimatedTimeFilterType = 2 AND t.estimatedTimeSeconds IS NOT NULL AND (
+              :groupEstimatedTimeMinSeconds IS NULL OR t.estimatedTimeSeconds >= :groupEstimatedTimeMinSeconds
+            ) AND (
+              :groupEstimatedTimeMaxSeconds IS NULL OR t.estimatedTimeSeconds <= :groupEstimatedTimeMaxSeconds
+            )) -- Range only
+            OR (:groupEstimatedTimeFilterType = 3 AND (t.estimatedTimeSeconds IS NULL OR (
+              (:groupEstimatedTimeMinSeconds IS NULL OR t.estimatedTimeSeconds >= :groupEstimatedTimeMinSeconds) AND
+              (:groupEstimatedTimeMaxSeconds IS NULL OR t.estimatedTimeSeconds <= :groupEstimatedTimeMaxSeconds)
+            ))) -- Null + Range
+          )
+          -- Group filter: Has connections
+          AND (
+            :groupHasConnections IS NULL
+            OR (:groupHasConnections = 1 AND EXISTS (SELECT 1 FROM task_connections WHERE sourceTaskId = t.id))
+            OR (:groupHasConnections = 0 AND NOT EXISTS (SELECT 1 FROM task_connections WHERE sourceTaskId = t.id))
+          )
+          -- Group filter: Status values (multiple patterns with OR, up to 5 status types)
+          -- Status is serialized as {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"} etc.
+          AND (
+            :groupStatusFilterType = 0 -- Not applied
+            OR (
+              (:groupStatusOpen = 1 AND t.status LIKE '%TaskStatus.Open%')
+              OR (:groupStatusInProgress = 1 AND t.status LIKE '%TaskStatus.InProgress%')
+              OR (:groupStatusBlocked = 1 AND t.status LIKE '%TaskStatus.Blocked%')
+              OR (:groupStatusDone = 1 AND t.status LIKE '%TaskStatus.Done%')
+              OR (:groupStatusDeclined = 1 AND t.status LIKE '%TaskStatus.Declined%')
+            )
+          )
+          -- TaskFilterCriteria: Status filters (additional filtering by status types)
+          AND (
+            :criteriaStatusFilterType = 0
+            OR (
+              (:criteriaStatusOpen = 1 AND t.status LIKE '%TaskStatus.Open%')
+              OR (:criteriaStatusInProgress = 1 AND t.status LIKE '%TaskStatus.InProgress%')
+              OR (:criteriaStatusBlocked = 1 AND t.status LIKE '%TaskStatus.Blocked%')
+              OR (:criteriaStatusDone = 1 AND t.status LIKE '%TaskStatus.Done%')
+              OR (:criteriaStatusDeclined = 1 AND t.status LIKE '%TaskStatus.Declined%')
+            )
+          )
+          -- TaskFilterCriteria: Connection type filters
+          AND (
+            :connectionFilterType = 0 -- Not applied
+            OR (
+              (:requireDependsOn = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'DependsOn'))
+              AND (:requireIsDependencyOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'IsDependencyOf'))
+              AND (:requireRelatesTo = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'RelatesTo'))
+              AND (:requireSubtaskOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
+              AND (:requireParentOf = 0 OR EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'ParentOf'))
+              AND (:requireNotSubtask = 0 OR NOT EXISTS (SELECT 1 FROM task_connections c WHERE c.sourceTaskId = t.id AND c.type = 'SubtaskOf'))
+            )
+          )
+"""

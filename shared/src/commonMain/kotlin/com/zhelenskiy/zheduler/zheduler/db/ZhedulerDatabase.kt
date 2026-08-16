@@ -7,9 +7,10 @@ import androidx.room3.RoomDatabaseConstructor
 
 /**
  * Version 1 was SQLDelight's, and the entities mirrored that schema exactly so Room could adopt
- * existing files untouched. Version 2 drops three indexes that schema carried for nothing; see
- * `DropUnusedTaskIndexes`. Any further schema change needs another version bump and a `Migration`,
- * added to `withZhedulerMigrations` so every platform's builder picks it up.
+ * existing files untouched. Since then: version 2 drops three indexes that schema carried for
+ * nothing, version 3 stores each task's estimate as a total in seconds. Any further schema change
+ * needs another version bump and a `Migration` added to `withZhedulerMigrations`, so every
+ * platform's builder picks it up.
  */
 @Database(
     entities = [
@@ -27,7 +28,7 @@ import androidx.room3.RoomDatabaseConstructor
         ActiveViewModes::class,
         SavedFilters::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @ConstructedBy(ZhedulerDatabaseConstructor::class)

@@ -1509,6 +1509,33 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     }
 
     @Test
+    fun `a blocker named only in a comment does not unblock the task`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        val realBlocker = repo.addTask(spaceId, title = "Real blocker")!!
+        val mentioned = repo.addTask(spaceId, title = "Merely mentioned")!!
+        val blocked = repo.addTask(
+            spaceId,
+            title = "Blocked",
+            // The comment names the other task the way the blocker list would.
+            status = TaskStatus.Blocked(persistentSetOf(realBlocker.id), "waiting, unlike \"${mentioned.id}\""),
+        )!!
+
+        repo.updateTask(repo.getTaskById(mentioned.id)!!.copy(status = TaskStatus.Done))
+
+        assertIs<TaskStatus.Blocked>(
+            repo.getTaskById(blocked.id)!!.status,
+            "resolving a task only mentioned in the comment should change nothing",
+        )
+
+        repo.updateTask(repo.getTaskById(realBlocker.id)!!.copy(status = TaskStatus.Done))
+
+        assertIs<TaskStatus.InProgress>(
+            repo.getTaskById(blocked.id)!!.status,
+            "resolving the real blocker should unblock it",
+        )
+    }
+
+    @Test
     fun `addTag and deleteTag report whether they changed anything`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
 

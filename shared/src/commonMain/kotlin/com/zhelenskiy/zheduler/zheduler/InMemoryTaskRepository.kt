@@ -516,6 +516,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     override suspend fun getBlockedTasks(): List<Task> =
         tasks.values.filter { it.status is TaskStatus.Blocked }
 
+    override suspend fun getTasksBlockedBy(blockerId: String): List<Task> =
+        tasks.values.filter { blockerId in (it.status as? TaskStatus.Blocked)?.blockerTaskIds.orEmpty() }
+
     // Note: getRecurringTasksDueBefore does NOT acquire mutex. Callers needing thread safety must acquire mutex themselves.
     // This design matches RoomTaskRepository and allows AbstractTaskRepository's internal methods to work.
     override suspend fun getRecurringTasksDueBefore(time: Instant): List<Task> =

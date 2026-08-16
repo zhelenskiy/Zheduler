@@ -303,12 +303,15 @@ private fun RecurrenceSection(
                                 .heightIn(max = 400.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            itemsIndexed(formState.recurrenceRules) { index, (rule, _) ->
+                            itemsIndexed(
+                                formState.recurrenceRules,
+                                key = { index, _ -> formState.recurrenceRuleIds[index] },
+                            ) { index, (rule, _) ->
                                 RecurrenceRuleItem(
                                     rule = rule,
                                     onEdit = { editingRuleIndex = index },
                                     onDelete = {
-                                        formState.recurrenceRules = formState.recurrenceRules.removingAt(index)
+                                        formState.removeRecurrenceRule(index)
                                     },
                                     index = index,
                                     onTaskClick = null,
@@ -336,11 +339,7 @@ private fun RecurrenceSection(
                     val currentState = formState.recurrenceRules.getOrNull(index)?.second ?: RecurrenceState()
                     val nextOccurrence = RecurrenceCalculator.calculateNextOccurrence(rule, currentState)
                     val newEntry = rule to currentState.copy(nextOccurrenceDate = nextOccurrence)
-                    formState.recurrenceRules = if (index < formState.recurrenceRules.size) {
-                        formState.recurrenceRules.replacingAt(index, newEntry)
-                    } else {
-                        formState.recurrenceRules.adding(newEntry)
-                    }
+                    formState.setRecurrenceRule(index, newEntry)
                 }
                 editingRuleIndex = null
             }
@@ -516,7 +515,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { formState.notifications = formState.notifications.adding("") }) {
+                    IconButton(onClick = { formState.addNotification() }) {
                         Icon(Icons.Default.Add, contentDescription = "Add notification")
                     }
                 }
@@ -529,7 +528,10 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                         modifier = Modifier.heightIn(max = 400.dp).fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        itemsIndexed(formState.notifications) { index, notification ->
+                        itemsIndexed(
+                            formState.notifications,
+                            key = { index, _ -> formState.notificationIds[index] },
+                        ) { index, notification ->
                             Row(
                                 modifier = Modifier.fillMaxWidth().animateItem(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -538,7 +540,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                 OutlinedTextField(
                                     value = notification,
                                     onValueChange = { newValue ->
-                                        formState.notifications = formState.notifications.replacingAt(index, newValue)
+                                        formState.updateNotification(index, newValue)
                                     },
                                     label = { Text("Time before deadline") },
                                     placeholder = { Text("e.g., 1d, 2h 30m") },
@@ -554,7 +556,7 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                     }
                                 )
                                 IconButton(onClick = {
-                                    formState.notifications = formState.notifications.removingAt(index)
+                                    formState.removeNotification(index)
                                 }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Remove notification")
                                 }

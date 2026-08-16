@@ -593,6 +593,7 @@ class RoomTaskRepository(
             autoUpdateStatusFromSubtasks = if (task.autoUpdateStatusFromSubtasks) 1 else 0,
             isRecurring = if (task.recurrenceRules.isNotEmpty()) 1 else 0,
             isBlocked = if (task.status is TaskStatus.Blocked) 1 else 0,
+            estimatedTimeSeconds = task.estimatedTime?.toApproximateSeconds(),
             id = task.id
         )
     }
@@ -657,6 +658,9 @@ class RoomTaskRepository(
 
     override suspend fun getBlockedTasks(): List<Task> =
         hydrateTasksAcrossSpaces(dao.getBlockedTasks())
+
+    override suspend fun getTasksBlockedBy(blockerId: String): List<Task> =
+        hydrateTasksAcrossSpaces(dao.getTasksBlockedBy(blockerId))
 
     private suspend fun addSymmetricConnectionUnsafe(sourceTaskId: String, connection: TaskConnection) {
         val targetTask = getByIdUnsafe(connection.targetTaskId) ?: return
@@ -1038,7 +1042,8 @@ class RoomTaskRepository(
             recurrenceRulesJson = recurrenceRules.toJson(),
             autoUpdateStatusFromSubtasks = if (autoUpdateStatusFromSubtasks) 1 else 0,
             isRecurring = if (recurrenceRules.isNotEmpty()) 1 else 0,
-            isBlocked = if (status is TaskStatus.Blocked) 1 else 0
+            isBlocked = if (status is TaskStatus.Blocked) 1 else 0,
+            estimatedTimeSeconds = estimatedTime?.toApproximateSeconds(),
         )
 
         connections.forEach { connection ->
@@ -1247,15 +1252,16 @@ class RoomTaskRepository(
             val groupFilter = group.toFilter(level.field)
             val combinedFilters = parentFilters.adding(groupFilter)
 
-            // Stops at the row level: a header needs the count, not connections or decoded JSON.
-            val tasks = queryCandidateRows(spaceId, combinedFilters, filterParams)
-            tasks.mapTo(matchedIds) { it.id }
+            // A header needs the count, and the uncategorised group needs to know which tasks
+            // were claimed; neither needs the tasks themselves.
+            val groupIds = candidateIds(spaceId, combinedFilters, filterParams)
+            matchedIds += groupIds
 
-            if (tasks.isNotEmpty() || level.showEmptyGroups) {
+            if (groupIds.isNotEmpty() || level.showEmptyGroups) {
                 result.add(
                     TaskGroupInfo(
                         label = group.label,
-                        taskCount = tasks.size,
+                        taskCount = groupIds.size,
                         isUncategorized = false,
                         groupDefinition = group,
                         filter = groupFilter
@@ -1273,8 +1279,8 @@ class RoomTaskRepository(
 
             // "Matches none of the groups" is what the loop above worked out, so take the
             // difference; querying the Not filter re-ran the whole query once more per group.
-            val uncategorizedCount = queryCandidateRows(spaceId, parentFilters, filterParams)
-                .count { it.id !in matchedIds }
+            val uncategorizedCount = candidateIds(spaceId, parentFilters, filterParams)
+                .count { it !in matchedIds }
 
             if (uncategorizedCount > 0) {
                 result.add(
@@ -1290,12 +1296,12 @@ class RoomTaskRepository(
             }
         } else {
             // No groups defined - all tasks are uncategorized
-            val allTasks = queryCandidateRows(spaceId, parentFilters, filterParams)
-            if (allTasks.isNotEmpty()) {
+            val allCount = countCandidates(spaceId, parentFilters, filterParams)
+            if (allCount > 0) {
                 result.add(
                     TaskGroupInfo(
                         label = "",
-                        taskCount = allTasks.size,
+                        taskCount = allCount,
                         isUncategorized = true,
                         groupDefinition = null,
                         filter = null
@@ -1314,6 +1320,164 @@ class RoomTaskRepository(
      * page the user is looking at all start here, and only the last of those needs connections or
      * parsed JSON.
      */
+    /**
+     * Whether the candidate set can be narrowed by SQL alone.
+     *
+     * Three criteria are settled in Kotlin afterwards because they read into stored JSON: which
+     * kind of recurrence rule a task has, whether it carries *all* of a set of tags, and the group
+     * filters that exclude or match on tags. When any of those is in play the rows themselves are
+     * needed; otherwise the database can answer with just a count or a list of ids.
+     */
+    private fun sqlAnswersFully(groupFilters: List<GroupFilter>, filterParams: FilterParams): Boolean =
+        !filterParams.recurrenceFilter.bucketedInSqlOnly &&
+                !(filterParams.selectedTags.isNotEmpty() && filterParams.tagMatchMode == TagMatchMode.All) &&
+                groupFilters.none { it is GroupFilter.HasTags || it is GroupFilter.Not } &&
+                filterParams.selectedTags.isEmpty()
+
+    /** How many tasks match, reading as little as the filters allow. */
+    private suspend fun countCandidates(
+        spaceId: String,
+        groupFilters: List<GroupFilter>,
+        filterParams: FilterParams
+    ): Int {
+        if (!sqlAnswersFully(groupFilters, filterParams)) {
+            return queryCandidateRows(spaceId, groupFilters, filterParams).size
+        }
+        val groupParams = mergeGroupFilterParams(groupFilters.map { buildGroupFilterParams(it) })
+        return dao.countTasksFilteredWithGroupFilter(
+            spaceId = spaceId,
+            searchQuery = filterParams.searchQuery,
+            searchInId = filterParams.searchInId,
+            searchInTitle = filterParams.searchInTitle,
+            searchInDescription = filterParams.searchInDescription,
+            searchInTags = filterParams.searchInTags,
+            priorityFilterType = filterParams.priorityFilterType,
+            customPriorityMin = filterParams.customPriorityMin,
+            customPriorityMax = filterParams.customPriorityMax,
+            dueDateFilterType = filterParams.dueDateFilterType,
+            nowMillis = filterParams.nowMillis,
+            todayStartMillis = filterParams.todayStartMillis,
+            todayEndMillis = filterParams.todayEndMillis,
+            weekEndMillis = filterParams.weekEndMillis,
+            monthEndMillis = filterParams.monthEndMillis,
+            customDueDateAfter = filterParams.customDueDateAfter,
+            customDueDateBefore = filterParams.customDueDateBefore,
+            estimatedTimeFilterType = filterParams.estimatedTimeFilterType,
+            estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+            estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
+            recurrenceFilterType = filterParams.recurrenceFilterType,
+            notificationsFilterType = filterParams.notificationsFilterType,
+            autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
+            // Group filter params
+            groupPriorityFilterType = groupParams.groupPriorityFilterType,
+            groupPriorityMin = groupParams.groupPriorityMin,
+            groupPriorityMax = groupParams.groupPriorityMax,
+            groupDueDateFilterType = groupParams.groupDueDateFilterType,
+            groupDueDateMin = groupParams.groupDueDateMin,
+            groupDueDateMax = groupParams.groupDueDateMax,
+            groupIsRecurring = groupParams.groupIsRecurring,
+            groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
+            groupHasNotifications = groupParams.groupHasNotifications,
+            groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
+            groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
+            groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
+            groupHasConnections = groupParams.groupHasConnections,
+            groupStatusFilterType = groupParams.groupStatusFilterType,
+            groupStatusOpen = groupParams.groupStatusOpen,
+            groupStatusInProgress = groupParams.groupStatusInProgress,
+            groupStatusBlocked = groupParams.groupStatusBlocked,
+            groupStatusDone = groupParams.groupStatusDone,
+            groupStatusDeclined = groupParams.groupStatusDeclined,
+            // TaskFilterCriteria: status filters
+            criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
+            criteriaStatusOpen = filterParams.criteriaStatusOpen,
+            criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
+            criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
+            criteriaStatusDone = filterParams.criteriaStatusDone,
+            criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
+            // TaskFilterCriteria: connection type filters
+            connectionFilterType = filterParams.connectionFilterType,
+            requireDependsOn = filterParams.requireDependsOn,
+            requireIsDependencyOf = filterParams.requireIsDependencyOf,
+            requireRelatesTo = filterParams.requireRelatesTo,
+            requireSubtaskOf = filterParams.requireSubtaskOf,
+            requireParentOf = filterParams.requireParentOf,
+            requireNotSubtask = filterParams.requireNotSubtask
+                )
+    }
+
+    /** Ids of the matching tasks, without their columns where the filters allow it. */
+    private suspend fun candidateIds(
+        spaceId: String,
+        groupFilters: List<GroupFilter>,
+        filterParams: FilterParams
+    ): List<String> {
+        if (!sqlAnswersFully(groupFilters, filterParams)) {
+            return queryCandidateRows(spaceId, groupFilters, filterParams).map { it.id }
+        }
+        val groupParams = mergeGroupFilterParams(groupFilters.map { buildGroupFilterParams(it) })
+        return dao.getTaskIdsFilteredWithGroupFilter(
+            spaceId = spaceId,
+            searchQuery = filterParams.searchQuery,
+            searchInId = filterParams.searchInId,
+            searchInTitle = filterParams.searchInTitle,
+            searchInDescription = filterParams.searchInDescription,
+            searchInTags = filterParams.searchInTags,
+            priorityFilterType = filterParams.priorityFilterType,
+            customPriorityMin = filterParams.customPriorityMin,
+            customPriorityMax = filterParams.customPriorityMax,
+            dueDateFilterType = filterParams.dueDateFilterType,
+            nowMillis = filterParams.nowMillis,
+            todayStartMillis = filterParams.todayStartMillis,
+            todayEndMillis = filterParams.todayEndMillis,
+            weekEndMillis = filterParams.weekEndMillis,
+            monthEndMillis = filterParams.monthEndMillis,
+            customDueDateAfter = filterParams.customDueDateAfter,
+            customDueDateBefore = filterParams.customDueDateBefore,
+            estimatedTimeFilterType = filterParams.estimatedTimeFilterType,
+            estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+            estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
+            recurrenceFilterType = filterParams.recurrenceFilterType,
+            notificationsFilterType = filterParams.notificationsFilterType,
+            autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
+            // Group filter params
+            groupPriorityFilterType = groupParams.groupPriorityFilterType,
+            groupPriorityMin = groupParams.groupPriorityMin,
+            groupPriorityMax = groupParams.groupPriorityMax,
+            groupDueDateFilterType = groupParams.groupDueDateFilterType,
+            groupDueDateMin = groupParams.groupDueDateMin,
+            groupDueDateMax = groupParams.groupDueDateMax,
+            groupIsRecurring = groupParams.groupIsRecurring,
+            groupAutoUpdateStatus = groupParams.groupAutoUpdateStatus,
+            groupHasNotifications = groupParams.groupHasNotifications,
+            groupEstimatedTimeFilterType = groupParams.groupEstimatedTimeFilterType,
+            groupEstimatedTimeMinSeconds = groupParams.groupEstimatedTimeMinSeconds,
+            groupEstimatedTimeMaxSeconds = groupParams.groupEstimatedTimeMaxSeconds,
+            groupHasConnections = groupParams.groupHasConnections,
+            groupStatusFilterType = groupParams.groupStatusFilterType,
+            groupStatusOpen = groupParams.groupStatusOpen,
+            groupStatusInProgress = groupParams.groupStatusInProgress,
+            groupStatusBlocked = groupParams.groupStatusBlocked,
+            groupStatusDone = groupParams.groupStatusDone,
+            groupStatusDeclined = groupParams.groupStatusDeclined,
+            // TaskFilterCriteria: status filters
+            criteriaStatusFilterType = filterParams.criteriaStatusFilterType,
+            criteriaStatusOpen = filterParams.criteriaStatusOpen,
+            criteriaStatusInProgress = filterParams.criteriaStatusInProgress,
+            criteriaStatusBlocked = filterParams.criteriaStatusBlocked,
+            criteriaStatusDone = filterParams.criteriaStatusDone,
+            criteriaStatusDeclined = filterParams.criteriaStatusDeclined,
+            // TaskFilterCriteria: connection type filters
+            connectionFilterType = filterParams.connectionFilterType,
+            requireDependsOn = filterParams.requireDependsOn,
+            requireIsDependencyOf = filterParams.requireIsDependencyOf,
+            requireRelatesTo = filterParams.requireRelatesTo,
+            requireSubtaskOf = filterParams.requireSubtaskOf,
+            requireParentOf = filterParams.requireParentOf,
+            requireNotSubtask = filterParams.requireNotSubtask
+                )
+    }
+
     private suspend fun queryCandidateRows(
         spaceId: String,
         groupFilters: List<GroupFilter>,
@@ -1519,7 +1683,7 @@ class RoomTaskRepository(
         OrderableField.TotalPriority -> totals.totalPriority?.value
         OrderableField.DueDate -> row.dueDate
         OrderableField.TotalDueDate -> totals.totalDueDate?.toEpochMilliseconds()
-        OrderableField.EstimatedTime -> row.estimatedTimeJson.toRecurrencePeriodOrNull()?.toApproximateSeconds()
+        OrderableField.EstimatedTime -> row.estimatedTimeSeconds
     }
 
     /**
@@ -1635,7 +1799,7 @@ class RoomTaskRepository(
     ): Int = mutex.withLock {
         evictStaleCaches()
         val key = CandidateKey(spaceId, filters, filterCriteria)
-        countCache[key] ?: queryCandidateRows(spaceId, filters, buildFilterParams(filterCriteria)).size
+        countCache[key] ?: countCandidates(spaceId, filters, buildFilterParams(filterCriteria))
             .also { countCache.putCapped(key, it) }
     }
 

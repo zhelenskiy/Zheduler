@@ -302,7 +302,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * A blocked task should only unblock (transition to InProgress) when ALL its blockers are Done or Declined.
      */
     protected suspend fun unblockTasksBlockedBy(blockerId: String) {
-        getBlockedTasks().forEach { task ->
+        getTasksBlockedBy(blockerId).forEach { task ->
             val status = task.status
             if (status is TaskStatus.Blocked && blockerId in status.blockerTaskIds) {
                 if (areAllBlockersResolved(status.blockerTaskIds)) {
@@ -323,8 +323,19 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
 
     /**
      * Get all blocked tasks. Subclasses implement based on their storage.
+     *
+     * Needed whole only by the totals calculation, which aggregates over every blocked task.
      */
     protected abstract suspend fun getBlockedTasks(): List<Task>
+
+    /**
+     * The tasks blocked by [blockerId], which is all a status cascade needs.
+     *
+     * Every status change asks this. Reading all blocked tasks and filtering them in Kotlin made
+     * that cost grow with the number of blocked tasks in the whole database, however few of them
+     * named this one.
+     */
+    protected abstract suspend fun getTasksBlockedBy(blockerId: String): List<Task>
 
     /**
      * Handle the deletion of a task that might be blocking other tasks.
@@ -332,7 +343,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * @param deletedBlockerId The ID of the task being deleted
      */
     protected suspend fun handleBlockerDeleted(deletedBlockerId: String) {
-        getBlockedTasks().forEach { task ->
+        getTasksBlockedBy(deletedBlockerId).forEach { task ->
             val status = task.status
             if (status is TaskStatus.Blocked && deletedBlockerId in status.blockerTaskIds) {
                 val remainingBlockers = status.blockerTaskIds.removing(deletedBlockerId)
