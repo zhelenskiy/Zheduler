@@ -12,5 +12,6 @@ actual class DatabaseFactory {
     actual fun createDatabase(): ZhedulerDatabase =
         Room.databaseBuilder<ZhedulerDatabase>(name = DATABASE_FILE_NAME)
             .setDriver(createSQLiteWasmWorker())
+            .withZhedulerMigrations()
             .build()
 }

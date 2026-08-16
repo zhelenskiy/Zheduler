@@ -14,5 +14,6 @@ actual class DatabaseFactory(private val context: Context) {
             name = context.applicationContext.getDatabasePath(DATABASE_FILE_NAME).absolutePath,
         )
             .setDriver(BundledSQLiteDriver())
+            .withZhedulerMigrations()
             .build()
 }

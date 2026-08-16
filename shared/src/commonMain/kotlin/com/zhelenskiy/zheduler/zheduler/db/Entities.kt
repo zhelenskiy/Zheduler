@@ -21,10 +21,9 @@ import androidx.room3.PrimaryKey
  *    would reject every existing database, so uniqueness is left to the repository, which already
  *    checks `prefixExists` before inserting a space.
  *
- * Three indexes below earn nothing and are kept only because existing databases have them:
- * `idx_tasks_id_search` duplicates the primary key's automatic index, and the two on JSON columns
- * index text no query can seek on. Each costs a write on every insert. Dropping them means
- * migrating, giving up adopting an existing database untouched — a deliberate trade, not tidying.
+ * Three of the original indexes are gone: `idx_tasks_id_search` duplicated the primary key's
+ * automatic index, and two more covered serialized JSON no query can seek on. They are dropped by
+ * `DropUnusedTaskIndexes`, which is why the schema is at version 2 rather than SQLDelight's 1.
  */
 
 @Entity(tableName = "spaces")
@@ -48,15 +47,12 @@ data class Spaces(
         Index(name = "idx_tasks_spaceId", value = ["spaceId"]),
         Index(name = "idx_tasks_isBlocked", value = ["isBlocked"]),
         Index(name = "idx_tasks_recurring_dueDate", value = ["isRecurring", "dueDate"]),
-        Index(name = "idx_tasks_id_search", value = ["id"]),
         Index(name = "idx_tasks_title_search", value = ["title"]),
         Index(name = "idx_tasks_status", value = ["spaceId", "status"]),
         Index(name = "idx_tasks_priority", value = ["spaceId", "priority"]),
         Index(name = "idx_tasks_dueDate", value = ["spaceId", "dueDate"]),
-        Index(name = "idx_tasks_estimatedTimeJson", value = ["spaceId", "estimatedTimeJson"]),
         Index(name = "idx_tasks_autoUpdateStatusFromSubtasks", value = ["spaceId", "autoUpdateStatusFromSubtasks"]),
         Index(name = "idx_tasks_isRecurring", value = ["spaceId", "isRecurring"]),
-        Index(name = "idx_tasks_notificationsJson", value = ["spaceId", "notificationsJson"]),
     ],
 )
 data class Tasks(

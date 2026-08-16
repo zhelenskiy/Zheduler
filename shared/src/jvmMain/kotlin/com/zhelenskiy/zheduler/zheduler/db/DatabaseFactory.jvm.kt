@@ -11,6 +11,7 @@ actual class DatabaseFactory {
 
         return Room.databaseBuilder<ZhedulerDatabase>(name = dbFile.absolutePath)
             .setDriver(BundledSQLiteDriver())
+            .withZhedulerMigrations()
             .build()
     }
 }

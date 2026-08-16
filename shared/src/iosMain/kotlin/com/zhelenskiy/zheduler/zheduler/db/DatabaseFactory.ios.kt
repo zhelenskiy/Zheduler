@@ -13,6 +13,7 @@ actual class DatabaseFactory {
     actual fun createDatabase(): ZhedulerDatabase =
         Room.databaseBuilder<ZhedulerDatabase>(name = databaseFilePath())
             .setDriver(BundledSQLiteDriver())
+            .withZhedulerMigrations()
             .build()
 }
 

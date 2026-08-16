@@ -12,11 +12,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Databases in the field were created by SQLDelight, which never wrote a `room_master_table`.
- * Room's answer to that is to validate the live schema against the one generated from the entities
- * and, if they agree, adopt the file as-is. That only holds while the entities keep reproducing the
- * DDL below byte-for-byte, so this test drives a real SQLDelight-shaped database through Room and
- * fails loudly the moment an entity drifts.
+ * Databases in the field were created by SQLDelight, which stamped `user_version = 1` and never
+ * wrote a `room_master_table`. Room reads that version, runs the migrations that take it to the
+ * current one, and validates the result against the schema generated from the entities. That only
+ * holds while the entities plus the migrations reproduce the DDL below, so this test drives a real
+ * SQLDelight-shaped database through Room and fails loudly the moment either drifts.
  *
  * [LEGACY_SQLDELIGHT_DDL] is the verbatim schema from the `ZhedulerDatabase.sq` this migration
  * replaced; treat it as a fixture of history and do not "fix" it to match new entities.
@@ -31,6 +31,7 @@ class LegacySqlDelightSchemaCompatibilityTest {
 
         val database = Room.databaseBuilder<ZhedulerDatabase>(name = dbFile.absolutePath)
             .setDriver(BundledSQLiteDriver())
+            .withZhedulerMigrations()
             .build()
 
         try {
@@ -62,6 +63,24 @@ class LegacySqlDelightSchemaCompatibilityTest {
                 .prepare("SELECT count(*) FROM sqlite_master WHERE name = 'room_master_table'")
                 .use { it.step(); it.getLong(0) }
             assertEquals(1L, hasMasterTable, "Room should have adopted the database")
+
+            val version = connection.prepare("PRAGMA user_version").use { it.step(); it.getLong(0) }
+            assertEquals(2L, version, "the adopted database should have been migrated")
+
+            // What the migration is for: the legacy file carried these, the current schema does not.
+            listOf("idx_tasks_id_search", "idx_tasks_estimatedTimeJson", "idx_tasks_notificationsJson")
+                .forEach { index ->
+                    val present = connection
+                        .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = '$index'")
+                        .use { it.step(); it.getLong(0) }
+                    assertEquals(0L, present, "$index should have been dropped")
+                }
+
+            // The indexes that do earn their keep are untouched.
+            val kept = connection
+                .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_tasks_spaceId'")
+                .use { it.step(); it.getLong(0) }
+            assertEquals(1L, kept, "idx_tasks_spaceId should still be there")
         }
     }
 
