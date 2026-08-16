@@ -768,7 +768,7 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
             termination = RecurrenceTermination.onDate(endDate)
         )
 
-        // This occurrence happens before end date
+        // This occurrence happens before the end date, so it fires.
         val result = RecurrenceService.processRecurrence(
             rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
             triggerEvent = RecurrenceTriggerEvent(Done, now)
@@ -776,8 +776,11 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
         assertNotNull(result)
         assertEquals(1, result.first[0].second.occurrenceCount)
 
-        // Next occurrence would be Jan 3, which is allowed since endDate is Jan 3 00:00
-        assertNotNull(result.first[0].second.nextOccurrenceDate)
+        // A day after this Jan 2 12:00 fire is Jan 3 12:00, past the Jan 3 00:00 end date, so the
+        // rule is finished and has no next occurrence. This assertion used to expect one: the next
+        // occurrence was computed from the state *before* the fire, which handed back the rule's
+        // own firstOccurrence — Jan 1, already past, and comfortably inside the end date.
+        assertNull(result.first[0].second.nextOccurrenceDate)
     }
 
     @Test

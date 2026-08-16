@@ -356,17 +356,39 @@ data class RecurrencePeriod(
     }
 
     /**
-     * Add this period to a LocalDateTime
+     * Add this period to an instant, in [tz].
+     *
+     * Years, months, weeks and days move the calendar date and keep the time of day, so "in a
+     * month" stays at the same clock time. Hours, minutes and seconds are elapsed time and are
+     * added to the instant itself: adding them to the wall clock instead made "every hour" wait
+     * two real hours across a daylight-saving fall-back, and skip the repeated hour entirely.
+     */
+    fun addTo(instant: Instant, tz: TimeZone): Instant {
+        val local = instant.toLocalDateTime(tz)
+        val shiftedDate = local.date
+            .plus(years.toLong(), DateTimeUnit.YEAR)
+            .plus(months.toLong(), DateTimeUnit.MONTH)
+            .plus(weeks.toLong() * 7 + days, DateTimeUnit.DAY)
+        val afterDateParts = LocalDateTime(shiftedDate, local.time).toInstant(tz)
+        val elapsedSeconds = hours.toLong() * 60 * 60 + minutes.toLong() * 60 + seconds
+        return afterDateParts.plus(elapsedSeconds, DateTimeUnit.SECOND)
+    }
+
+    /**
+     * Add this period to a LocalDateTime, treating every component as wall-clock time.
+     *
+     * Prefer [addTo] with an instant wherever a real elapsed interval is meant.
      */
     fun addTo(dateTime: LocalDateTime): LocalDateTime {
         val date = dateTime.date
         val time = dateTime.time
 
-        // Add date-based components
+        // Add date-based components. Long arithmetic: weeks alone can reach Int.MAX_VALUE, and
+        // wrapping put the result several million years in the past.
         val newDate = date
-            .plus(years, DateTimeUnit.YEAR)
-            .plus(months, DateTimeUnit.MONTH)
-            .plus(weeks * 7 + days, DateTimeUnit.DAY)
+            .plus(years.toLong(), DateTimeUnit.YEAR)
+            .plus(months.toLong(), DateTimeUnit.MONTH)
+            .plus(weeks.toLong() * 7 + days, DateTimeUnit.DAY)
 
         // Add time-based components by converting to instant and back
         val tempDateTime = LocalDateTime(newDate, time)
@@ -510,6 +532,9 @@ sealed class FixedPointPattern : Presentable {
     ) : FixedPointPattern() {
         init {
             require(dayOfMonth in 1..31) { "Day of month must be between 1 and 31" }
+            // As the other multi-month patterns already do. findNextYearlyDate takes a minOf over
+            // these, which on an empty set throws out of the sweep and stops it for every task.
+            require(months.isNotEmpty()) { "At least one month must be specified" }
         }
 
         override fun toFullString(): String {
@@ -697,18 +722,11 @@ object RecurrenceCalculator {
         currentState: RecurrenceState
     ): Instant? {
         val tz = trigger.timezone.toTimeZone()
-        val baseDateTime = if (currentState.occurrenceCount == 0) {
-            trigger.firstOccurrence.toLocalDateTime(tz)
-        } else {
-            currentState.lastOccurrenceDate?.toLocalDateTime(tz) 
-                ?: trigger.firstOccurrence.toLocalDateTime(tz)
-        }
-        
-        return if (currentState.occurrenceCount == 0) {
-            trigger.firstOccurrence
-        } else {
-            trigger.period?.addTo(baseDateTime)?.toInstant(tz)
-        }
+        // Nothing has fired yet, so the first occurrence is the next one.
+        if (currentState.occurrenceCount == 0) return trigger.firstOccurrence
+
+        val base = currentState.lastOccurrenceDate ?: trigger.firstOccurrence
+        return trigger.period?.addTo(base, tz)
     }
     
     private fun calculateAtFixedPoints(
@@ -740,26 +758,39 @@ object RecurrenceCalculator {
     ): Instant {
         var currentDate = from.toLocalDateTime(tz).date
         val targetTime = LocalTime(pattern.timeOfDay.hour, pattern.timeOfDay.minute, pattern.timeOfDay.second)
-        
-        // Check if today qualifies (if current time is before target time)
-        val fromDateTime = from.toLocalDateTime(tz)
+
+        // Today counts only if its occurrence is genuinely still ahead. Comparing the wall clock
+        // alone is not enough: on the day a zone falls back, the target time occurs twice and
+        // resolves to the earlier of the two, which can be behind `from` even though the local
+        // time reads later. See laterThan.
         val currentDow = RecurrenceDayOfWeek.fromKotlinxDayOfWeek(currentDate.dayOfWeek)
-        if (currentDow in pattern.days && isTimeBefore(fromDateTime.time, targetTime)) {
-            return LocalDateTime(currentDate, targetTime).toInstant(tz)
+        if (currentDow in pattern.days) {
+            LocalDateTime(currentDate, targetTime).laterThan(from, tz)?.let { return it }
         }
-        
+
         // Search forward up to 7 days
         for (i in 1..7) {
             currentDate = currentDate.plus(1, DateTimeUnit.DAY)
             val dow = RecurrenceDayOfWeek.fromKotlinxDayOfWeek(currentDate.dayOfWeek)
             if (dow in pattern.days) {
-                return LocalDateTime(currentDate, targetTime).toInstant(tz)
+                LocalDateTime(currentDate, targetTime).laterThan(from, tz)?.let { return it }
             }
         }
         
         // Should never reach here if pattern.days is not empty
         return LocalDateTime(currentDate, targetTime).toInstant(tz)
     }
+
+    /**
+     * This local date-time in [tz], but only if it is actually after [from].
+     *
+     * An occurrence that is not is no occurrence at all: it would be stored as the next one, and
+     * a next occurrence already in the past stops gating anything, so the rule fires again
+     * immediately. Ambiguous and skipped local times around daylight-saving changes are the ones
+     * that get here.
+     */
+    private fun LocalDateTime.laterThan(from: Instant, tz: TimeZone): Instant? =
+        toInstant(tz).takeIf { it > from }
     
     private fun isTimeBefore(time1: LocalTime, time2: LocalTime): Boolean {
         if (time1.hour != time2.hour) return time1.hour < time2.hour
@@ -776,12 +807,12 @@ object RecurrenceCalculator {
         var currentDate = fromDateTime.date
         val targetTime = LocalTime(pattern.timeOfDay.hour, pattern.timeOfDay.minute, pattern.timeOfDay.second)
         
-        // Try current month
+        // Try current month. As in findNextDayOfWeek, an occurrence that does not actually fall
+        // after `from` is skipped rather than returned.
         val targetDayThisMonth = minOf(pattern.dayOfMonth, currentDate.month.length(isLeapYear(currentDate.year)))
-        if (currentDate.day < targetDayThisMonth || 
-            (currentDate.day == targetDayThisMonth && isTimeBefore(fromDateTime.time, targetTime))) {
+        if (currentDate.day <= targetDayThisMonth) {
             val targetDate = LocalDate(currentDate.year, currentDate.month, targetDayThisMonth)
-            return LocalDateTime(targetDate, targetTime).toInstant(tz)
+            LocalDateTime(targetDate, targetTime).laterThan(from, tz)?.let { return it }
         }
         
         // Move to next month
@@ -1012,12 +1043,18 @@ object RecurrenceService {
             }
             .firstOrNull() ?: return null
 
-        val nextOccurrence = calculateNextOccurrence(rule, currentState, triggerEvent.currentTime)
+        // Asked of the state this occurrence leaves behind, not the one it started from. Asking
+        // the old state gave an AfterTimeout rule its own firstOccurrence back — an instant now in
+        // the past, which the gate in shouldTrigger cannot block, so the rule fired again at once
+        // and spent its remaining occurrences in a burst.
         val newOccurrenceCount = currentState.occurrenceCount + 1
-        val newState = RecurrenceState(
+        val advancedState = RecurrenceState(
             occurrenceCount = newOccurrenceCount,
             lastOccurrenceDate = triggerEvent.currentTime,
-            nextOccurrenceDate = nextOccurrence,
+            nextOccurrenceDate = null,
+        )
+        val newState = advancedState.copy(
+            nextOccurrenceDate = calculateNextOccurrence(rule, advancedState, triggerEvent.currentTime),
         )
 
         // Calculate next occurrence from all rules and take the earliest
