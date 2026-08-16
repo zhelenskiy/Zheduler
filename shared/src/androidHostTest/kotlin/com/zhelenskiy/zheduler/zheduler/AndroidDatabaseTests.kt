@@ -61,8 +61,10 @@ class AndroidDatabaseSearchTasksForConnectionTest : SearchTasksForConnectionTest
 @Config(manifest = Config.NONE, sdk = [28])
 class AndroidDatabaseSavedFilterRepositoryTest : SavedFilterRepositoryTest(), DatabaseRepositoryTest
 
-// Note: GroupedTaskQueriesComparisonTest is excluded from Android unit tests because the SQL queries
-// for getTaskGroups/getTasksForGroup use json_extract which is not supported by Robolectric's SQLite.
-// BundledSQLiteDriver, which the app itself uses on Android, does provide JSON1, but its native code
-// cannot be loaded in the Robolectric JVM environment. The test runs on JVM instead, where the
-// bundled SQLite has full JSON1 extension support.
+// The `*ComparisonTest` suites drive both repository implementations inside one test, so unlike the
+// suites above they have no per-platform subclass to hang @RunWith(RobolectricTestRunner) on, and
+// without a Robolectric environment opening a database fails outright. They are excluded here (see
+// shared/build.gradle.kts) and run on JVM against the bundled SQLite instead.
+//
+// The classes above get an Android run because AndroidSQLiteDriver is Robolectric's own SQLite,
+// which has no JSON functions: keep queries that need them out of the paths these exercise.
