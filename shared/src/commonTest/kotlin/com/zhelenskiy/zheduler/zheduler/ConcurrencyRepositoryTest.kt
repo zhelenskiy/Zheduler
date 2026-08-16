@@ -61,7 +61,7 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         assertEquals(1, successfulCreations.size, "Only one space should be created with same prefix")
 
         // Verify only one space exists
-        val allSpaces = repo.getAllTasks()
+        val allSpaces = repo.getAllSpaces()
         assertEquals(1, allSpaces.size, "Repository should contain exactly one space")
     }
 
@@ -263,6 +263,6 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
 
         // Space should be gone
         assertNull(repo.getSpaceById(space.id))
-        assertEquals(0, repo.getAllTasks().size)
+        assertEquals(0, repo.getAllSpaces().size)
     }
 }

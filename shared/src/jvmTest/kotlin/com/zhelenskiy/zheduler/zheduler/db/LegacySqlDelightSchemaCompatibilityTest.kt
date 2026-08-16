@@ -37,7 +37,7 @@ class LegacySqlDelightSchemaCompatibilityTest {
             runBlocking {
                 val repository = RoomTaskRepository(database)
 
-                val spaces = repository.getAllTasks()
+                val spaces = repository.getAllSpaces()
                 assertEquals(1, spaces.size, "the pre-existing space should survive the migration")
                 assertEquals("Legacy", spaces.single().name)
                 assertEquals("LEG", spaces.single().idPrefix)

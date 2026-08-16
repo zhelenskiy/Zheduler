@@ -115,7 +115,7 @@ abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
 
         assertNotNull(imported)
         assertEquals("OTHER", imported.idPrefix)
-        assertEquals(1, newRepo.getAllTasks().size)
+        assertEquals(1, newRepo.getAllSpaces().size)
     }
 
     @Test

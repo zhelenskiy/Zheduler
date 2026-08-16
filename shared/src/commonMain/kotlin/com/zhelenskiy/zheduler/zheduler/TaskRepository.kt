@@ -53,7 +53,7 @@ interface TaskRepository {
      * Get all spaces in the repository.
      * @return List of all spaces
      */
-    suspend fun getAllTasks(): List<Space>
+    suspend fun getAllSpaces(): List<Space>
 
     /**
      * Get a space by its ID.

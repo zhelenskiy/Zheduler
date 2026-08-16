@@ -3,6 +3,7 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,19 +12,19 @@ import kotlinx.coroutines.cancel
 /**
  * The coroutine scope a container's store, paged queries and repository subscriptions live in.
  *
- * Closing it is not optional. A container subscribes to [com.zhelenskiy.zheduler.zheduler.TaskRepository.changes]
- * on the repository, which is a singleton for the whole app: as long as that collector is running
- * the repository holds a reference to the container, so a container that is dropped without being
- * closed stays alive, keeps its paging sources, and is woken by every later mutation. Screens are
- * remembered per navigation entry and rebuilt whenever one re-enters the composition, so that would
- * accumulate one live container per visit.
+ * Closing it is not optional: a container collects `TaskRepository.changes` on the app-wide
+ * repository, which then holds a reference to it, so one dropped without being closed stays alive
+ * and is woken by every later mutation. Screens rebuild theirs whenever a destination re-enters
+ * the composition, which would accumulate one per visit.
  *
- * Compose closes these through `rememberContainer`; the one app-scoped container lives as long as
- * the process and is never closed.
+ * Compose closes these through [rememberContainer]; the app-scoped container is never closed.
  */
-abstract class ScopedContainer : AutoCloseable {
+abstract class ScopedContainer(
+    /** Overridden in tests so a container's work can be driven deterministically. */
+    dispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AutoCloseable {
 
-    protected val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    protected val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
     override fun close() {
         scope.cancel()

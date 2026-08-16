@@ -957,7 +957,7 @@ abstract class TaskFiltersRepositoryTest : AbstractRepositoryTest {
         repo.createSpace("Personal", "PERS")
         repo.createSpace("Shopping List", "SHOP")
 
-        val spaces = repo.getAllTasks()
+        val spaces = repo.getAllSpaces()
         val results = repo.filterSpaces("ork", searchInName = true, searchInPrefix = false)
 
         assertEquals(1, results.size)
@@ -971,7 +971,7 @@ abstract class TaskFiltersRepositoryTest : AbstractRepositoryTest {
         repo.createSpace("Personal", "PERS")
         repo.createSpace("Shopping List", "SHOP")
 
-        val spaces = repo.getAllTasks()
+        val spaces = repo.getAllSpaces()
         val results = repo.filterSpaces("PER", searchInName = false, searchInPrefix = true)
 
         assertEquals(1, results.size)
@@ -983,7 +983,7 @@ abstract class TaskFiltersRepositoryTest : AbstractRepositoryTest {
         val repo = createEmptyRepository()
         repo.createSpace("Work Tasks", "WORK")
 
-        val spaces = repo.getAllTasks()
+        val spaces = repo.getAllSpaces()
         val results = repo.filterSpaces("work", searchInName = true, searchInPrefix = true)
 
         assertEquals(1, results.size)
@@ -995,7 +995,7 @@ abstract class TaskFiltersRepositoryTest : AbstractRepositoryTest {
         repo.createSpace("Space 1", "ONE")
         repo.createSpace("Space 2", "TWO")
 
-        val spaces = repo.getAllTasks()
+        val spaces = repo.getAllSpaces()
         val results = repo.filterSpaces("   ", searchInName = true, searchInPrefix = true)
 
         assertEquals(2, results.size)

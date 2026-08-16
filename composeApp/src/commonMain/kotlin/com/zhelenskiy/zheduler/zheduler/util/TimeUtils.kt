@@ -28,7 +28,7 @@ fun formatDueDate(instant: Instant, clock: Clock = Clock.System): String {
         0L -> "Today$timeStr"
         1L -> "Tomorrow$timeStr"
         -1L -> "Yesterday$timeStr"
-        else -> formatDate(Instant.fromEpochMilliseconds(instant.toEpochMilliseconds()))
+        else -> formatDate(instant)
     }
 }
 

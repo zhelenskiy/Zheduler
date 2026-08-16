@@ -58,7 +58,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun hasSpaces(): Boolean = mutex.withLock { spaces.isNotEmpty() }
 
-    override suspend fun getAllTasks(): List<Space> = mutex.withLock { spaces.values.toList() }
+    override suspend fun getAllSpaces(): List<Space> = mutex.withLock { spaces.values.toList() }
 
     override suspend fun getSpaceById(id: String): Space? = mutex.withLock { spaces[id] }
 

@@ -6,9 +6,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
 import com.zhelenskiy.zheduler.zheduler.InMemoryTaskRepository
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -19,38 +18,25 @@ import kotlin.test.assertTrue
  */
 class ContainerLifecycleTest {
 
-    /** Waits for [condition], returning whether it came true rather than hanging the suite. */
-    private suspend fun eventually(condition: () -> Boolean): Boolean =
-        withTimeoutOrNull(5_000) {
-            while (!condition()) delay(10)
-            true
-        } == true
-
     @Test
     fun `closing a container stops it observing the repository`() = runBlocking {
         val repository = InMemoryTaskRepository()
         val space = repository.createSpace("Test", "TEST")!!
-        val container = TaskListContainer(repository, space.id)
+        // Unconfined so the collector resumes inline on each emission: no waiting to go flaky.
+        val container = TaskListContainer(repository, space.id, Dispatchers.Unconfined)
 
         repository.addTask(space.id, title = "first")
-        assertTrue(
-            eventually { container.dataVersion.value > 0 },
-            "the container should see repository changes while it is open",
-        )
-
         val seenWhileOpen = container.dataVersion.value
-        container.close()
+        assertTrue(seenWhileOpen > 0, "the container should see repository changes while it is open")
 
+        container.close()
         repository.addTask(space.id, title = "second")
-        // Give the collector the same chance to run it had above; it must not take it.
-        assertTrue(
-            withTimeoutOrNull(500) {
-                while (container.dataVersion.value == seenWhileOpen) delay(10)
-                true
-            } != true,
+
+        assertEquals(
+            seenWhileOpen,
+            container.dataVersion.value,
             "a closed container should no longer react to repository changes",
         )
-        assertEquals(seenWhileOpen, container.dataVersion.value)
     }
 
     @OptIn(ExperimentalTestApi::class)

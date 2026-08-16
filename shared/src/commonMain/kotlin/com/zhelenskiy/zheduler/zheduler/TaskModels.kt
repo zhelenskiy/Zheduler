@@ -218,7 +218,6 @@ data class Space(
 ) {
     init {
         require(idPrefix.matches(Regex("^[A-Z]+$"))) { "ID prefix must contain only uppercase English letters" }
-        require(idPrefix.isNotEmpty()) { "ID prefix cannot be empty" }
     }
 }
 

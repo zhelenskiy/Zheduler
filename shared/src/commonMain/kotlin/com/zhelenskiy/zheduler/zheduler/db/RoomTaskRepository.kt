@@ -143,7 +143,7 @@ class RoomTaskRepository(
     override suspend fun hasSpaces(): Boolean =
         dao.hasSpaces()
 
-    override suspend fun getAllTasks(): List<Space> =
+    override suspend fun getAllSpaces(): List<Space> =
         dao.getAllSpaces().map { it.toModel() }
 
     override suspend fun getSpaceById(id: String): Space? =
@@ -186,8 +186,7 @@ class RoomTaskRepository(
         if (!idPrefix.matches(Regex("^[A-Z]+$")) || idPrefix.isEmpty()) return@withLock null
         if (dao.prefixExists(idPrefix)) return@withLock null
 
-        val spaces = dao.getAllSpaces()
-        val spaceId = "space-${spaces.size}-${idPrefix}"
+        val spaceId = "space-${dao.countSpaces()}-${idPrefix}"
         val space = Space(id = spaceId, name = name, idPrefix = idPrefix)
 
         dao.insertSpace(spaceId, name, idPrefix)
@@ -979,9 +978,8 @@ class RoomTaskRepository(
     ): Task? {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
-        val effectiveDueDate = dueDate?.let {
-            Instant.fromEpochMilliseconds(it.toEpochMilliseconds())
-        }
+        // Rounded to the millisecond the column stores, so the returned task matches a later read.
+        val effectiveDueDate = dueDate?.let { Instant.fromEpochMilliseconds(it.toEpochMilliseconds()) }
         val status = if (autoUpdateStatusFromSubtasks) {
             val subtasksIds = connections
                 .mapNotNull { if (it.type == ConnectionType.ParentOf) it.targetTaskId else null }

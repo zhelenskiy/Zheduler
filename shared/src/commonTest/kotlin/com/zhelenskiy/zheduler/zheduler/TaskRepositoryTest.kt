@@ -279,7 +279,7 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
         repo.createSpace("Space 1", "ONE")
         repo.createSpace("Space 2", "TWO")
         repo.createSpace("Space 3", "THREE")
-        assertEquals(3, repo.getAllTasks().size)
+        assertEquals(3, repo.getAllSpaces().size)
     }
 
     // ==================== Task CRUD Tests ====================

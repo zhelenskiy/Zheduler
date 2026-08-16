@@ -16,6 +16,9 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
+/** Compiled once; splitting a search query per task showed up as a cost of its own. */
+private val whitespace = Regex("\\s+")
+
 /**
  * Abstract base class implementing shared business logic for task repositories.
  * Concrete implementations must provide data access methods.
@@ -187,11 +190,9 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         // Also check reverse connections from editing task that point to this task
         // If editingTask has reverse -> taskId, it means taskId has forward -> editingTask
         // So we need to add editingTask as a "parent" of taskId
-        if (taskId != editingTaskId) {
-            currentConnections
-                .filter { it.type == reverseType && it.targetTaskId == taskId }
-                .forEach { _ -> result.add(editingTaskId) }
-        }
+        val reachesEditingTask = taskId != editingTaskId &&
+                currentConnections.any { it.type == reverseType && it.targetTaskId == taskId }
+        if (reachesEditingTask) result.add(editingTaskId)
 
         return result
     }
@@ -741,10 +742,10 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         // If autoUpdateStatusFromSubtasks is enabled AND (it was just enabled OR subtasks changed),
         // calculate status from subtasks
         if (finalTask.autoUpdateStatusFromSubtasks && (autoUpdateJustEnabled || subtasksChanged)) {
-            val calculatedStatus = getCalculatedStatusFromSubtasks(taskId)
+            val subtasks = getSubtasks(taskId)
+            val calculatedStatus = calculateStatusFromSubtasks(subtasks.map { it.status })
             if (calculatedStatus != null && calculatedStatus != finalTask.status) {
                 finalTask = finalTask.copy(status = calculatedStatus)
-                val subtasks = getSubtasks(taskId)
                 automaticReason = AutomaticChangeReason.UpdatedFromSubtasks(subtasks.mapToPersistentList { it.id })
             }
         }
@@ -816,9 +817,9 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         val parentTask = getTaskById(parentTaskId) ?: return
         if (!parentTask.autoUpdateStatusFromSubtasks) return
 
-        val calculatedStatus = getCalculatedStatusFromSubtasks(parentTaskId)
+        val subtasks = getSubtasks(parentTaskId)
+        val calculatedStatus = calculateStatusFromSubtasks(subtasks.map { it.status })
         if (calculatedStatus != null && calculatedStatus != parentTask.status) {
-            val subtasks = getSubtasks(parentTaskId)
             recordStatusChange(
                 taskId = parentTaskId,
                 previousStatus = parentTask.status,
@@ -963,7 +964,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      */
     protected suspend fun handleCrossSpaceRelationshipsOnSpaceDeletion(taskIdsInDeletedSpace: Set<String>) {
         // Get all tasks from other spaces and check their relationships
-        getAllTasks().forEach { space ->
+        getAllSpaces().forEach { space ->
             getTasksInSpace(space.id).forEach { task ->
                 var modified = false
                 var updatedTask = task
@@ -1027,12 +1028,13 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     /**
      * Checks if task connections match the specified task IDs for each connection type.
      * All non-empty filters must match for the result to be true.
+     *
+     * Takes ids already parsed, since they come from the criteria and are the same for every task.
      */
     protected fun matchesConnectionsByTaskIds(
         connections: Set<TaskConnection>,
-        filtersByType: Map<ConnectionType, String>
-    ): Boolean = filtersByType.all { (connectionType, taskIdsString) ->
-        val taskIds = parseTaskIds(taskIdsString)
+        filtersByType: Map<ConnectionType, Set<String>>
+    ): Boolean = filtersByType.all { (connectionType, taskIds) ->
         taskIds.isEmpty() || connections.any { connection ->
             connection.type == connectionType && connection.targetTaskId.uppercase() in taskIds
         }
@@ -1083,15 +1085,27 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     ): List<TaskWithTotals> {
         val now = clock.now()
         val todayStart = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
+        // Derived from the criteria, so parsed once here rather than per task.
+        val searchTerms = criteria.searchQuery.trim()
+            .takeIf { it.isNotEmpty() }
+            ?.split(whitespace)
+            .orEmpty()
+        val blockedByIds = parseTaskIds(criteria.blockedByTaskIds)
+        val connectionIdFilters = mapOf(
+            ConnectionType.DependsOn to parseTaskIds(criteria.dependsOnTaskIds),
+            ConnectionType.IsDependencyOf to parseTaskIds(criteria.isDependencyOfTaskIds),
+            ConnectionType.RelatesTo to parseTaskIds(criteria.relatesToTaskIds),
+            ConnectionType.SubtaskOf to parseTaskIds(criteria.subtaskOfTaskIds),
+            ConnectionType.ParentOf to parseTaskIds(criteria.parentOfTaskIds),
+        )
 
         return tasks.filter { taskWithTotals ->
             val task = taskWithTotals.task
 
             // Text search filter - searches across ALL selected fields simultaneously
-            val matchesTextSearch = if (criteria.searchQuery.isBlank()) true
+            val matchesTextSearch = if (searchTerms.isEmpty()) true
             else {
-                val queries = criteria.searchQuery.trim().split(Regex("\\s+"))
-                queries.all { query ->
+                searchTerms.all { query ->
                     criteria.textSearchFields.any { field ->
                         when (field) {
                             TaskTextSearchField.Id -> task.id.contains(query, ignoreCase = true)
@@ -1112,7 +1126,6 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                         if (task.status !is TaskStatus.Blocked) return@any false
 
                         // Check blockedByTaskIds filter
-                        val blockedByIds = parseTaskIds(criteria.blockedByTaskIds)
                         val matchesBlockerIds = blockedByIds.isEmpty() ||
                                 task.status.blockerTaskIds.any { it.uppercase() in blockedByIds }
 
@@ -1226,16 +1239,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             }
 
             // Specific task ID filter for connections - check each connection type separately
-            val matchesSpecificConnections = matchesConnectionsByTaskIds(
-                task.connections,
-                mapOf(
-                    ConnectionType.DependsOn to criteria.dependsOnTaskIds,
-                    ConnectionType.IsDependencyOf to criteria.isDependencyOfTaskIds,
-                    ConnectionType.RelatesTo to criteria.relatesToTaskIds,
-                    ConnectionType.SubtaskOf to criteria.subtaskOfTaskIds,
-                    ConnectionType.ParentOf to criteria.parentOfTaskIds
-                )
-            )
+            val matchesSpecificConnections = matchesConnectionsByTaskIds(task.connections, connectionIdFilters)
 
             // Tags filter with match mode
             val matchesTags = if (criteria.selectedTags.isEmpty()) true
