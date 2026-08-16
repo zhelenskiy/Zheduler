@@ -31,8 +31,16 @@ class ViewModeEditorState(
 
     private val originalId: String? = initialViewMode?.id
 
+    /**
+     * The id this editor will save under, settled once.
+     *
+     * Minting it inside [toViewMode] gave a different id to every call, so a second tap on Save
+     * before the screen had gone created a second view mode rather than rewriting the first.
+     */
+    private val idToSave: String = originalId ?: generateId()
+
     fun toViewMode(): ViewMode = ViewMode(
-        id = originalId ?: generateId(),
+        id = idToSave,
         name = name.trim(),
         spaceId = spaceId,
         isBuiltIn = false,
@@ -61,8 +69,12 @@ class ViewModeEditorState(
         if (isCopy) return true
 
         if (initialViewMode == null) {
-            // New mode - has changes if name is not empty or has grouping levels
-            return name.isNotBlank() || groupingLevels.isNotEmpty()
+            // A new mode. Ordering counts as work too: editing only the default order and then
+            // pressing back discarded it without the confirmation every other edit gets.
+            return name.isNotBlank() ||
+                    groupingLevels.isNotEmpty() ||
+                    defaultOrderingRules.mapToPersistentList { it.toOrderingRule() } !=
+                    ViewMode.chronological(spaceId).defaultOrderingRules
         }
         // Compare with the initial state
         val current = toViewMode()
@@ -137,6 +149,10 @@ class GroupingLevelState(
      */
     fun validate(): List<GroupingValidationError> {
         val errors = mutableListOf<GroupingValidationError>()
+        if (groups.isEmpty()) errors.add(GroupingValidationError.EmptyLevel(field))
+
+        // A level with no groups puts every task in the unnamed bucket and shows one blank
+        // header, so it is not a configuration worth saving. Choosing Tags starts here.
 
         // Check for empty group labels and empty groups
         for (group in groups) {

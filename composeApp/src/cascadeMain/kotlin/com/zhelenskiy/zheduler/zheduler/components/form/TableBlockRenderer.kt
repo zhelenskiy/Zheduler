@@ -27,7 +27,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -304,6 +307,18 @@ private fun TableCell(
     onFocusChange: (Boolean) -> Unit,
     onMoveVertically: (Int) -> Unit,
 ) {
+    // What is being typed, which is not always what the document holds.
+    //
+    // Every edit is written into the document and read back out, and a table cell loses its
+    // surrounding spaces on the way: that is what a pipe table means, and the parser is right to
+    // drop them. Handing the trimmed text straight back to the field, though, makes a space
+    // impossible to type — it disappears before the next character arrives, so "hello world"
+    // comes out "helloworld". The field keeps its own text and takes the document's only when the
+    // document says something this field did not: anything else is that same normalisation
+    // coming back.
+    var text by remember { mutableStateOf(value) }
+    if (value != text.trim()) text = value
+
     val background = if (isHeader) {
         MaterialTheme.colorScheme.surfaceVariant
     } else {
@@ -327,8 +342,11 @@ private fun TableCell(
         contentAlignment = Alignment.CenterStart,
     ) {
         BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+            value = text,
+            onValueChange = {
+                text = it
+                onValueChange(it)
+            },
             textStyle = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = if (isHeader) FontWeight.Bold else FontWeight.Normal,

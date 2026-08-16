@@ -199,6 +199,9 @@ private fun ValidationStatusCard(validationResult: GroupingValidationResult, isN
                         is GroupingValidationError.InvalidRange -> {
                             add("Group '${error.groupLabel.ifBlank { "(unnamed)" }}' in ${error.field.displayName} has invalid range")
                         }
+                        is GroupingValidationError.EmptyLevel -> {
+                            add("The ${error.field.displayName} level has no groups")
+                        }
                     }
                 }
             }
@@ -447,9 +450,11 @@ private fun GroupingLevelEditorDialog(
 ) {
     val lazyListState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        // Offset by 4 for the header items (field selector, checkbox, validation errors, groups header)
-        val hasErrors = level.validate().isNotEmpty()
-        val headerCount = if (hasErrors) 4 else 3
+        // Four header items always precede the groups: field selector, checkbox, validation
+        // errors, groups header. The errors card collapses to nothing when the level is valid but
+        // its item stays in the list, so counting three then shifted every drag by one — the
+        // group below the dragged one moved instead, and dragging the last one did nothing.
+        val headerCount = 4
         level.moveGroup(from.index - headerCount, to.index - headerCount)
     }
 
@@ -568,6 +573,8 @@ private fun LevelValidationErrorsCard(validationErrors: List<GroupingValidationE
                                     "A group has no name"
                                 is GroupingValidationError.InvalidRange ->
                                     "Group '${error.groupLabel.ifBlank { "(unnamed)" }}' has invalid range"
+                                is GroupingValidationError.EmptyLevel ->
+                                    "Add at least one group"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error

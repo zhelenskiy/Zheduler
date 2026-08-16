@@ -193,6 +193,17 @@ sealed class GroupingValidationError {
         val field: GroupableField,
         val groupLabel: String
     ) : GroupingValidationError()
+
+    /**
+     * A level that defines no groups at all.
+     *
+     * Every task falls through to the unnamed uncategorized bucket, so the level does nothing but
+     * add a blank header. Reachable without noticing: choosing Tags creates no default groups, and
+     * a level's last group can be deleted.
+     */
+    data class EmptyLevel(
+        val field: GroupableField
+    ) : GroupingValidationError()
 }
 
 /**
@@ -289,6 +300,8 @@ data class ViewMode(
         val errors = buildPersistentList {
             for (level in groupingLevels) {
                 val field = level.field
+
+                if (level.groups.isEmpty()) add(GroupingValidationError.EmptyLevel(field))
 
                 // Check for empty group labels and empty groups
                 for (group in level.groups) {

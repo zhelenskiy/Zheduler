@@ -40,19 +40,30 @@ data class PersistedFormState(
  */
 class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
 
-    fun read(): PersistedFormState = PersistedFormState(
-        title = savedStateHandle[KEY_TITLE],
-        description = savedStateHandle[KEY_DESCRIPTION],
-        priority = savedStateHandle[KEY_PRIORITY],
-        estimatedTime = savedStateHandle[KEY_ESTIMATED_TIME],
-        tags = savedStateHandle.get<String>(KEY_TAGS)
-            ?.let { runCatching { Json.decodeFromString<Set<String>>(it) }.getOrNull() }
-            ?.toPersistentSet()
-            ?: persistentSetOf(),
-        dueDate = savedStateHandle.get<Long>(KEY_DUE_DATE)?.let(Instant::fromEpochMilliseconds),
-    )
+    /**
+     * The stored form, or null if none was ever stored.
+     *
+     * The difference matters. A form whose due date and tags the user deliberately cleared stores
+     * a null and an empty set — field for field, exactly what an absent record looks like — so
+     * reading those as "nothing to restore" brought the cleared values back.
+     */
+    fun read(): PersistedFormState? {
+        if (savedStateHandle.get<Boolean>(KEY_PRESENT) != true) return null
+        return PersistedFormState(
+            title = savedStateHandle[KEY_TITLE],
+            description = savedStateHandle[KEY_DESCRIPTION],
+            priority = savedStateHandle[KEY_PRIORITY],
+            estimatedTime = savedStateHandle[KEY_ESTIMATED_TIME],
+            tags = savedStateHandle.get<String>(KEY_TAGS)
+                ?.let { runCatching { Json.decodeFromString<Set<String>>(it) }.getOrNull() }
+                ?.toPersistentSet()
+                ?: persistentSetOf(),
+            dueDate = savedStateHandle.get<Long>(KEY_DUE_DATE)?.let(Instant::fromEpochMilliseconds),
+        )
+    }
 
     fun write(state: PersistedFormState) {
+        savedStateHandle[KEY_PRESENT] = true
         savedStateHandle[KEY_TITLE] = state.title
         savedStateHandle[KEY_DESCRIPTION] = state.description
         savedStateHandle[KEY_PRIORITY] = state.priority
@@ -62,6 +73,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
     }
 
     fun clear() {
+        savedStateHandle.remove<Boolean>(KEY_PRESENT)
         savedStateHandle.remove<String>(KEY_TITLE)
         savedStateHandle.remove<String>(KEY_DESCRIPTION)
         savedStateHandle.remove<String>(KEY_PRIORITY)
@@ -71,6 +83,8 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
     }
 
     private companion object {
+        /** Written alongside the fields, so an absent record can be told from a cleared one. */
+        const val KEY_PRESENT = "form_present"
         const val KEY_TITLE = "form_title"
         const val KEY_DESCRIPTION = "form_description"
         const val KEY_PRIORITY = "form_priority"
@@ -91,18 +105,19 @@ fun TaskFormState.toPersistedState() = PersistedFormState(
 )
 
 /**
- * Overwrites the fields this state actually holds.
+ * Overwrites every field this state covers.
  *
- * Absent fields are left as the form found them, so restoring an untouched form over prefilled
- * content — a copied task, say — keeps the prefill rather than blanking it.
+ * A stored record always describes a whole form — nothing is written until the form has been
+ * restored — so it is applied as it stands, blanks included. Skipping the blanks resurrected a due
+ * date or a set of tags the user had removed.
  */
 fun PersistedFormState.applyTo(formState: TaskFormState) {
-    title?.let { formState.title = it }
-    description?.let { formState.description = it }
-    priority?.let { formState.priority = it }
-    estimatedTime?.let { formState.estimatedTime = it }
-    if (tags.isNotEmpty()) formState.tags = tags
-    dueDate?.let { formState.dueDate = it }
+    formState.title = title.orEmpty()
+    formState.description = description.orEmpty()
+    formState.priority = priority.orEmpty()
+    formState.estimatedTime = estimatedTime.orEmpty()
+    formState.tags = tags
+    formState.dueDate = dueDate
 }
 
 /**
@@ -118,7 +133,7 @@ fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
     var restored by remember(this) { mutableStateOf(false) }
 
     LaunchedEffect(this) {
-        persistence.read().applyTo(this@persistedIn)
+        persistence.read()?.applyTo(this@persistedIn)
         restored = true
     }
 

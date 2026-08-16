@@ -520,10 +520,14 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                     }
                 }
 
+                // Keyed on how many there are, as the recurrence section above is, and not on the
+                // list itself: every keystroke makes a new list, which tore down and rebuilt the
+                // rows — disposing the field being typed into, so it lost focus each character.
                 AnimatedContent(
-                    targetState = formState.notifications,
+                    targetState = formState.notifications.size,
                     transitionSpec = { EnterTransition.None togetherWith ExitTransition.None },
-                ) { notifications ->
+                ) { _ ->
+                    val notifications = formState.notifications
                     LazyColumn(
                         modifier = Modifier.heightIn(max = 400.dp).fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),

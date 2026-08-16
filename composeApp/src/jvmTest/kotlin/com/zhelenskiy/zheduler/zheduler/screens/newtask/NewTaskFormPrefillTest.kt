@@ -80,7 +80,7 @@ class NewTaskFormPrefillTest {
         form.priority = "42"
         waitForIdle()
 
-        val restored = FormStatePersistence(handle).read()
+        val restored = FormStatePersistence(handle).read()!!
         assertEquals("Draft", restored.title)
         assertEquals("42", restored.priority)
     }
@@ -113,6 +113,6 @@ class NewTaskFormPrefillTest {
         waitForIdle()
 
         assertEquals("Saved before death", formState.title)
-        assertEquals("Saved before death", FormStatePersistence(handle).read().title)
+        assertEquals("Saved before death", FormStatePersistence(handle).read()!!.title)
     }
 }

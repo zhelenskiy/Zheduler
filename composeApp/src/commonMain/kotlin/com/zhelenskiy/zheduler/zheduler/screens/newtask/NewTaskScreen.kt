@@ -74,8 +74,14 @@ fun NewTaskScreen(
         )
     }
 
+    // Creating is not idempotent, and the button stays enabled until navigation takes the screen
+    // away — long enough on a slow device for a second tap to queue a second identical task.
+    var saving by remember { mutableStateOf(false) }
+
     fun saveTask() {
+        if (saving) return
         val parsed = formState.toParsedValues() ?: return
+        saving = true
         container.store.intent(
             NewTaskIntent.CreateTask(
                 title = parsed.title,
@@ -99,7 +105,7 @@ fun NewTaskScreen(
             TaskFormTopAppBar(
                 title = "New Task",
                 taskId = state.nextId?.let { "ID: $it" },
-                isFormValid = formState.isFormValid,
+                isFormValid = formState.isFormValid && !saving,
                 onBackPress = { handleBackPress() },
                 onSave = { saveTask() },
                 themeMode = themeMode,
