@@ -223,12 +223,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun getTasksByIdWithTotals(id: String): TaskWithTotals? = mutex.withLock {
         tasks[id]?.let { task ->
-            val blockedTasks = getBlockedTasks()
-            val tasksById = tasks.values.associateBy { it.id }
+            val totals = taskTotals(task, getBlockedTasks(), tasks)
             TaskWithTotals(
                 task = task,
-                totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
-                totalPriority = calculateTotalPriority(task, blockedTasks, tasksById)
+                totalDueDate = totals.totalDueDate,
+                totalPriority = totals.totalPriority,
             )
         }
     }

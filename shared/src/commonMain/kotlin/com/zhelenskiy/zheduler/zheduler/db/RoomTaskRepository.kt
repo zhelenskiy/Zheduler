@@ -348,10 +348,11 @@ class RoomTaskRepository(
         val neededTaskIds = collectNeededTaskIds(task, blockedTasks)
         // Batch fetch all necessary tasks in a single query
         val tasksById = getTasksByIds(neededTaskIds).associateByToPersistentMap { it.id }.putting(task.id, task)
+        val totals = taskTotals(task, blockedTasks, tasksById)
         return TaskWithTotals(
             task = task,
-            totalDueDate = calculateTotalDueDate(task, blockedTasks, tasksById),
-            totalPriority = calculateTotalPriority(task, blockedTasks, tasksById)
+            totalDueDate = totals.totalDueDate,
+            totalPriority = totals.totalPriority,
         )
     }
 

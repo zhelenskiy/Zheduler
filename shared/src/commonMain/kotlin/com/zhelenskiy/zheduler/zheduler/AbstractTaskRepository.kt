@@ -515,19 +515,155 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     /**
      * Totals for a whole result set at once, keyed by task ID.
      *
-     * As in the single-task calls, dependents are only followed within [nodes]: a task's totals
-     * depend on which other tasks the surrounding query matched.
+     * A task's totals are the earliest due date and highest priority over everything that reaches
+     * it transitively. Dependents are only followed within [nodes], so a task's totals depend on
+     * which other tasks the surrounding query matched.
+     *
+     * Computed for every node in one pass rather than walked per task: the relation is a graph, so
+     * a per-task walk re-explored shared subtrees once per route into them — a chain of 24
+     * diamonds is 73 tasks but 2^24 routes, and took about 18 seconds.
      */
     protected fun calculateTotals(
         nodes: List<TotalsNode>,
         blockedNodes: List<TotalsNode>,
     ): Map<String, TaskTotals> {
-        val nodesById = nodes.associateBy { it.id }
-        return nodes.associate { node ->
-            node.id to TaskTotals(
-                totalDueDate = calculateTotalDueDate(node, blockedNodes, nodesById),
-                totalPriority = calculateTotalPriority(node, blockedNodes, nodesById),
-            )
+        if (nodes.isEmpty()) return emptyMap()
+        val graph = TotalsGraph(nodes, blockedNodes)
+        return nodes.associate { node -> node.id to graph.totalsOf(node.id) }
+    }
+
+    /**
+     * The dependency graph of one query, with both totals resolved for every node in it.
+     */
+    private class TotalsGraph(nodes: List<TotalsNode>, blockedNodes: List<TotalsNode>) {
+
+        /** Dependent edges resolve only within the queried set; blocked tasks are followed regardless. */
+        private val nodesById = nodes.associateBy { it.id }
+        private val universe = LinkedHashMap<String, TotalsNode>(nodes.size + blockedNodes.size).apply {
+            nodes.forEach { put(it.id, it) }
+            blockedNodes.forEach { putIfAbsent(it.id, it) }
+        }
+
+        private val successors: Map<String, List<String>> = buildMap<String, MutableList<String>> {
+            universe.values.forEach { node ->
+                getOrPut(node.id) { mutableListOf() }
+                    .addAll(node.dependentIds.filter { it in nodesById })
+            }
+            // Indexed once, rather than scanning every blocked task at every node.
+            blockedNodes.forEach { blocked ->
+                blocked.blockerIds.forEach { blockerId ->
+                    if (blockerId in universe) getOrPut(blockerId) { mutableListOf() }.add(blocked.id)
+                }
+            }
+        }
+
+        private val componentOf = HashMap<String, Int>(universe.size)
+        private val componentTotals = mutableListOf<TaskTotals>()
+
+        init {
+            stronglyConnectedComponents().forEach { members -> foldComponent(members) }
+        }
+
+        fun totalsOf(id: String): TaskTotals =
+            componentOf[id]?.let(componentTotals::get) ?: TaskTotals(null, null)
+
+        /**
+         * Tarjan's algorithm, iterative because a dependency chain can be longer than the stack.
+         * Components come out with every component they can reach already emitted.
+         */
+        private fun stronglyConnectedComponents(): List<List<String>> {
+            val index = HashMap<String, Int>(universe.size)
+            val lowLink = HashMap<String, Int>(universe.size)
+            val onStack = HashSet<String>()
+            val pending = ArrayDeque<String>()
+            val components = mutableListOf<List<String>>()
+            var nextIndex = 0
+
+            /** Frames of the walk: a node and how many of its successors have been dealt with. */
+            val work = ArrayDeque<Pair<String, Int>>()
+
+            for (root in universe.keys) {
+                if (root in index) continue
+                index[root] = nextIndex
+                lowLink[root] = nextIndex
+                nextIndex++
+                pending.addLast(root)
+                onStack += root
+                work.addLast(root to 0)
+
+                while (work.isNotEmpty()) {
+                    val (node, nextSuccessor) = work.removeLast()
+                    val edges = successors[node].orEmpty()
+                    if (nextSuccessor < edges.size) {
+                        work.addLast(node to nextSuccessor + 1)
+                        val target = edges[nextSuccessor]
+                        when {
+                            target !in index -> {
+                                index[target] = nextIndex
+                                lowLink[target] = nextIndex
+                                nextIndex++
+                                pending.addLast(target)
+                                onStack += target
+                                work.addLast(target to 0)
+                            }
+                            target in onStack ->
+                                lowLink[node] = minOf(lowLink.getValue(node), index.getValue(target))
+                        }
+                        continue
+                    }
+
+                    if (lowLink.getValue(node) == index.getValue(node)) {
+                        val members = mutableListOf<String>()
+                        while (true) {
+                            val member = pending.removeLast()
+                            onStack -= member
+                            componentOf[member] = components.size
+                            members += member
+                            if (member == node) break
+                        }
+                        components += members
+                    }
+                    work.lastOrNull()?.first?.let { parent ->
+                        lowLink[parent] = minOf(lowLink.getValue(parent), lowLink.getValue(node))
+                    }
+                }
+            }
+            return components
+        }
+
+        private fun foldComponent(members: List<String>) {
+            val componentIndex = componentTotals.size
+            var earliestDueDate: Instant? = null
+            var highestPriority: Priority? = null
+
+            members.forEach { id ->
+                val node = universe.getValue(id)
+                earliestDueDate = earlier(earliestDueDate, node.dueDate)
+                highestPriority = higher(highestPriority, node.priority)
+
+                successors[id].orEmpty().forEach { target ->
+                    val targetComponent = componentOf.getValue(target)
+                    // Already folded: components are emitted after everything they reach.
+                    if (targetComponent != componentIndex) {
+                        val reached = componentTotals[targetComponent]
+                        earliestDueDate = earlier(earliestDueDate, reached.totalDueDate)
+                        highestPriority = higher(highestPriority, reached.totalPriority)
+                    }
+                }
+            }
+            componentTotals += TaskTotals(earliestDueDate, highestPriority)
+        }
+
+        private fun earlier(a: Instant?, b: Instant?): Instant? = when {
+            a == null -> b
+            b == null -> a
+            else -> minOf(a, b)
+        }
+
+        private fun higher(a: Priority?, b: Priority?): Priority? = when {
+            a == null -> b
+            b == null -> a
+            else -> maxOf(a, b)
         }
     }
 
@@ -544,96 +680,20 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     }
 
     /**
-     * Calculate the total (effective) due date for a task.
-     * Takes into account tasks that depend on this task and tasks blocked by this task.
-     * @param task The task to calculate the total due date for
-     * @param blockedTasks List of all blocked tasks (for checking if this task is a blocker)
-     * @param tasksById Map of task ID to task for efficient lookups
-     * @param visited Set of already visited task IDs to prevent cycles
+     * Totals for one task, over the graph formed by [tasksById] and [blockedTasks].
+     *
+     * [task] is included in the graph whether or not [tasksById] already holds it.
      */
-    protected fun calculateTotalDueDate(
+    protected fun taskTotals(
         task: Task,
         blockedTasks: List<Task>,
         tasksById: Map<String, Task>,
-        visited: PersistentSet<String> = persistentSetOf()
-    ): Instant? = calculateTotalDueDate(
-        node = task.toTotalsNode(),
-        blockedNodes = blockedTasks.map { it.toTotalsNode() },
-        nodesById = tasksById.mapValues { (_, value) -> value.toTotalsNode() },
-        visited = visited
-    )
-
-    /**
-     * Calculate the total (effective) priority for a task.
-     * Takes into account tasks that depend on this task and tasks blocked by this task.
-     * @param task The task to calculate total priority for
-     * @param blockedTasks List of all blocked tasks (for checking if this task is a blocker)
-     * @param tasksById Map of task ID to task for efficient lookups
-     * @param visited Set of already visited task IDs to prevent cycles
-     */
-    protected fun calculateTotalPriority(
-        task: Task,
-        blockedTasks: List<Task>,
-        tasksById: Map<String, Task>,
-        visited: MutableSet<String> = mutableSetOf()
-    ): Priority? = calculateTotalPriority(
-        node = task.toTotalsNode(),
-        blockedNodes = blockedTasks.map { it.toTotalsNode() },
-        nodesById = tasksById.mapValues { (_, value) -> value.toTotalsNode() },
-        visited = visited
-    )
-
-    /** [calculateTotalDueDate] over the minimal task view; see [TotalsNode]. */
-    protected fun calculateTotalDueDate(
-        node: TotalsNode,
-        blockedNodes: List<TotalsNode>,
-        nodesById: Map<String, TotalsNode>,
-        visited: PersistentSet<String> = persistentSetOf()
-    ): Instant? {
-        if (node.id in visited) return null
-        val newVisited = visited.adding(node.id)
-
-        val dependentDueDates = node.dependentIds
-            .mapNotNull { targetTaskId ->
-                nodesById[targetTaskId]?.let {
-                    calculateTotalDueDate(it, blockedNodes, nodesById, newVisited)
-                }
-            }
-
-        val blockedTaskDueDates = blockedNodes
-            .mapNotNull { blockedNode ->
-                if (blockedNode.id !in newVisited && node.id in blockedNode.blockerIds) {
-                    calculateTotalDueDate(blockedNode, blockedNodes, nodesById, newVisited)
-                } else null
-            }
-
-        return (listOfNotNull(node.dueDate) + dependentDueDates + blockedTaskDueDates).minOrNull()
-    }
-
-    /** [calculateTotalPriority] over the minimal task view; see [TotalsNode]. */
-    protected fun calculateTotalPriority(
-        node: TotalsNode,
-        blockedNodes: List<TotalsNode>,
-        nodesById: Map<String, TotalsNode>,
-        visited: MutableSet<String> = mutableSetOf()
-    ): Priority? {
-        if (!visited.add(node.id)) return null
-
-        val dependentPriorities = node.dependentIds
-            .mapNotNull { targetTaskId ->
-                nodesById[targetTaskId]?.let {
-                    calculateTotalPriority(it, blockedNodes, nodesById, visited)
-                }
-            }
-
-        val blockedTaskPriorities = blockedNodes
-            .mapNotNull { blockedNode ->
-                if (blockedNode.id !in visited && node.id in blockedNode.blockerIds) {
-                    calculateTotalPriority(blockedNode, blockedNodes, nodesById, visited)
-                } else null
-            }
-
-        return (listOfNotNull(node.priority) + dependentPriorities + blockedTaskPriorities).maxOrNull()
+    ): TaskTotals {
+        val nodes = (tasksById.values.asSequence().map { it.toTotalsNode() } + task.toTotalsNode())
+            .distinctBy { it.id }
+            .toList()
+        return calculateTotals(nodes, blockedTasks.map { it.toTotalsNode() })[task.id]
+            ?: TaskTotals(null, null)
     }
 
     // ============ Task update business logic ============
