@@ -7,6 +7,7 @@ import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.*
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -68,7 +69,15 @@ class IsMissedTest {
 
     @Test
     fun `Task isMissed returns true when due date is 1 millisecond in the past`() {
-        val task = Task(id = "TEST-1", title = "Test", spaceId = "space-1", dueDate = now - 1.hours, status = TaskStatus.Open)
+        // Actually a millisecond, which is the point: the sibling test pins `dueDate == now` to
+        // false, so the cutoff is load-bearing and an hour's margin never exercised it.
+        val task = Task(
+            id = "TEST-1",
+            title = "Test",
+            spaceId = "space-1",
+            dueDate = now - 1.milliseconds,
+            status = TaskStatus.Open,
+        )
         assertTrue(task.isMissed(now))
     }
 

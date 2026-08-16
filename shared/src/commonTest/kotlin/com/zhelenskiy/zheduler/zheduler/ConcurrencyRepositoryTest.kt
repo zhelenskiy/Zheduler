@@ -237,8 +237,11 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         }
 
         // Verify data integrity
+        // Exactly the ten it started with plus the twenty the writers added. "At least ten" was
+        // satisfied by losing every single concurrent write, which is the corruption this test is
+        // named for.
         val allTasks = repo.getAllTasks(spaceId)
-        assertTrue(allTasks.size >= 10, "Should have at least the initial 10 tasks")
+        assertEquals(30, allTasks.size, "every concurrent add should have landed")
 
         // These fields are non-nullable, so asserting they are not null asserted nothing. What
         // can actually go wrong under concurrency is a half-written row: a blank id or title, or

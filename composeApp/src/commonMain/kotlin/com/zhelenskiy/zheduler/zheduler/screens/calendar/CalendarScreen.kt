@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.minutes
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -159,7 +161,17 @@ fun CalendarScreen(
 ) {
     val state by container.store.subscribe()
 
-    val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()) }
+    // Re-read when the day turns. Fixed at first composition, a desktop app left open overnight
+    // kept ringing yesterday and "Go to Today" jumped to it.
+    val today by produceState(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())) {
+        while (true) {
+            val zone = TimeZone.currentSystemDefault()
+            val now = Clock.System.now()
+            value = now.toLocalDateTime(zone)
+            val nextMidnight = value.date.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone)
+            delay((nextMidnight - now).coerceAtLeast(1.minutes))
+        }
+    }
 
     // Saveable: opening a task from a status-change card rebuilds this composition on the way
     // back, and on Android so does a rotation. Plain remember dropped the month the user had

@@ -29,10 +29,18 @@ private val SchemedTaskLink =
 internal fun withBareTaskReferenceLinks(markdown: String): String =
     markdown.replace(SchemedTaskLink) { match -> "](${match.groupValues[1]})" }
 
-/** Pattern for the spaces that exist, falling back to any uppercase prefix. */
+/**
+ * Pattern for the spaces that exist, falling back to any uppercase prefix.
+ *
+ * Prefixes are quoted rather than dropped in raw. Creating a space checks the prefix against
+ * `^[A-Z]+$`, but importing one takes whatever the file says, so a hand-edited export can put a
+ * regex metacharacter here — and this is built inside composition, where a pattern that fails to
+ * compile is caught by nothing and would take down every screen rendering a description, in every
+ * space, until that one space was deleted.
+ */
 internal fun taskIdPattern(allSpacePrefixes: List<String>): Regex =
     if (allSpacePrefixes.isNotEmpty()) {
-        Regex("\\b(${allSpacePrefixes.joinToString("|")})-\\d+\\b")
+        Regex("\\b(${allSpacePrefixes.joinToString("|") { Regex.escape(it) }})-\\d+\\b")
     } else {
         Regex("\\b[A-Z]+-\\d+\\b")
     }

@@ -63,6 +63,9 @@ sealed interface NewTaskIntent : MVIIntent {
 
 sealed interface NewTaskAction : MVIAction {
     data class TaskCreated(val task: Task) : NewTaskAction
+
+    /** The repository declined to create it — see [TaskRepository.addTask]'s nullable return. */
+    data object TaskCreationFailed : NewTaskAction
 }
 
 private typealias NewTaskPipelineContext = PipelineContext<NewTaskState, NewTaskIntent, NewTaskAction>
@@ -135,6 +138,10 @@ class NewTaskContainer(
         if (task != null) {
             formPersistence.clear()
             action(NewTaskAction.TaskCreated(task))
+        } else {
+            // Saying nothing left the screen looking as though the tap had not registered, with
+            // its in-flight guard still latched and Save dead for good.
+            action(NewTaskAction.TaskCreationFailed)
         }
     }
 

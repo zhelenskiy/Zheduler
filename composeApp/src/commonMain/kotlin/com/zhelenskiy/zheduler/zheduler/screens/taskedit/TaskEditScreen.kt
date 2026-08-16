@@ -34,10 +34,25 @@ fun TaskEditScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
+    var saveFailed by remember { mutableStateOf(false) }
+
     val state by container.store.subscribe { action ->
         when (action) {
             is TaskEditAction.TaskSaved -> onNavigateBack()
+            // Stay put and say so, rather than navigating away as though it had worked.
+            is TaskEditAction.TaskSaveFailed -> saveFailed = true
         }
+    }
+
+    if (saveFailed) {
+        AlertDialog(
+            onDismissRequest = { saveFailed = false },
+            title = { Text("Could not save") },
+            text = { Text("This task no longer exists. Your changes are still here — copy anything you need before leaving.") },
+            confirmButton = {
+                TextButton(onClick = { saveFailed = false }) { Text("OK") }
+            },
+        )
     }
 
     val currentTask = state.task ?: return

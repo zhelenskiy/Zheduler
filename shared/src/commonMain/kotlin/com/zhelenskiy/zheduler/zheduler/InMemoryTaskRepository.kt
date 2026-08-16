@@ -303,7 +303,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     private fun generateNextIdUnsafe(spaceId: String): String {
         val space = spaces[spaceId] ?: return "TASK-1"
-        val nextNum = nextIdBySpace.getOrPut(spaceId) { 1 }
+        // See RoomTaskRepository.generateNextIdUnsafe: the counter is not the only source of ids.
+        var nextNum = nextIdBySpace.getOrPut(spaceId) { 1 }
+        while ("${space.idPrefix}-$nextNum" in tasks) nextNum++
         nextIdBySpace[spaceId] = nextNum + 1
         return "${space.idPrefix}-$nextNum"
     }
@@ -332,7 +334,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             getCalculatedStatusFromSubtasks(subtasksIds, ::getTaskById) ?: status
         } else {
             status
-        }
+        }.let { withoutResolvedBlockers(it) }
 
         val task = Task(
             id = taskId,
@@ -688,9 +690,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 idPrefix = newPrefix
             )
             spaces[newSpaceId] = newSpace
-            nextIdBySpace[newSpaceId] = exportData.nextId
 
             val oldToNewTaskId = createTaskIdMapping(exportData.tasks, newPrefix)
+            nextIdBySpace[newSpaceId] = nextIdAfter(oldToNewTaskId.values, exportData.nextId)
 
             exportData.tasks.forEach { task ->
                 val newTaskId = oldToNewTaskId[task.id] ?: return@forEach

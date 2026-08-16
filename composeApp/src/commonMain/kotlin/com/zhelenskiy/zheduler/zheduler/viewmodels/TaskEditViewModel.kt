@@ -50,6 +50,9 @@ sealed interface TaskEditIntent : MVIIntent {
 
 sealed interface TaskEditAction : MVIAction {
     data object TaskSaved : TaskEditAction
+
+    /** The task could not be saved — most likely it no longer exists. */
+    data object TaskSaveFailed : TaskEditAction
 }
 
 private typealias TaskEditPipelineContext = PipelineContext<TaskEditState, TaskEditIntent, TaskEditAction>
@@ -94,7 +97,13 @@ class TaskEditContainer(
     }
 
     private suspend fun TaskEditPipelineContext.saveTask(updatedTask: Task) {
-        repository.updateTask(updatedTask)
+        // A null return means the task is no longer there — deleted from another window, say.
+        // Reporting success anyway discarded the edit, wiped the copy kept for process death and
+        // navigated away, all while behaving as though the save had worked.
+        if (repository.updateTask(updatedTask) == null) {
+            action(TaskEditAction.TaskSaveFailed)
+            return
+        }
         formPersistence.clear()
         action(TaskEditAction.TaskSaved)
     }

@@ -286,7 +286,7 @@ class RoomTaskRepository(
         return Page(
             items = hydrateTasks(spaceId, rows),
             offset = offset,
-            totalCount = dao.countTasksForConnection(spaceId, excludeTaskId, searchQuery),
+            totalCount = dao.countTasksForConnection(spaceId, excludeTaskId, searchQuery.escapedForLike()),
         )
     }
 
@@ -569,7 +569,12 @@ class RoomTaskRepository(
 
     private suspend fun generateNextIdUnsafe(spaceId: String): String {
         val space = dao.getSpaceById(spaceId) ?: return "TASK-1"
-        val nextNum = dao.getNextId(spaceId) ?: 1
+        // Skips anything already taken. The counter is not the only source of ids — a task can be
+        // created with one of its own, and an import assigns them — so handing out its value
+        // unchecked could repeat an existing id, and the insert that failed also rolled back the
+        // counter's increment, leaving the space unable to create anything ever again.
+        var nextNum = dao.getNextId(spaceId) ?: 1
+        while (dao.getTaskById("${space.idPrefix}-$nextNum") != null) nextNum++
         dao.setNextId(spaceId, nextNum + 1)
         return "${space.idPrefix}-$nextNum"
     }
@@ -922,8 +927,16 @@ class RoomTaskRepository(
         dao.setActiveViewModeId(spaceId, viewModeId)
     }
 
-    override suspend fun exportSpaceToJson(spaceId: String, prettyPrint: Boolean): String? {
-        val space = getSpaceById(spaceId) ?: return null
+    /**
+     * Under the lock, so the export is one consistent picture.
+     *
+     * Tasks, timelines, tags and the id counter are four separate reads. Taken while the space is
+     * being edited they could disagree — a task exported with the status it had before a cascade,
+     * beside a timeline already recording the status after it — and re-importing that restored a
+     * task contradicting its own history.
+     */
+    override suspend fun exportSpaceToJson(spaceId: String, prettyPrint: Boolean): String? = mutex.withLock {
+        val space = getSpaceById(spaceId) ?: return@withLock null
         val spaceTasks = hydrateTasks(spaceId, dao.getTasksBySpace(spaceId))
         val taskIds = spaceTasks.map { it.id }.toSet()
         // Batch fetch all status timelines in a single query
@@ -955,7 +968,7 @@ class RoomTaskRepository(
         )
 
         val json = if (prettyPrint) jsonPretty else jsonCompact
-        return json.encodeToString(exportData)
+        json.encodeToString(exportData)
     }
 
     override suspend fun importSpaceFromJson(jsonString: String): Space? {
@@ -973,9 +986,9 @@ class RoomTaskRepository(
             val newSpace = Space(id = newSpaceId, name = exportData.space.name, idPrefix = newPrefix)
 
             dao.insertSpace(newSpaceId, newSpace.name, newPrefix)
-            dao.setNextId(newSpaceId, exportData.nextId.toLong())
 
             val oldToNewTaskId = createTaskIdMapping(exportData.tasks, newPrefix)
+            dao.setNextId(newSpaceId, nextIdAfter(oldToNewTaskId.values, exportData.nextId).toLong())
 
             exportData.tasks.forEach { task ->
                 val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
@@ -1060,7 +1073,7 @@ class RoomTaskRepository(
             getCalculatedStatusFromSubtasks(subtasksIds, ::getByIdUnsafe) ?: status
         } else {
             status
-        }
+        }.let { withoutResolvedBlockers(it) }
 
         val task = Task(
             id = taskId,

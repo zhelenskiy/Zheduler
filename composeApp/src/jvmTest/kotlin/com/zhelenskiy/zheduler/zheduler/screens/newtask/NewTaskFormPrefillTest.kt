@@ -46,25 +46,12 @@ class NewTaskFormPrefillTest {
         assertEquals(persistentSetOf(prefilled), formState.connections)
     }
 
-    @OptIn(ExperimentalTestApi::class)
-    @Test
-    fun anEditedFormIsNotRebuiltWhenTheSameDataIsRepublished() = runComposeUiTest {
-        var connections by mutableStateOf<PersistentSet<TaskConnection>>(persistentSetOf(prefilled))
-        lateinit var formState: TaskFormState
-
-        setContent {
-            formState = rememberFormStateFromData(taskToCopy = null, initialConnections = connections)
-        }
-
-        waitForIdle()
-        formState.title = "Half-written"
-
-        // The container re-runs its load on every re-subscribe and emits an equal value.
-        connections = persistentSetOf(prefilled)
-        waitForIdle()
-
-        assertEquals("Half-written", formState.title, "an equal reload must not discard the input")
-    }
+    // There was a test here asserting that republishing an equal value does not rebuild the form.
+    // It could not fail: Compose drops a state write that is structurally equal to what is already
+    // there, so nothing recomposes and the production keys are never consulted — it passed with
+    // the keys removed entirely, and even with a key guaranteed to differ on every composition.
+    // The property is Compose's, not this screen's; what this screen owns is covered above and
+    // below, where the prefill actually changes.
 
     @OptIn(ExperimentalTestApi::class)
     @Test

@@ -764,18 +764,29 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             }
         }
 
-        // If setting status to Blocked, check if all blockers are already resolved
-        // (but only if there are actual blockers - empty blockers means it should stay Blocked)
-        val newStatus = finalTask.status
-        if (newStatus is TaskStatus.Blocked &&
-            newStatus.blockerTaskIds.isNotEmpty() &&
-            areAllBlockersResolved(newStatus.blockerTaskIds)
-        ) {
-            finalTask = finalTask.copy(status = TaskStatus.InProgress)
-        }
+        finalTask = finalTask.copy(status = withoutResolvedBlockers(finalTask.status))
 
         return TaskStatusUpdateResult(finalTask, automaticReason)
     }
+
+    /**
+     * [status], demoted to InProgress when everything it says it is waiting on is already
+     * resolved. Any other status is returned as it is.
+     *
+     * Applied when a task is created as well as when it is updated. Nothing re-examines a blocked
+     * task except a blocker actually changing status, so one created blocked on work that was
+     * already Done stayed blocked for good — no later event could rescue it. An empty blocker set
+     * is left alone: that means blocked without saying by what.
+     */
+    protected suspend fun withoutResolvedBlockers(status: TaskStatus): TaskStatus =
+        if (status is TaskStatus.Blocked &&
+            status.blockerTaskIds.isNotEmpty() &&
+            areAllBlockersResolved(status.blockerTaskIds)
+        ) {
+            TaskStatus.InProgress
+        } else {
+            status
+        }
 
     /**
      * Handle status change tracking and cascading updates after a task update.
@@ -960,6 +971,11 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * importing a space whose prefix was taken throw instead of importing.
      */
     protected suspend fun uniqueSpacePrefix(base: String, isTaken: suspend (String) -> Boolean): String {
+        // An imported prefix has not been through createSpace's check, and the whole app assumes
+        // prefixes are plain uppercase letters — task ids are parsed by splitting on the dash, and
+        // the description renderer builds a pattern out of them. Anything else is replaced rather
+        // than stored.
+        val base = base.filter { it in 'A'..'Z' }.takeIf { it.isNotEmpty() } ?: "TASK"
         if (!isTaken(base)) return base
         var index = 0
         while (true) {
@@ -1016,6 +1032,22 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             assigned[task.id] = "$newPrefix-$next"
         }
         return assigned
+    }
+
+    /**
+     * Where a space's id counter must resume so it never hands out an id that already exists.
+     *
+     * Import restores the counter from the export, but the ids it assigns are chosen separately —
+     * a task whose suffix could not be reused gets the next free number, which may sit at or above
+     * that counter. The next generated id then repeated an existing one: in the database the
+     * insert violated the primary key and rolled back, including the counter's own increment, so
+     * every retry failed identically and the space could never gain another task.
+     */
+    protected fun nextIdAfter(assignedIds: Collection<String>, exportedNextId: Int): Int {
+        val highestAssigned = assignedIds
+            .mapNotNull { it.substringAfterLast("-").toIntOrNull() }
+            .maxOrNull() ?: 0
+        return maxOf(exportedNextId, highestAssigned + 1)
     }
 
     /**

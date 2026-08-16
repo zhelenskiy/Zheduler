@@ -37,10 +37,22 @@ fun NewTaskScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
+    // Creating is not idempotent, and the button stays enabled until navigation takes the screen
+    // away — long enough on a slow device for a second tap to queue a second identical task.
+    var saving by remember { mutableStateOf(false) }
+
     val state by container.store.subscribe { action ->
         when (action) {
             is NewTaskAction.TaskCreated -> onTaskCreated(action.task.id)
+            // The save did not happen, so the screen stays and the button must work again.
+            is NewTaskAction.TaskCreationFailed -> saving = false
         }
+    }
+
+    // Anything the store threw leaves the screen up as well; the guard has to be released for
+    // that too, or one failed attempt disables Save for as long as the form is open.
+    LaunchedEffect(container) {
+        container.failures.collect { saving = false }
     }
 
     val filteredTags = container.filteredTags.collectAsLazyPagingItems()
@@ -73,10 +85,6 @@ fun NewTaskScreen(
             onDismiss = { showDiscardChangesDialog = false }
         )
     }
-
-    // Creating is not idempotent, and the button stays enabled until navigation takes the screen
-    // away — long enough on a slow device for a second tap to queue a second identical task.
-    var saving by remember { mutableStateOf(false) }
 
     fun saveTask() {
         if (saving) return

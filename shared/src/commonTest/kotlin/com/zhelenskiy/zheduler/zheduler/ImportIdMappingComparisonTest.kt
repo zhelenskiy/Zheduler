@@ -52,6 +52,29 @@ class ImportIdMappingComparisonTest {
     }
 
     @Test
+    fun `an imported space can still create tasks`() = runTest {
+        for (repository in repositories()) {
+            // Ids that cannot keep their own number are given the next free one, which may land at
+            // or above the counter the export restores. The next generated id then repeated an
+            // existing one; the insert failed and rolled back the counter with it, so the space
+            // could never gain another task.
+            val source = repository.createSpace("Source", "SRC")!!
+            assertNotNull(repository.addTask(source.id, title = "one", customId = "SRC-1"))
+            assertNotNull(repository.addTask(source.id, title = "two", customId = "SRC-01"))
+            val json = assertNotNull(repository.exportSpaceToJson(source.id, prettyPrint = false))
+            val imported = assertNotNull(repository.importSpaceFromJson(json))
+
+            val added = repository.addTask(imported.id, title = "added after import")
+            assertNotNull(added, "$repository: the imported space cannot create tasks")
+            assertEquals(
+                3,
+                repository.getAllTasks(imported.id).size,
+                "$repository: the new task should sit alongside the two imported ones",
+            )
+        }
+    }
+
+    @Test
     fun `an ordinary export keeps its numbering`() = runTest {
         for (repository in repositories()) {
             val tasks = repository.roundTrip(listOf("SRC-1", "SRC-2", "SRC-3"))
