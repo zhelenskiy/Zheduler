@@ -275,17 +275,29 @@ private fun AppContent(
      * [fallbackSpaceId] covers a task that has since been deleted, where the old behaviour is no
      * worse than anything else available.
      */
+    // Which task the lookup below is already running for. The database round-trip leaves room for
+    // a second tap before the first navigates, and two taps on one reference opened it twice.
+    var taskBeingOpened by remember { mutableStateOf<String?>(null) }
+
     fun openTask(taskId: String, fallbackSpaceId: String) {
+        if (taskBeingOpened == taskId) return
+        taskBeingOpened = taskId
         navigationScope.launch {
-            // A lookup that fails must not take the app with it: this runs in the composition's
-            // own scope, where nothing catches an exception and Android ends the process. Opening
-            // the task in the space being read from is what happened before there was a lookup at
-            // all, so it is a fair thing to fall back to.
-            val spaceId = runCatching { appGraph.taskRepository.getSpaceIdForTask(taskId) }
-                .getOrNull() ?: fallbackSpaceId
-            // The database round-trip leaves room for a second tap before the first navigates,
-            // which used to stack two copies of the same screen.
-            navController.navigate(TaskDetailRoute(spaceId, taskId)) { launchSingleTop = true }
+            try {
+                // A lookup that fails must not take the app with it: this runs in the
+                // composition's own scope, where nothing catches an exception and Android ends
+                // the process. Opening the task in the space being read from is what happened
+                // before there was a lookup at all, so it is a fair thing to fall back to.
+                val spaceId = runCatching { appGraph.taskRepository.getSpaceIdForTask(taskId) }
+                    .getOrNull() ?: fallbackSpaceId
+                // Deliberately not launchSingleTop: it matches on the destination alone, not on
+                // its arguments, so following a reference from one task to another replaced the
+                // first task's entry instead of stacking on it — and Back skipped everything the
+                // reader had walked through.
+                navController.navigate(TaskDetailRoute(spaceId, taskId))
+            } finally {
+                taskBeingOpened = null
+            }
         }
     }
 

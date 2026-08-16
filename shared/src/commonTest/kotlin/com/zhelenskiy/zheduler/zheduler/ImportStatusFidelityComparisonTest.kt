@@ -63,6 +63,25 @@ class ImportStatusFidelityComparisonTest {
     }
 
     @Test
+    fun `a task imported with no history is given one`() = runTest {
+        // Hand-written and third-party files need not carry a timeline; the app's own always do.
+        val json = """
+            {"space":{"id":"space-0-SRC","name":"Source","idPrefix":"SRC"},
+             "tasks":[{"id":"SRC-1","title":"no history","spaceId":"space-0-SRC"}],
+             "statusTimelines":{},"nextId":2,"tags":[]}
+        """.trimIndent()
+
+        val histories = repositories().map { repository ->
+            val imported = assertNotNull(repository.importSpaceFromJson(json), "$repository: import failed")
+            val task = repository.getAllTasks(imported.id).single()
+            repository.getStatusTimeline(task.id).map { it.newStatus }
+        }
+
+        assertEquals(listOf(TaskStatus.Open), histories[0], "a task with no history at all cannot say when it began")
+        assertEquals(histories[0], histories[1])
+    }
+
+    @Test
     fun `importing writes no status history of its own`() = runTest {
         val json = exportedSpace()
 

@@ -2,12 +2,16 @@
 
 package com.zhelenskiy.zheduler.zheduler.components.form
 
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.runComposeUiTest
 import androidx.lifecycle.SavedStateHandle
+import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime
@@ -34,6 +38,47 @@ class ClearedFieldsPersistenceTest {
         recurrenceRules = persistentListOf(),
         autoUpdateStatusFromSubtasks = false,
     )
+
+    /**
+     * The same two cases, but through the write path the app actually uses.
+     *
+     * The records built by hand above leave `editedFields` null, which is how a record written by
+     * an older build is read — applied whole. Every record `persistedIn` writes names the fields
+     * the user touched, and it is that list a cleared field has to appear in.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `a due date cleared on screen is recorded as an edit`() = runComposeUiTest {
+        val handle = SavedStateHandle()
+        val task = Task(
+            id = "TASK-1",
+            title = "Report",
+            spaceId = "space-1",
+            dueDate = Instant.fromEpochMilliseconds(1_700_000_000_000),
+            tags = persistentSetOf("work"),
+        )
+
+        lateinit var form: TaskFormState
+        setContent {
+            form = rememberTaskFormState(task)
+            form.persistedIn(FormStatePersistence(handle))
+        }
+        waitForIdle()
+
+        form.dueDate = null
+        form.tags = persistentSetOf()
+        waitForIdle()
+
+        // What the screen would be rebuilt from: the task, unchanged, as it still is in the database.
+        val rebuilt = taskFormState(
+            initialDueDate = task.dueDate,
+            initialTags = task.tags,
+        )
+        assertNotNull(FormStatePersistence(handle).read(), "nothing was written").applyTo(rebuilt)
+
+        assertNull(rebuilt.dueDate, "the due date the user removed came back")
+        assertTrue(rebuilt.tags.isEmpty(), "the tags the user removed came back as ${rebuilt.tags}")
+    }
 
     @Test
     fun `nothing stored reads as nothing`() {

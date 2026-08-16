@@ -1,5 +1,6 @@
 package com.zhelenskiy.zheduler.zheduler.components.form
 
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.lifecycle.SavedStateHandle
@@ -14,6 +15,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -52,26 +54,85 @@ class DialogEditPersistenceTest {
         initialAutoUpdateStatusFromSubtasks = false,
     )
 
-    @Test
-    fun aStatusSetInItsDialogSurvivesTheFormBeingRebuilt() = runComposeUiTest {
+    /**
+     * Edits [edit] into a form, then answers with a fresh form restored from what was written.
+     *
+     * One field per test on purpose. The write effect only re-runs when one of its keys changes,
+     * so a test that moves four fields at once passes even if three of those keys are missing —
+     * the fourth triggers the write that happens to carry them all.
+     */
+    private fun ComposeUiTest.restoredAfter(edit: TaskFormState.() -> Unit): TaskFormState {
         val handle = SavedStateHandle()
         val edited = emptyForm()
         setContent { edited.persistedIn(FormStatePersistence(handle)) }
         waitForIdle()
 
-        edited.status = TaskStatus.Blocked(persistentSetOf("TEST-1"), "waiting")
-        edited.connections = persistentSetOf(connection)
-        edited.autoUpdateStatusFromSubtasks = true
-        edited.setRecurrenceRule(0, rule to RecurrenceState())
+        edited.edit()
         waitForIdle()
 
-        val restored = emptyForm()
-        FormStatePersistence(handle).read()!!.applyTo(restored)
+        return emptyForm().also { restored ->
+            assertNotNull(FormStatePersistence(handle).read(), "nothing was written").applyTo(restored)
+        }
+    }
 
-        assertEquals(TaskStatus.Blocked(persistentSetOf("TEST-1"), "waiting"), restored.status)
-        assertEquals(persistentSetOf(connection), restored.connections)
-        assertEquals(true, restored.autoUpdateStatusFromSubtasks)
-        assertEquals(persistentListOf(rule to RecurrenceState()), restored.recurrenceRules)
+    @Test
+    fun aStatusSetInItsDialogSurvivesTheFormBeingRebuilt() {
+        val blocked = TaskStatus.Blocked(persistentSetOf("TEST-1"), "waiting")
+        runComposeUiTest {
+            assertEquals(blocked, restoredAfter { status = blocked }.status)
+        }
+    }
+
+    @Test
+    fun aConnectionAddedInItsDialogSurvivesTheFormBeingRebuilt() = runComposeUiTest {
+        assertEquals(
+            persistentSetOf(connection),
+            restoredAfter { connections = persistentSetOf(connection) }.connections,
+        )
+    }
+
+    @Test
+    fun theAutoUpdateFlagSurvivesTheFormBeingRebuilt() = runComposeUiTest {
+        assertEquals(true, restoredAfter { autoUpdateStatusFromSubtasks = true }.autoUpdateStatusFromSubtasks)
+    }
+
+    @Test
+    fun aRecurrenceRuleSurvivesTheFormBeingRebuilt() = runComposeUiTest {
+        assertEquals(
+            persistentListOf(rule to RecurrenceState()),
+            restoredAfter { setRecurrenceRule(0, rule to RecurrenceState()) }.recurrenceRules,
+        )
+    }
+
+    @Test
+    fun theRecordRemembersTheConnectionsTheFormWasBuiltWith() = runComposeUiTest {
+        val handle = SavedStateHandle()
+        val existing = TaskConnection("TEST-9", ConnectionType.RelatesTo)
+        val form = TaskFormState(
+            initialTitle = "",
+            initialDescription = "",
+            initialPriority = "",
+            initialEstimatedTime = "",
+            initialTags = persistentSetOf(),
+            initialDueDate = null,
+            initialStatus = TaskStatus.Open,
+            initialConnections = persistentSetOf(existing),
+            initialNotifications = persistentListOf(),
+            initialRecurrenceRules = persistentListOf(),
+            initialAutoUpdateStatusFromSubtasks = false,
+        )
+        setContent { form.persistedIn(FormStatePersistence(handle)) }
+        waitForIdle()
+
+        form.connections = persistentSetOf(existing, connection)
+        waitForIdle()
+
+        // The mark the edit screen measures the database's changes against has to be where the
+        // form started, not where it has got to: taken from the current set, a connection made
+        // while the screen was away reads as no change, and saving the form deletes it.
+        val record = assertNotNull(FormStatePersistence(handle).read(), "nothing was written")
+        assertEquals(persistentSetOf(existing), record.connectionsBase)
+        assertEquals(persistentSetOf(existing, connection), record.connections)
     }
 
     @Test

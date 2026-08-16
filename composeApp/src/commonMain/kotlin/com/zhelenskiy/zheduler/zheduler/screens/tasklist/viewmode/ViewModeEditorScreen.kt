@@ -32,7 +32,10 @@ import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.TagSelectionDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.zhelenskiy.zheduler.zheduler.components.common.BackHandler
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeAction
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.reportingFailure
@@ -99,6 +102,16 @@ fun ViewModeEditorScreen(
     val isNewMode = editorState.baseline == null
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
+    /** The one way out, wherever it was asked for. */
+    fun leave() {
+        if (editorState.hasChanges()) showDiscardDialog = true else onCancel()
+    }
+
+    // The toolbar arrow was the only way out that asked. Android's back gesture popped the screen
+    // straight away, and popping it discards the saved state the editor is kept in — so every
+    // level, group and rule arranged went with it, silently.
+    BackHandler(enabled = !showDiscardDialog) { leave() }
+
     if (showDiscardDialog) {
         AlertDialog(
             onDismissRequest = { showDiscardDialog = false },
@@ -128,13 +141,7 @@ fun ViewModeEditorScreen(
             TopAppBar(
                 title = { Text(if (isNewMode) "New View Mode" else "Edit View Mode") },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        if (editorState.hasChanges()) {
-                            showDiscardDialog = true
-                        } else {
-                            onCancel()
-                        }
-                    }) {
+                    IconButton(onClick = ::leave) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cancel")
                     }
                 },
@@ -285,6 +292,27 @@ private fun ValidationErrorsCard(errors: List<String>) {
 private sealed class LevelEditorMode {
     data class Edit(val index: Int) : LevelEditorMode()
     data object Create : LevelEditorMode()
+
+    companion object {
+        /** Which dialog was open, so a recreation reopens it rather than dropping the edit. */
+        val Saver: Saver<LevelEditorMode?, Any> = listSaver(
+            save = { mode ->
+                when (mode) {
+                    is Edit -> listOf(mode.index)
+                    Create -> listOf(-1)
+                    null -> emptyList()
+                }
+            },
+            restore = { saved ->
+                val index = saved.firstOrNull() as Int?
+                when {
+                    index == null -> null
+                    index < 0 -> Create
+                    else -> Edit(index)
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -297,7 +325,12 @@ private fun GroupingLevelsSection(
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
         state.moveGroupingLevel(from.index, to.index)
     }
-    var editorMode by remember { mutableStateOf<LevelEditorMode?>(null) }
+    // Saved, like the editor behind it: a recreation used to close this dialog and discard every
+    // group added, relabelled or given values since it opened, since nothing reaches the editor
+    // until Done.
+    var editorMode by rememberSaveable(stateSaver = LevelEditorMode.Saver) {
+        mutableStateOf<LevelEditorMode?>(null)
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -352,7 +385,7 @@ private fun GroupingLevelsSection(
             if (index in state.groupingLevels.indices) {
                 // Create a working copy from current state
                 val initialSnapshot = remember(index) { state.groupingLevels[index].createSnapshot() }
-                val workingCopy = remember(index) {
+                val workingCopy = rememberSaveable(index, saver = groupingLevelStateSaver()) {
                     GroupingLevelState().apply { restoreFromSnapshot(initialSnapshot) }
                 }
 
@@ -375,7 +408,7 @@ private fun GroupingLevelsSection(
         }
         is LevelEditorMode.Create -> {
             // Create a fresh working copy for new level
-            val workingCopy = remember { GroupingLevelState() }
+            val workingCopy = rememberSaveable(saver = groupingLevelStateSaver()) { GroupingLevelState() }
 
             GroupingLevelEditorDialog(
                 level = workingCopy,

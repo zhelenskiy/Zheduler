@@ -178,6 +178,20 @@ class ViewModeEditorState(
 }
 
 /**
+ * A saver for the level being edited in the level dialog.
+ *
+ * Same trade as [ViewModeEditorState.saver]: the content goes through [GroupingLevel], so a
+ * half-typed range bound comes back empty while everything else — the field, the groups, their
+ * labels and values — survives an activity recreation instead of being thrown away wholesale.
+ */
+internal fun groupingLevelStateSaver(): Saver<GroupingLevelState, Any> = listSaver(
+    save = { listOf(Json.encodeToString(it.toGroupingLevel())) },
+    restore = { saved ->
+        runCatching { GroupingLevelState(Json.decodeFromString<GroupingLevel>(saved[0] as String)) }.getOrNull()
+    },
+)
+
+/**
  * State holder for a single grouping level.
  */
 @OptIn(ExperimentalUuidApi::class)

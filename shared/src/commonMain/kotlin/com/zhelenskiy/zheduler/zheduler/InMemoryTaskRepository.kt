@@ -331,6 +331,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
         if (!spaces.containsKey(spaceId)) return@withLock null
+        allOrNothing {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
         val status = if (autoUpdateStatusFromSubtasks) {
@@ -377,10 +378,12 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         notifyChanged()
 
         task
+        }
     }
 
     override suspend fun updateTask(task: Task): Task? = mutex.withLock {
         val oldTask = tasks[task.id] ?: return@withLock null
+        allOrNothing {
 
         val removedConnections = oldTask.connections.removingAll(task.connections)
         removedConnections.forEach { connection ->
@@ -406,6 +409,33 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         notifyChanged()
 
         finalTask
+        }
+    }
+
+    /**
+     * Runs [block] so that a refusal leaves nothing behind.
+     *
+     * A save is checked for cycles only once the edit is far enough along to be judged — after the
+     * task is stored, after the connections it dropped have been unhooked from the other side. The
+     * database does the same inside a transaction, which rolls back; here there was nothing to
+     * roll back, so a refused save left a task the repository had said no to, or a connection
+     * still listed by one end and not the other. This is the oracle the comparison suites measure
+     * against, so its state after a refusal has to match too.
+     */
+    private inline fun <T> allOrNothing(block: () -> T): T {
+        val tasksBefore = tasks.toMap()
+        val timelinesBefore = statusTimelines.toMap()
+        val tagsBefore = tagsBySpace.mapValues { (_, tags) -> tags.toMutableSet() }
+        val nextIdsBefore = nextIdBySpace.toMap()
+        return try {
+            block()
+        } catch (failure: Throwable) {
+            tasks.clear(); tasks.putAll(tasksBefore)
+            statusTimelines.clear(); statusTimelines.putAll(timelinesBefore)
+            tagsBySpace.clear(); tagsBySpace.putAll(tagsBefore)
+            nextIdBySpace.clear(); nextIdBySpace.putAll(nextIdsBefore)
+            throw failure
+        }
     }
 
     override suspend fun addConnection(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean = mutex.withLock {
@@ -726,11 +756,26 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                         newStatus = remapBlockedStatus(change.newStatus, oldToNewTaskId),
                     )
                 }
-                if (timeline.isNotEmpty()) {
-                    statusTimelines[newTaskId] = timeline
+                // A task always has a history, even if the file it came from gave it none: the
+                // database repository writes a creation entry for exactly that case, and this is
+                // the oracle it is measured against. Files the app writes always carry one, so
+                // this only arises for a hand-written or third-party export.
+                statusTimelines[newTaskId] = timeline.ifEmpty {
+                    listOf(
+                        StatusChange(
+                            timestamp = clock.now(),
+                            previousStatus = null,
+                            newStatus = remappedStatus,
+                        )
+                    )
                 }
             }
 
+            // One known difference from the database repository, left as it is: that one adds the
+            // imported connections one at a time and so refuses any that closes a cycle, while
+            // this one takes the file's graph as given. No export the app writes can contain a
+            // cycle — every edge is checked when it is made, and the id remapping is injective —
+            // so this can only be reached with a hand-edited file, and neither answer is unsafe.
             tagsBySpace.getOrPut(newSpace.id) { mutableSetOf() }.addAll(exportData.tags)
 
             // Now that every task exists, and not before. See the Room import.

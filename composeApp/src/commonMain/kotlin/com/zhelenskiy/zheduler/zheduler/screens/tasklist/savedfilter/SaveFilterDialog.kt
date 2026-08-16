@@ -52,11 +52,14 @@ fun SaveFilterDialog(
     onDismiss: () -> Unit
 ) {
     val isEditMode = existingFilter != null
-    var name by remember { mutableStateOf(existingFilter?.name ?: "") }
-    var selectedViewModeId by remember {
+    // Saved, not remembered: the dialog itself reopens after an activity recreation, and used to
+    // come back with the name field blank. The criteria panel below still resets to what the
+    // dialog was opened with — that at least stays on screen, where the name simply vanished.
+    var name by rememberSaveable { mutableStateOf(existingFilter?.name ?: "") }
+    var selectedViewModeId by rememberSaveable {
         mutableStateOf(existingFilter?.viewModeId ?: currentActiveViewModeId)
     }
-    var showDiscardChangesDialog by remember { mutableStateOf(false) }
+    var showDiscardChangesDialog by rememberSaveable { mutableStateOf(false) }
 
     val filterState = remember {
         TaskFilterState().apply {
