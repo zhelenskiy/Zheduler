@@ -70,13 +70,21 @@ class BlockedOnCreationComparisonTest {
             // does not exist yet when that task is written. Row order in an export is not
             // specified, and judging each task as it lands made the outcome depend on it.
             val waiting = repository.addTask(source.id, title = "waiting")!!
-            val blocker = repository.addTask(source.id, title = "blocker", status = TaskStatus.Done)!!
+            val blocker = repository.addTask(source.id, title = "blocker")!!
             repository.updateTask(
                 repository.getTaskById(waiting.id)!!
                     .copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id), "waiting"))
             )
 
+            // Marked Done in the file rather than through the repository. Saving the task blocked
+            // on an already-Done blocker would be normalised on the way in, so the export would
+            // carry InProgress and this test would prove nothing — which is exactly what an
+            // earlier version of it did.
             val json = repository.exportSpaceToJson(source.id, prettyPrint = false)!!
+                .replace(
+                    """{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"}""",
+                    """{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Done"}""",
+                )
             val imported = repository.importSpaceFromJson(json)!!
 
             val importedWaiting = repository.getAllTasks(imported.id).single { it.title == "waiting" }

@@ -1,5 +1,6 @@
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -37,8 +38,16 @@ class OpenEndedRangeComparisonTest {
         return space.id
     }
 
+    /**
+     * Deliberately through the grouped query, which is the one that binds these bounds into SQL.
+     *
+     * `getAllWithTotalsFiltered` looks like the obvious call but matches the criteria in Kotlin on
+     * both repositories, so it never touches a sentinel — a version of this test written that way
+     * passed against the very bug it was added for.
+     */
     private suspend fun TaskRepository.titlesFor(spaceId: String, criteria: TaskFilterCriteria): Set<String> =
-        getAllWithTotalsFiltered(spaceId, criteria).mapTo(mutableSetOf()) { it.task.title }
+        getTasksForGroup(spaceId, persistentListOf(), persistentListOf(), criteria)
+            .mapTo(mutableSetOf()) { it.task.title }
 
     @Test
     fun `an estimate with only a lower bound still matches`() = runTest {
