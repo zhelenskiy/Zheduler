@@ -962,41 +962,41 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * Updates tasks in other spaces that have connections to or are blocked by tasks in the deleted space.
      * @param taskIdsInDeletedSpace The IDs of tasks that will be deleted with the space
      */
-    protected suspend fun handleCrossSpaceRelationshipsOnSpaceDeletion(taskIdsInDeletedSpace: Set<String>) {
-        // Get all tasks from other spaces and check their relationships
-        getAllSpaces().forEach { space ->
-            getTasksInSpace(space.id).forEach { task ->
-                var modified = false
-                var updatedTask = task
+    protected suspend fun handleCrossSpaceRelationshipsOnSpaceDeletion(
+        taskIdsInDeletedSpace: Set<String>,
+        tasksToScan: List<Task>,
+    ) {
+        tasksToScan.forEach { task ->
+            var modified = false
+            var updatedTask = task
 
-                // Remove connections pointing to tasks in the deleted space
-                val connectionsToRemove = task.connections.filter { it.targetTaskId in taskIdsInDeletedSpace }
-                if (connectionsToRemove.isNotEmpty()) {
-                    updatedTask = updatedTask.copy(
-                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.removing(conn) }
-                    )
-                    removeConnectionsToDeletedTasks(task.id, connectionsToRemove)
+            // Remove connections pointing to tasks in the deleted space
+            val connectionsToRemove = task.connections.filter { it.targetTaskId in taskIdsInDeletedSpace }
+            if (connectionsToRemove.isNotEmpty()) {
+                updatedTask = updatedTask.copy(
+                    connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.removing(conn) }
+                )
+                removeConnectionsToDeletedTasks(task.id, connectionsToRemove)
+                modified = true
+            }
+
+            // Update blocked status if blocker is being deleted
+            val status = task.status
+            if (status is TaskStatus.Blocked) {
+                val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.removing(id) }
+                if (remainingBlockers != status.blockerTaskIds) {
+                    val newStatus = if (remainingBlockers.isEmpty()) {
+                        TaskStatus.InProgress
+                    } else {
+                        TaskStatus.Blocked(remainingBlockers, status.comment)
+                    }
+                    updatedTask = updatedTask.copy(status = newStatus)
                     modified = true
                 }
+            }
 
-                // Update blocked status if blocker is being deleted
-                val status = task.status
-                if (status is TaskStatus.Blocked) {
-                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.removing(id) }
-                    if (remainingBlockers != status.blockerTaskIds) {
-                        val newStatus = if (remainingBlockers.isEmpty()) {
-                            TaskStatus.InProgress
-                        } else {
-                            TaskStatus.Blocked(remainingBlockers, status.comment)
-                        }
-                        updatedTask = updatedTask.copy(status = newStatus)
-                        modified = true
-                    }
-                }
-
-                if (modified) {
-                    persistTaskUpdate(updatedTask)
-                }
+            if (modified) {
+                persistTaskUpdate(updatedTask)
             }
         }
     }

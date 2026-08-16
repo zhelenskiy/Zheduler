@@ -2,6 +2,7 @@ package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
 
 import androidx.compose.runtime.*
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toPersistentSet
 import com.zhelenskiy.zheduler.zheduler.*
 import kotlin.uuid.ExperimentalUuidApi
@@ -39,7 +40,21 @@ class ViewModeEditorState(
         defaultOrderingRules = defaultOrderingRules.mapToPersistentList { it.toOrderingRule() }
     )
 
-    fun validate(): GroupingValidationResult = toViewMode().validate()
+    /**
+     * Every error the editor can show, which is what enabling Save depends on.
+     *
+     * Delegates to the levels rather than to [ViewMode.validate]: by the time a GroupDefinition
+     * exists, "10 to 2" and an unparseable bound have both become nulls, so gating Save on the
+     * model check left the button enabled next to a range the editor was already marking red.
+     */
+    fun validate(): GroupingValidationResult {
+        val errors = groupingLevels.flatMap { it.validate() }.toPersistentList()
+        return if (errors.isEmpty()) {
+            GroupingValidationResult.Valid
+        } else {
+            GroupingValidationResult.Invalid(errors)
+        }
+    }
 
     fun hasChanges(): Boolean {
         // Copied mode is always considered to have changes (it's a new unsaved mode)

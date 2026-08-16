@@ -56,11 +56,6 @@ enum class GroupableField {
         AutoUpdateStatus -> persistentSetOf("true", "false")
     }
 
-    /**
-     * Returns whether this field requires exhaustive coverage of all values.
-     * Non-exhaustive coverage is always allowed - uncategorized tasks go to the "Uncategorized" group.
-     */
-    fun requiresExhaustiveCoverage(): Boolean = false
 }
 
 /**

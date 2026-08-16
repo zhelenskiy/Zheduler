@@ -210,7 +210,10 @@ class RoomTaskRepository(
 
         val taskIdsInSpace = dao.getTasksBySpace(spaceId).map { it.id }.toSet()
 
-        handleCrossSpaceRelationshipsOnSpaceDeletion(taskIdsInSpace)
+        handleCrossSpaceRelationshipsOnSpaceDeletion(
+            taskIdsInSpace,
+            getAllSpaces().flatMap { getTasksInSpace(it.id) },
+        )
 
         dao.deleteSpace(spaceId)
         notifyChanged()
@@ -1691,10 +1694,6 @@ class RoomTaskRepository(
         val groupStatusBlocked: Long = 0,
         val groupStatusDone: Long = 0,
         val groupStatusDeclined: Long = 0,
-        // For HasTags filter - task IDs that match tags (computed externally)
-        val tagFilterTaskIds: PersistentSet<String>? = null,
-        // For Not filter - task IDs to exclude (computed externally)
-        val excludeTaskIds: PersistentSet<String>? = null
     )
 
     /**
@@ -1774,14 +1773,9 @@ class RoomTaskRepository(
                     groupEstimatedTimeMaxSeconds = filter.maxSeconds
                 )
             }
-            is GroupFilter.HasTags -> {
-                // For HasTags, we need to query task IDs separately
-                GroupFilterParams(tagFilterTaskIds = persistentSetOf()) // Will be filled in later
-            }
-            is GroupFilter.Not -> {
-                // For Not filter, we need to compute excluded task IDs
-                GroupFilterParams(excludeTaskIds = persistentSetOf()) // Will be filled in later
-            }
+            // Neither reaches SQL as a parameter: queryCandidateRows peels these two off and
+            // resolves them with their own queries before building the rest.
+            is GroupFilter.HasTags, is GroupFilter.Not -> GroupFilterParams()
         }
     }
 
@@ -1816,16 +1810,6 @@ class RoomTaskRepository(
                 groupStatusBlocked = if (p.groupStatusFilterType != 0L) p.groupStatusBlocked else result.groupStatusBlocked,
                 groupStatusDone = if (p.groupStatusFilterType != 0L) p.groupStatusDone else result.groupStatusDone,
                 groupStatusDeclined = if (p.groupStatusFilterType != 0L) p.groupStatusDeclined else result.groupStatusDeclined,
-                tagFilterTaskIds = when {
-                    p.tagFilterTaskIds != null && result.tagFilterTaskIds != null -> p.tagFilterTaskIds.intersect(result.tagFilterTaskIds)
-                    p.tagFilterTaskIds != null -> p.tagFilterTaskIds
-                    else -> result.tagFilterTaskIds
-                },
-                excludeTaskIds = when {
-                    p.excludeTaskIds != null && result.excludeTaskIds != null -> p.excludeTaskIds.addingAll(result.excludeTaskIds)
-                    p.excludeTaskIds != null -> p.excludeTaskIds
-                    else -> result.excludeTaskIds
-                }
             )
         }
         return result

@@ -5,9 +5,6 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 import androidx.lifecycle.SavedStateHandle
 import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.*
-import com.zhelenskiy.zheduler.zheduler.paging.connectionSearchPagingSource
-import com.zhelenskiy.zheduler.zheduler.paging.tagsPagingSource
-import com.zhelenskiy.zheduler.zheduler.paging.taskSelectionPagingSource
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
@@ -166,47 +163,25 @@ class TaskEditContainer(
     // These are streams rather than state: PagingData is not comparable state, and the lists they
     // feed are unbounded (every task or tag of a space).
 
-    private val tagSearch = PagedQuery(scope, TagQuery(), repository.changes) { query ->
-        repository.tagsPagingSource(spaceId, query.searchQuery, query.excludeTags)
-    }
+    private val searches = TaskFormSearches(scope, repository, spaceId, excludeTaskId = taskId)
 
-    private val taskSelectionSearch = PagedQuery(scope, "", repository.changes) { query ->
-        repository.taskSelectionPagingSource(spaceId, taskId, query)
-    }
+    val filteredTags: Flow<PagingData<String>> get() = searches.tags
+    val filteredTasksForSelection: Flow<PagingData<Task>> get() = searches.tasksForSelection
+    val searchedTasksForConnection: Flow<PagingData<Task>> get() = searches.tasksForConnection
 
-    private val connectionSearch = PagedQuery(scope, ConnectionQuery(), repository.changes) { query ->
-        repository.connectionSearchPagingSource(
-            spaceId = spaceId,
-            excludeTaskId = taskId,
-            searchQuery = query.searchQuery,
-            excludeTaskIds = query.excludeTaskIds,
-            connectionType = query.connectionType,
-            existingConnections = query.existingConnections,
+    private fun filterTags(searchQuery: String, excludeTags: Set<String>) =
+        searches.filterTags(searchQuery, excludeTags)
+
+    private fun filterTasksForSelection(searchQuery: String) =
+        searches.filterTasksForSelection(searchQuery)
+
+    private fun searchTasksForConnection(intent: TaskEditIntent.SearchTasksForConnection) =
+        searches.searchTasksForConnection(
+            searchQuery = intent.searchQuery,
+            excludeTaskIds = intent.excludeTaskIds,
+            connectionType = intent.connectionType,
+            existingConnections = intent.existingConnections,
         )
-    }
-
-    val filteredTags: Flow<PagingData<String>> get() = tagSearch.pages
-    val filteredTasksForSelection: Flow<PagingData<Task>> get() = taskSelectionSearch.pages
-    val searchedTasksForConnection: Flow<PagingData<Task>> get() = connectionSearch.pages
-
-    private fun filterTags(searchQuery: String, excludeTags: Set<String>) {
-        tagSearch.setQuery(TagQuery(searchQuery, excludeTags))
-    }
-
-    private fun filterTasksForSelection(searchQuery: String) {
-        taskSelectionSearch.setQuery(searchQuery)
-    }
-
-    private fun searchTasksForConnection(intent: TaskEditIntent.SearchTasksForConnection) {
-        connectionSearch.setQuery(
-            ConnectionQuery(
-                searchQuery = intent.searchQuery,
-                excludeTaskIds = intent.excludeTaskIds,
-                connectionType = intent.connectionType,
-                existingConnections = intent.existingConnections,
-            )
-        )
-    }
 }
 
 /**

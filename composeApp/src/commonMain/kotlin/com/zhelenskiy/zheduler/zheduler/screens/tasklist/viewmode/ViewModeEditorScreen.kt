@@ -604,7 +604,7 @@ private fun GroupsHeader(level: GroupingLevelState) {
 
 @Composable
 private fun AvailableValuesHint(level: GroupingLevelState) {
-    if (level.field.requiresExhaustiveCoverage()) {
+    if (level.field.getAllPossibleValues().isNotEmpty()) {
         val allValues = level.field.getAllPossibleValues()
         val usedValues = level.groups.flatMap { it.values }.toSet()
         val availableValues = allValues.removingAll(usedValues)
@@ -929,7 +929,9 @@ private fun AddValueButton(
     filteredTags: LazyPagingItems<String>,
     onFilterTags: (String, Set<String>) -> Unit
 ) {
-    if (field.requiresExhaustiveCoverage()) {
+    // Whether the field has a listable set of values. Gating this on "must cover every value"
+    // instead left Status and the boolean fields with no way to add one back once removed.
+    if (field.getAllPossibleValues().isNotEmpty()) {
         val availableValues = field.getAllPossibleValues().removingAll(group.values)
         if (availableValues.isNotEmpty()) {
             var showMenu by remember { mutableStateOf(false) }

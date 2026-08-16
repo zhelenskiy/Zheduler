@@ -113,8 +113,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         // Get all task IDs in this space before deletion
         val taskIdsInSpace = tasks.values.filter { it.spaceId == spaceId }.map { it.id }.toSet()
 
-        // Handle cross-space relationships
-        handleCrossSpaceRelationshipsOnSpaceDeletionUnsafe(taskIdsInSpace)
+        // Scanned from the map directly: this already holds the lock those reads would take.
+        handleCrossSpaceRelationshipsOnSpaceDeletion(taskIdsInSpace, tasks.values.toList())
 
         // Remove all tasks and their timelines in this space directly
         taskIdsInSpace.forEach { taskId ->
@@ -713,44 +713,6 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     // ============ Space deletion helper ============
 
-    /**
-     * Handle cross-space relationships when a space is deleted.
-     * This is InMemory-specific because it directly modifies the tasks map.
-     */
-    private fun handleCrossSpaceRelationshipsOnSpaceDeletionUnsafe(taskIdsInDeletedSpace: Set<String>) {
-        spaces.keys.forEach { spaceId ->
-            tasks.values.filter { it.spaceId == spaceId }.forEach { task ->
-                var modified = false
-                var updatedTask = task
-
-                val connectionsToRemove = task.connections.filter { it.targetTaskId in taskIdsInDeletedSpace }
-                if (connectionsToRemove.isNotEmpty()) {
-                    updatedTask = updatedTask.copy(
-                        connections = connectionsToRemove.fold(updatedTask.connections) { acc, conn -> acc.removing(conn) }
-                    )
-                    modified = true
-                }
-
-                val status = task.status
-                if (status is TaskStatus.Blocked) {
-                    val remainingBlockers = taskIdsInDeletedSpace.fold(status.blockerTaskIds) { acc, id -> acc.removing(id) }
-                    if (remainingBlockers != status.blockerTaskIds) {
-                        val newStatus = if (remainingBlockers.isEmpty()) {
-                            TaskStatus.InProgress
-                        } else {
-                            TaskStatus.Blocked(remainingBlockers, status.comment)
-                        }
-                        updatedTask = updatedTask.copy(status = newStatus)
-                        modified = true
-                    }
-                }
-
-                if (modified) {
-                    tasks[task.id] = updatedTask
-                }
-            }
-        }
-    }
 
     // ============ Thread-safe overrides for AbstractTaskRepository methods ============
     // These methods do read-modify-write operations and need atomic mutex protection.
