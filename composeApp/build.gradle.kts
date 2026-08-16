@@ -93,6 +93,10 @@ kotlin {
         }
 
         commonMain.dependencies {
+            // Used directly throughout this source set. It happened to resolve through lifecycle
+            // and flowmvi, so a bump that stopped exposing it would have broken the build here
+            // for no visible reason.
+            implementation(libs.kotlinx.coroutines.core)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

@@ -991,13 +991,16 @@ private fun TerminationSettings(
         TerminationCountSelector(
             terminationCount = termination.afterOccurrences?.count?.toString() ?: "",
             onTerminationCountChange = { count ->
+                // Digits only, and nothing is coerced. Anything unparseable used to become
+                // AfterOccurrences(0) — which passes the dialog's check but means the rule never
+                // fires, so a stray keystroke turned "repeat 10 times" into a rule that does
+                // nothing and replaced what had been typed with "0". A minus sign was worse: the
+                // count must be non-negative, so constructing it threw out of this callback.
+                val parsed = count.takeIf { it.isNotEmpty() }?.toIntOrNull()
+                if (count.isNotEmpty() && (parsed == null || parsed < 0)) return@TerminationCountSelector
                 onTerminationChange(
                     termination.copy(
-                        afterOccurrences = if (count.isNotEmpty()) {
-                            AfterOccurrences(count.toIntOrNull() ?: 0)
-                        } else {
-                            null
-                        }
+                        afterOccurrences = parsed?.let(::AfterOccurrences)
                     )
                 )
             }

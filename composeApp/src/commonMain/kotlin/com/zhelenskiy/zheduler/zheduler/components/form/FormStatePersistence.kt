@@ -124,13 +124,21 @@ fun PersistedFormState.applyTo(formState: TaskFormState) {
  * Restores this form from [persistence], then writes every later edit back to it.
  *
  * Both effects key on the form itself, because a form is rebuilt when the data it starts from
- * finally loads. Writing that freshly emptied form back before the restore has run would erase
- * what the user had already typed; the flag makes that ordering explicit rather than leaving it
- * to the order the two effects happen to be declared in.
+ * finally loads. Two rules follow from that.
+ *
+ * Nothing is written before the restore has run, or the freshly emptied rebuild would land on top
+ * of what the user had already typed.
+ *
+ * Nothing is written until the form differs from what it was built with. The form that exists
+ * before the data loads is empty and untouched; persisting it stored a blank record, which the
+ * prefilled rebuild then dutifully restored over its own prefill — opening "copy task" gave a
+ * blank form.
  */
 @Composable
 fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
     var restored by remember(this) { mutableStateOf(false) }
+    var edited by remember(this) { mutableStateOf(false) }
+    val builtWith = remember(this) { toPersistedState() }
 
     LaunchedEffect(this) {
         persistence.read()?.applyTo(this@persistedIn)
@@ -138,6 +146,12 @@ fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
     }
 
     LaunchedEffect(this, restored, title, description, priority, estimatedTime, tags, dueDate) {
-        if (restored) persistence.write(toPersistedState())
+        if (!restored) return@LaunchedEffect
+        val current = toPersistedState()
+        // Once it has diverged it keeps being written, so returning the form to its original
+        // contents is recorded too rather than leaving an older record standing.
+        if (!edited && current == builtWith) return@LaunchedEffect
+        edited = true
+        persistence.write(current)
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.lifecycle.SavedStateHandle
 import com.zhelenskiy.zheduler.zheduler.ConnectionType
+import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import com.zhelenskiy.zheduler.zheduler.components.form.FormStatePersistence
 import com.zhelenskiy.zheduler.zheduler.components.form.PersistedFormState
@@ -63,6 +64,34 @@ class NewTaskFormPrefillTest {
         waitForIdle()
 
         assertEquals("Half-written", formState.title, "an equal reload must not discard the input")
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun copyingATaskKeepsItsPrefill() = runComposeUiTest {
+        val handle = SavedStateHandle()
+        var toCopy by mutableStateOf<Task?>(null)
+        lateinit var formState: TaskFormState
+
+        setContent {
+            formState = rememberFormStateFromData(toCopy, persistentSetOf())
+            formState.persistedIn(FormStatePersistence(handle))
+        }
+        waitForIdle()
+
+        // The task being copied is read from the database, so it arrives after the empty form has
+        // been built — and, until this was fixed, after that empty form had been persisted, which
+        // the prefilled rebuild then restored over its own prefill.
+        toCopy = Task(
+            id = "TASK-1",
+            title = "Weekly report",
+            description = "Numbers for the week",
+            spaceId = "space-1",
+        )
+        waitForIdle()
+
+        assertEquals("Weekly report", formState.title)
+        assertEquals("Numbers for the week", formState.description)
     }
 
     @OptIn(ExperimentalTestApi::class)

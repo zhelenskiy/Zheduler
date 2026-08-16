@@ -354,11 +354,14 @@ internal fun DynamicTaskList(
     onCopy: (String) -> Unit,
 ) {
     // Track collapsed state for each group by its key (survives configuration changes)
-    var collapsedGroupsSet by rememberSaveable(stateSaver = persistentStringSetSaver) {
+    // Keyed on the view mode: a group is identified by where it sits in the tree, so the same key
+    // means an entirely different group once the grouping changes. Carrying these across a switch
+    // collapsed whichever group happened to occupy the position the user had closed.
+    var collapsedGroupsSet by rememberSaveable(viewMode.id, stateSaver = persistentStringSetSaver) {
         mutableStateOf(persistentSetOf<String>())
     }
     // Track expanded state for uncategorized groups (collapsed by default)
-    var expandedUncategorizedSet by rememberSaveable(stateSaver = persistentStringSetSaver) {
+    var expandedUncategorizedSet by rememberSaveable(viewMode.id, stateSaver = persistentStringSetSaver) {
         mutableStateOf(persistentSetOf<String>())
     }
 

@@ -827,7 +827,22 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * Called when a subtask is added or removed.
      * @param parentTaskId The ID of the parent task to potentially update
      */
-    protected suspend fun updateParentStatusIfNeeded(parentTaskId: String) {
+    protected suspend fun updateParentStatusIfNeeded(parentTaskId: String) =
+        updateParentStatusIfNeeded(parentTaskId, mutableSetOf())
+
+    /**
+     * [visited] carries the tasks this cascade has already restated.
+     *
+     * The recursion stops when a parent's derived status settles, which assumes the subtask graph
+     * is acyclic — and it should be, since every path that writes a connection now refuses cycles.
+     * Should one exist anyway, in data written before that or by hand, a derived status carrying
+     * text grows on each pass ("X: c" then "X: X: c"), never equals the last, and the recursion
+     * would not end: an unbounded loop writing a timeline row per turn, holding the repository
+     * lock. Restating a task once per cascade bounds it.
+     */
+    private suspend fun updateParentStatusIfNeeded(parentTaskId: String, visited: MutableSet<String>) {
+        if (!visited.add(parentTaskId)) return
+
         val parentTask = getTaskById(parentTaskId) ?: return
         if (!parentTask.autoUpdateStatusFromSubtasks) return
 
@@ -842,7 +857,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             )
             val updated = parentTask.copy(status = calculatedStatus)
             persistTaskUpdate(updated)
-            updateParentTasksStatus(parentTaskId)
+            getParentTasks(parentTaskId).forEach { updateParentStatusIfNeeded(it.id, visited) }
             unblockTasksBlockedBy(parentTaskId)
         }
     }

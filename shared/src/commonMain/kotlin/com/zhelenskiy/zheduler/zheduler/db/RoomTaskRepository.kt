@@ -636,6 +636,11 @@ class RoomTaskRepository(
         }
 
         val addedConnections = task.connections.removingAll(oldTask.connections)
+        // Checked here as well as in addConnection. Saving a form writes its whole connection set
+        // straight to the table, and the picker that filled it can only judge the snapshot it was
+        // opened with — so an edge that became cyclic since, or two new edges that close a loop
+        // between them, arrived unexamined. Every added edge is judged against all the others.
+        rejectCycles(task.id, task.connections, addedConnections)
         addedConnections.forEach { connection ->
             dao.insertConnection(task.id, connection.targetTaskId, connection.type.name)
             addSymmetricConnectionUnsafe(task.id, connection)
@@ -828,8 +833,17 @@ class RoomTaskRepository(
     override suspend fun countAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): Int =
         filterTasksWithCriteria(getAllTasksWithTotals(spaceId), criteria).size
 
+    /**
+     * The stored filter panel, or a fresh one if what is stored cannot be read.
+     *
+     * A criteria row that fails to decode — written by a later version, or edited by hand — is
+     * worth losing. Letting it throw took the whole space down with it, which is a great deal
+     * worse than a filter panel that has forgotten its settings.
+     */
     override suspend fun getFilterState(spaceId: String): TaskFilterCriteria =
-        dao.getFilterState(spaceId)?.toTaskFilterCriteria() ?: TaskFilterCriteria()
+        dao.getFilterState(spaceId)
+            ?.let { runCatching { it.toTaskFilterCriteria() }.getOrNull() }
+            ?: TaskFilterCriteria()
 
     override suspend fun saveFilterState(spaceId: String, criteria: TaskFilterCriteria) {
         dao.setFilterState(spaceId, criteria.toJson())
@@ -853,8 +867,10 @@ class RoomTaskRepository(
 
     override suspend fun getAllViewModes(spaceId: String): List<ViewMode> {
         val builtIn = ViewMode.getBuiltInModes(spaceId)
-        val custom = dao.getAllCustomViewModes(spaceId).map { row ->
-            row.configJson.toViewMode(spaceId, row.id, row.name)
+        // A view mode that cannot be decoded is skipped rather than thrown: one unreadable row
+        // should cost the user that view mode, not the space.
+        val custom = dao.getAllCustomViewModes(spaceId).mapNotNull { row ->
+            runCatching { row.configJson.toViewMode(spaceId, row.id, row.name) }.getOrNull()
         }
         return builtIn.toPersistentList().addingAll(custom)
     }
@@ -864,7 +880,7 @@ class RoomTaskRepository(
         ViewMode.getBuiltInModes(spaceId).find { it.id == viewModeId }?.let { return it }
         // Check custom modes
         return dao.getCustomViewModeById(spaceId, viewModeId)?.let { row ->
-            row.configJson.toViewMode(spaceId, row.id, row.name)
+            runCatching { row.configJson.toViewMode(spaceId, row.id, row.name) }.getOrNull()
         }
     }
 
@@ -924,7 +940,10 @@ class RoomTaskRepository(
                     )
                 }
         }
-        val spaceTags = spaceTasks.flatMap { it.tags }.toSet()
+        // The space's whole vocabulary, not just the tags currently in use. Import re-inserts
+        // this set, so deriving it from the tasks quietly lost every tag created but not yet
+        // applied — a backup and restore came back missing them.
+        val spaceTags = dao.getAllTagsForSpace(spaceId).toSet()
         val nextId = dao.getNextId(spaceId)?.toInt() ?: 1
 
         val exportData = SpaceExportData(
@@ -983,11 +1002,17 @@ class RoomTaskRepository(
                 )
 
                 timeline.forEach { statusChange ->
+                    // Remapped like the current status. A Blocked entry names the tasks that
+                    // blocked it, and left as written those ids point into whatever space now
+                    // answers to the old prefix — so the history claimed the task had been
+                    // blocked by tasks it never had anything to do with.
                     dao.insertStatusChange(
                         taskId = newTaskId,
                         timestamp = statusChange.timestamp.toEpochMilliseconds(),
-                        previousStatusJson = statusChange.previousStatus.toJsonOrNull(),
-                        newStatusJson = statusChange.newStatus.toJson(),
+                        previousStatusJson = statusChange.previousStatus
+                            ?.let { remapBlockedStatus(it, oldToNewTaskId) }
+                            .toJsonOrNull(),
+                        newStatusJson = remapBlockedStatus(statusChange.newStatus, oldToNewTaskId).toJson(),
                         automaticChangeReasonJson = statusChange.automaticChangeReason.toJsonOrNull()
                     )
                 }
@@ -1071,6 +1096,10 @@ class RoomTaskRepository(
             estimatedTimeSeconds = estimatedTime?.toApproximateSeconds(),
         )
 
+        // As in updateTask. A task being created has no id for the picker to reason about, so
+        // wouldCreateCycle answers "no" for every candidate it is offered and the form can hand
+        // over, say, both "subtask of A" and "parent of A" at once.
+        rejectCycles(taskId, connections, connections)
         connections.forEach { connection ->
             dao.insertConnection(taskId, connection.targetTaskId, connection.type.name)
             addSymmetricConnectionUnsafe(taskId, connection)
@@ -1092,6 +1121,25 @@ class RoomTaskRepository(
         tags.forEach { dao.insertTaskTag(taskId, it) }
 
         return task
+    }
+
+    /**
+     * Refuses [added] if any of them closes a dependency or subtask cycle.
+     *
+     * Each is judged against every other connection the task will end up with, so two new edges
+     * that only form a loop together are caught as well.
+     */
+    private suspend fun rejectCycles(
+        taskId: String,
+        finalConnections: Set<TaskConnection>,
+        added: Set<TaskConnection>,
+    ) {
+        added.forEach { connection ->
+            val others = finalConnections.filterNotTo(mutableSetOf()) { it == connection }
+            require(!wouldCreateCycle(taskId, connection.targetTaskId, connection.type, others)) {
+                "Connection ${connection.type} to ${connection.targetTaskId} would create a cycle"
+            }
+        }
     }
 
     private suspend fun addConnectionUnsafe(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean {

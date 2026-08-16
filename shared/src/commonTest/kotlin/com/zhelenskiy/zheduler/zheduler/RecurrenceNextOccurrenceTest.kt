@@ -9,7 +9,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.hours
@@ -182,10 +181,59 @@ class RecurrenceNextOccurrenceTest {
     }
 
     @Test
-    fun `a yearly pattern must name a month`() {
-        assertFailsWith<IllegalArgumentException> {
-            FixedPointPattern.YearlyOnDate(months = persistentSetOf(), dayOfMonth = 1)
-        }
+    fun `a rule finished by its end date does not fire again`() {
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AtFixedPoints(
+                pattern = FixedPointPattern.DaysOfWeek(
+                    days = persistentSetOf(RecurrenceDayOfWeek.MONDAY),
+                    timeOfDay = TimeOfDay(9, 0),
+                ),
+                startFrom = ny(2026, 8, 1, 0),
+                timezone = RecurrenceTimeZone.Specific("America/New_York"),
+            ),
+            statusChangeTrigger = RecurrenceTrigger.StatusChange(persistentSetOf(TaskStatus.Done)),
+            resetToStatus = TaskStatus.Open,
+            // Wednesday, so the Monday after the first fire falls outside it.
+            termination = RecurrenceTermination.onDate(ny(2026, 8, 19, 0)),
+        )
+
+        val (afterFirst, _) = assertNotNull(
+            RecurrenceService.processRecurrence(
+                persistentListOf(rule to RecurrenceState(nextOccurrenceDate = ny(2026, 8, 17, 9))),
+                RecurrenceTriggerEvent(TaskStatus.Done, ny(2026, 8, 17, 9)),
+            )
+        )
+        assertEquals(
+            null,
+            afterFirst.single().second.nextOccurrenceDate,
+            "the next Monday is past the end date, so there is no next occurrence",
+        )
+
+        // With no next occurrence every date gate had nothing to compare against, so the finished
+        // rule fired again on the next event, and the one after that, indefinitely.
+        assertEquals(
+            null,
+            RecurrenceService.processRecurrence(
+                afterFirst,
+                RecurrenceTriggerEvent(TaskStatus.Done, ny(2026, 8, 26, 9)),
+            ),
+            "a rule with nothing left to schedule is finished",
+        )
+    }
+
+    @Test
+    fun `a yearly rule naming no months never occurs, rather than throwing`() {
+        // Such a rule cannot be built in the dialog but can be stored or imported. A require in
+        // the constructor would make the row undecodable and take the whole space down with it.
+        val pattern = FixedPointPattern.YearlyOnDate(months = persistentSetOf(), dayOfMonth = 1)
+        val rule = rule(
+            RecurrenceTrigger.AtFixedPoints(
+                pattern = pattern,
+                startFrom = ny(2026, 8, 1, 0),
+                timezone = RecurrenceTimeZone.Specific("America/New_York"),
+            )
+        )
+        assertEquals(null, RecurrenceCalculator.calculateNextOccurrence(rule, RecurrenceState(), ny(2026, 8, 1, 0)))
     }
 
     @Test

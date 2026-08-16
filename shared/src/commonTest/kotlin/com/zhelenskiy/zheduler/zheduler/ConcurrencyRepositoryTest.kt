@@ -87,10 +87,18 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
             }.awaitAll()
         }
 
-        // Task should still exist and have one of the titles
+        // One of the updates has to have won. "Original" was the only other value this fixture
+        // can produce, so admitting it made the assertion true however many writes were lost —
+        // including all of them, which is the very thing this test is named for.
         val finalTask = repo.getTaskById(task.id)
         assertNotNull(finalTask)
-        assertTrue(finalTask.title.startsWith("Update ") || finalTask.title == "Original")
+        val titles = (1..numUpdates).mapTo(mutableSetOf()) { "Update $it" }
+        assertTrue(finalTask.title in titles, "final title was '${finalTask.title}', not one of the updates")
+        assertEquals(
+            "Original Description",
+            finalTask.description,
+            "no writer touched the description; a torn write would show here",
+        )
     }
 
     @Test
@@ -120,10 +128,15 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
             }.awaitAll()
         }
 
-        // Task should still exist with a valid status
+        // The task starts Open, which is in `statuses`, so accepting any member of that list also
+        // accepted "every update was lost". It has to be a status somebody actually wrote.
         val finalTask = repo.getTaskById(task.id)
         assertNotNull(finalTask)
-        assertTrue(finalTask.status in statuses)
+        assertTrue(
+            finalTask.status in statuses,
+            "final status was ${finalTask.status}, which nobody wrote",
+        )
+        assertEquals("Task", finalTask.title, "no writer touched the title")
     }
 
     @Test
@@ -227,11 +240,13 @@ abstract class ConcurrencyRepositoryTest : AbstractRepositoryTest {
         val allTasks = repo.getAllTasks(spaceId)
         assertTrue(allTasks.size >= 10, "Should have at least the initial 10 tasks")
 
-        // All tasks should have valid data
+        // These fields are non-nullable, so asserting they are not null asserted nothing. What
+        // can actually go wrong under concurrency is a half-written row: a blank id or title, or
+        // a task filed under the wrong space.
         allTasks.forEach { task ->
-            assertNotNull(task.id)
-            assertNotNull(task.title)
-            assertNotNull(task.status)
+            assertTrue(task.id.isNotBlank(), "a task came back with a blank id")
+            assertTrue(task.title.isNotBlank(), "task ${task.id} came back with a blank title")
+            assertEquals(spaceId, task.spaceId, "task ${task.id} is filed under the wrong space")
         }
     }
 

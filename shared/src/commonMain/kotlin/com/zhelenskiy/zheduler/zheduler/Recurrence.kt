@@ -364,13 +364,21 @@ data class RecurrencePeriod(
      * two real hours across a daylight-saving fall-back, and skip the repeated hour entirely.
      */
     fun addTo(instant: Instant, tz: TimeZone): Instant {
+        val elapsedSeconds = hours.toLong() * 60 * 60 + minutes.toLong() * 60 + seconds
+        // With no date components there is no reason to visit local time at all — and a reason not
+        // to: an instant inside a repeated hour has an ambiguous local time, and the round trip
+        // resolves it to the earlier of the two, quietly moving the base back an hour. For an
+        // hourly rule that made the next occurrence equal to the current one.
+        if (years == 0 && months == 0 && weeks == 0 && days == 0) {
+            return instant.plus(elapsedSeconds, DateTimeUnit.SECOND)
+        }
+
         val local = instant.toLocalDateTime(tz)
         val shiftedDate = local.date
             .plus(years.toLong(), DateTimeUnit.YEAR)
             .plus(months.toLong(), DateTimeUnit.MONTH)
             .plus(weeks.toLong() * 7 + days, DateTimeUnit.DAY)
         val afterDateParts = LocalDateTime(shiftedDate, local.time).toInstant(tz)
-        val elapsedSeconds = hours.toLong() * 60 * 60 + minutes.toLong() * 60 + seconds
         return afterDateParts.plus(elapsedSeconds, DateTimeUnit.SECOND)
     }
 
@@ -532,9 +540,10 @@ sealed class FixedPointPattern : Presentable {
     ) : FixedPointPattern() {
         init {
             require(dayOfMonth in 1..31) { "Day of month must be between 1 and 31" }
-            // As the other multi-month patterns already do. findNextYearlyDate takes a minOf over
-            // these, which on an empty set throws out of the sweep and stops it for every task.
-            require(months.isNotEmpty()) { "At least one month must be specified" }
+            // No require on `months` being non-empty, deliberately. A require in a @Serializable
+            // constructor runs on decode, so one bad stored rule would stop the whole task — and
+            // with it the space — from loading at all. findNextYearlyDate treats an empty set as
+            // "never occurs" instead, which is what it means.
         }
 
         override fun toFullString(): String {
@@ -867,7 +876,12 @@ object RecurrenceCalculator {
         pattern: FixedPointPattern.YearlyOnDate,
         from: Instant,
         tz: TimeZone
-    ): Instant {
+    ): Instant? {
+        // A rule naming no months never comes round. The dialog cannot produce one, but a stored
+        // or imported rule can, and taking a minOf over nothing threw out of the sweep and
+        // stopped it for every task.
+        if (pattern.months.isEmpty()) return null
+
         val fromDateTime = from.toLocalDateTime(tz)
         val targetTime = LocalTime(pattern.timeOfDay.hour, pattern.timeOfDay.minute, pattern.timeOfDay.second)
         val targetMonths = pattern.months.map { it.toKotlinxMonth() }
@@ -1002,6 +1016,15 @@ object RecurrenceCalculator {
         rule.statusChangeTrigger is StatusChange && event.currentStatus !in rule.statusChangeTrigger.requiredStatuses ->
             false
         rule.timeRecurrenceTrigger != null && recurrenceState.nextOccurrenceDate != null && event.currentTime < recurrenceState.nextOccurrenceDate ->
+            false
+        // A rule that has fired and has no next occurrence is finished: either the one that would
+        // have come next fell past the end date, or no date matching the pattern was found within
+        // the search horizon. Both store null, and every gate below tests a non-null date — so a
+        // finished rule was firing again on every later event instead of never again. Count zero
+        // is different: the rule has simply not been seeded yet.
+        rule.timeRecurrenceTrigger != null &&
+                recurrenceState.nextOccurrenceDate == null &&
+                recurrenceState.occurrenceCount > 0 ->
             false
         // See calculateNextOccurrence: this is a countdown of occurrences still owed.
         rule.termination.maxOccurrences.let { it != null && it <= 0 } ->

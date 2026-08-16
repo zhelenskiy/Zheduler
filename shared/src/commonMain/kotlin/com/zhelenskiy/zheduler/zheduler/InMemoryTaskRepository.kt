@@ -647,7 +647,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         val spaceTimelines = spaceTasks.associate { task ->
             task.id to (statusTimelines[task.id] ?: emptyList())
         }
-        val spaceTags = spaceTasks.flatMap { it.tags }.toSet()
+        // The space's whole vocabulary, as in RoomTaskRepository: a tag created but not yet put
+        // on a task is still the user's and has to survive an export.
+        val spaceTags = tagsBySpace[spaceId].orEmpty().toSet()
         val nextId = nextIdBySpace[spaceId] ?: 1
 
         val exportData = SpaceExportData(
@@ -703,7 +705,15 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 )
                 tasks[newTaskId] = newTask
 
-                val timeline = exportData.statusTimelines[task.id] ?: emptyList()
+                // Blocked entries in the history name the tasks that blocked it, so they are
+                // remapped like the current status; left alone they point at whatever space now
+                // answers to the old prefix.
+                val timeline = (exportData.statusTimelines[task.id] ?: emptyList()).map { change ->
+                    change.copy(
+                        previousStatus = change.previousStatus?.let { remapBlockedStatus(it, oldToNewTaskId) },
+                        newStatus = remapBlockedStatus(change.newStatus, oldToNewTaskId),
+                    )
+                }
                 if (timeline.isNotEmpty()) {
                     statusTimelines[newTaskId] = timeline
                 }

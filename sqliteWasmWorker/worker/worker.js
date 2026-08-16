@@ -108,32 +108,50 @@ function stepRequest(id, requestData) {
     }
 }
 
+// Closing is one-way: the caller keeps no pending request for it, so a reply addressed to that id
+// is routed to the connection-wide error handler and fails every query in flight. Failures are
+// reported to the console instead, and nothing is posted.
 function closeRequest(id, requestData) {
-    if (requestData.statementId) {
+    // Ids start at 0, so presence is the test, not truthiness — `if (id)` skipped the very first
+    // statement and the very first database of every session, leaving connection 0 holding its
+    // OPFS handle and the file locked against the next open.
+    if (requestData.statementId != null) {
         const statement = statements.get(requestData.statementId);
         if (!statement) {
-            postMessage({'id': id, error: "Invalid statement ID: " + requestData.statementId});
-            return;
-        }
-        try {
-            statement.finalize();
+            console.warn("sqlite worker: unknown statement id on close:", requestData.statementId);
+        } else {
+            try {
+                statement.finalize();
+            } catch (error) {
+                console.warn("sqlite worker: finalizing statement failed:", error);
+            }
             statements.delete(requestData.statementId);
-        } catch (error) {
-            postMessage({'id': id, error: error.message});
         }
     }
 
-    if (requestData.databaseId) {
+    if (requestData.databaseId != null) {
         const database = databases.get(requestData.databaseId);
         if (!database) {
-            postMessage({'id': id, error: "Invalid database ID: " + requestData.databaseId});
-            return;
-        }
-        try {
-            database.close();
+            console.warn("sqlite worker: unknown database id on close:", requestData.databaseId);
+        } else {
+            // A statement outliving its database can only fail when finalized later, so they go
+            // with it rather than accumulating for the lifetime of the worker.
+            for (const [statementId, statement] of statements) {
+                if (statement.db === database) {
+                    try {
+                        statement.finalize();
+                    } catch (error) {
+                        console.warn("sqlite worker: finalizing statement failed:", error);
+                    }
+                    statements.delete(statementId);
+                }
+            }
+            try {
+                database.close();
+            } catch (error) {
+                console.warn("sqlite worker: closing database failed:", error);
+            }
             databases.delete(requestData.databaseId);
-        } catch (error) {
-            postMessage({'id': id, error: error.message});
         }
     }
 }
@@ -188,4 +206,14 @@ sqlite3InitModule().then(instance => {
     while (messageQueue.length > 0) {
         handleMessage(messageQueue.shift());
     }
+}, error => {
+    // Without this the promise simply never settles: every queued request stays queued and every
+    // caller waits for a reply that cannot come, so the app hangs at startup saying nothing.
+    const message = "SQLite WASM failed to load: " + (error && error.message ? error.message : error);
+    while (messageQueue.length > 0) {
+        const queued = messageQueue.shift();
+        postMessage({'id': queued.data && queued.data.id, 'error': message});
+    }
+    // Anything arriving later gets the same answer rather than queueing behind a dead promise.
+    onmessage = (e) => postMessage({'id': e.data && e.data.id, 'error': message});
 });
