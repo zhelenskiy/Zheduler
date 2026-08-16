@@ -261,6 +261,7 @@ fun CalendarScreen(
                         selectedDate = selectedDate,
                         statusChangesByDate = state.statusChangesByDate,
                         onDateSelected = { selectedDate = it; isNavigatingForward = null },
+                        today = today.date,
                     )
                 }
             }
@@ -369,9 +370,11 @@ private fun CalendarGrid(
     selectedDate: LocalDate?,
     statusChangesByDate: Map<LocalDate, List<StatusChangeEvent>>,
     onDateSelected: (LocalDate) -> Unit,
+    // Passed in rather than read here: the grid draws the today-ring, and a copy captured at
+    // first composition kept ringing yesterday once the screen had been open overnight.
+    today: LocalDate,
     modifier: Modifier = Modifier
 ) {
-    val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date }
     val daysOfWeek = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     val layoutInfo = remember(yearMonth) { CalendarLayoutInfo.from(yearMonth) }
 

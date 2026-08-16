@@ -63,6 +63,32 @@ class BlockedOnCreationComparisonTest {
     }
 
     @Test
+    fun `importing settles blocked statuses the same way whichever order the file is in`() = runTest {
+        for (repository in repositories()) {
+            val source = repository.createSpace("Source", "SRC")!!
+            // The blocker is created *after* the task that waits on it, so during the import it
+            // does not exist yet when that task is written. Row order in an export is not
+            // specified, and judging each task as it lands made the outcome depend on it.
+            val waiting = repository.addTask(source.id, title = "waiting")!!
+            val blocker = repository.addTask(source.id, title = "blocker", status = TaskStatus.Done)!!
+            repository.updateTask(
+                repository.getTaskById(waiting.id)!!
+                    .copy(status = TaskStatus.Blocked(persistentSetOf(blocker.id), "waiting"))
+            )
+
+            val json = repository.exportSpaceToJson(source.id, prettyPrint = false)!!
+            val imported = repository.importSpaceFromJson(json)!!
+
+            val importedWaiting = repository.getAllTasks(imported.id).single { it.title == "waiting" }
+            assertEquals(
+                TaskStatus.InProgress,
+                importedWaiting.status,
+                "$repository: its blocker is Done, so nothing will ever revisit it",
+            )
+        }
+    }
+
+    @Test
     fun `blocked without naming a blocker is left alone`() = runTest {
         for (repository in repositories()) {
             val space = repository.createSpace("Test", "TEST")!!

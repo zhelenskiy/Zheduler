@@ -297,7 +297,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun peekNextId(spaceId: String): String = mutex.withLock {
         val space = spaces[spaceId] ?: return@withLock "TASK-1"
-        val nextNum = nextIdBySpace.getOrPut(spaceId) { 1 }
+        // Skips taken ids exactly as generation does; see RoomTaskRepository.peekNextId.
+        var nextNum = nextIdBySpace.getOrPut(spaceId) { 1 }
+        while ("${space.idPrefix}-$nextNum" in tasks) nextNum++
         "${space.idPrefix}-$nextNum"
     }
 
@@ -727,6 +729,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             }
 
             tagsBySpace.getOrPut(newSpace.id) { mutableSetOf() }.addAll(exportData.tags)
+
+            // Now that every task exists, and not before. See the Room import.
+            unblockTasksWithOnlyResolvedBlockers(oldToNewTaskId.values)
             notifyChanged()
 
             newSpace

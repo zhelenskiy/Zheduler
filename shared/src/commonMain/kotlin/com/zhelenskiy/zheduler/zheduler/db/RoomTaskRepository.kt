@@ -38,6 +38,16 @@ private const val MAX_CACHED_QUERIES = 64
  */
 private const val IMPOSSIBLE_FLAG = 2L
 
+/**
+ * Stands in for "no bound" at either end of a range the query states as a plain conjunction.
+ *
+ * Not Long.MIN_VALUE/MAX_VALUE: on Kotlin/JS a Long is bound to SQLite through a JavaScript
+ * number, which is a double, so anything past 2^53 does not survive the trip and the comparison it
+ * lands in stops matching. That is 2^53 - 1, exactly representable, and far outside any due date in
+ * milliseconds or estimate in seconds this app will ever hold.
+ */
+private const val OPEN_BOUND = 9_007_199_254_740_991L
+
 /** A range-filter kind outside the 0..3 the query knows, so no row can satisfy it. */
 private const val IMPOSSIBLE_RANGE_TYPE = 4L
 
@@ -561,9 +571,14 @@ class RoomTaskRepository(
         removed
     }
 
+    /** The id the next created task will get. Must agree with [generateNextIdUnsafe]. */
     override suspend fun peekNextId(spaceId: String): String {
         val space = dao.getSpaceById(spaceId) ?: return "TASK-1"
-        val nextNum = dao.getNextId(spaceId) ?: 1
+        // Skipping taken ids exactly as generation does. Reading the counter alone showed an id
+        // that creation would step over, so the New Task header promised one id and Save made
+        // another — and a description written against the promised one linked to the wrong task.
+        var nextNum = dao.getNextId(spaceId) ?: 1
+        while (dao.getTaskById("${space.idPrefix}-$nextNum") != null) nextNum++
         return "${space.idPrefix}-$nextNum"
     }
 
@@ -1012,6 +1027,7 @@ class RoomTaskRepository(
                     autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks,
                     // Its own creation entry would date the task to the moment of the import.
                     recordInitialStatusChange = timeline.isEmpty(),
+                    normalizeBlocked = false,
                 )
 
                 timeline.forEach { statusChange ->
@@ -1041,6 +1057,9 @@ class RoomTaskRepository(
 
             exportData.tags.forEach { dao.insertTagForSpace(newSpaceId, it) }
 
+            // Now that every task exists, and not before.
+            unblockTasksWithOnlyResolvedBlockers(oldToNewTaskId.values)
+
             newSpace
             }.alsoNotifyIf { it != null }
         }
@@ -1062,6 +1081,8 @@ class RoomTaskRepository(
         autoUpdateStatusFromSubtasks: Boolean,
         /** Import writes the task's real history instead; see [importSpaceFromJson]. */
         recordInitialStatusChange: Boolean = true,
+        /** Import passes false: blockers may not exist yet. See unblockTasksWithOnlyResolvedBlockers. */
+        normalizeBlocked: Boolean = true,
     ): Task? {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
@@ -1073,7 +1094,7 @@ class RoomTaskRepository(
             getCalculatedStatusFromSubtasks(subtasksIds, ::getByIdUnsafe) ?: status
         } else {
             status
-        }.let { withoutResolvedBlockers(it) }
+        }.let { if (normalizeBlocked) withoutResolvedBlockers(it) else it }
 
         val task = Task(
             id = taskId,
@@ -1211,27 +1232,27 @@ class RoomTaskRepository(
             EstimatedTimeFilter.Any, EstimatedTimeFilter.NoEstimate -> null
             // A bucket's upper bound is already exclusive; a custom one is inclusive, and one
             // second past it is the same range over whole seconds.
-            EstimatedTimeFilter.Custom -> (estimatedTimeBounds.first ?: Long.MIN_VALUE) to
-                    (estimatedTimeBounds.second?.plus(1) ?: Long.MAX_VALUE)
-            else -> (estimatedTimeBounds.first ?: Long.MIN_VALUE) to
-                    (estimatedTimeBounds.second ?: Long.MAX_VALUE)
+            EstimatedTimeFilter.Custom -> (estimatedTimeBounds.first ?: -OPEN_BOUND) to
+                    (estimatedTimeBounds.second?.plus(1) ?: OPEN_BOUND)
+            else -> (estimatedTimeBounds.first ?: -OPEN_BOUND) to
+                    (estimatedTimeBounds.second ?: OPEN_BOUND)
         }
 
         // The same bounds the guarded clause uses, as half-open ranges. A task without the value is
         // outside every one of them, which is what lets a range be a plain conjunction.
         val priorityRange: Pair<Long, Long>? = when (filterCriteria.priorityFilter) {
             PriorityFilter.Any, PriorityFilter.NoPriority -> null
-            PriorityFilter.High -> 75L to Long.MAX_VALUE
+            PriorityFilter.High -> 75L to OPEN_BOUND
             PriorityFilter.Medium -> 50L to 75L
             PriorityFilter.Low -> 1L to 50L
             // Custom bounds are inclusive; one past the top is the same range over whole numbers.
-            PriorityFilter.Custom -> (filterCriteria.customPriorityMin.toLongOrNull() ?: Long.MIN_VALUE) to
-                    (filterCriteria.customPriorityMax.toLongOrNull()?.plus(1) ?: Long.MAX_VALUE)
+            PriorityFilter.Custom -> (filterCriteria.customPriorityMin.toLongOrNull() ?: -OPEN_BOUND) to
+                    (filterCriteria.customPriorityMax.toLongOrNull()?.plus(1) ?: OPEN_BOUND)
         }
         val dueDateRange: Pair<Long, Long>? = when (filterCriteria.dueDateFilter) {
             DueDateFilter.Any, DueDateFilter.NoDueDate -> null
-            DueDateFilter.Custom -> (filterCriteria.customDueDateAfter?.toEpochMilliseconds() ?: Long.MIN_VALUE) to
-                    (filterCriteria.customDueDateBefore?.toEpochMilliseconds()?.plus(1) ?: Long.MAX_VALUE)
+            DueDateFilter.Custom -> (filterCriteria.customDueDateAfter?.toEpochMilliseconds() ?: -OPEN_BOUND) to
+                    (filterCriteria.customDueDateBefore?.toEpochMilliseconds()?.plus(1) ?: OPEN_BOUND)
             // The relative ones come from the shared definition, so SQL and Kotlin cannot disagree.
             else -> relativeDueDateRange(filterCriteria.dueDateFilter, now)!!
                 .let { (start, end) -> start.toEpochMilliseconds() to end.toEpochMilliseconds() }

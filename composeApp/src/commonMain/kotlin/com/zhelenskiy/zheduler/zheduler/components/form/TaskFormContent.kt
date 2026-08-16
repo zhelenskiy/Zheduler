@@ -706,9 +706,15 @@ private fun ConnectionsSection(
                     }
                 }
 
-                // Auto-update status from subtasks toggle
+                // Auto-update status from subtasks toggle.
+                //
+                // Shown whenever the flag is on, not only while subtasks exist. The status field
+                // is locked while it is on, so hiding the one control that can turn it off left
+                // the task with a status nothing could change: no subtasks to derive one from, no
+                // toggle to reach, and no automatic transition that would ever fire again. Copying
+                // such a task carried the flag but not the subtasks, so the copy was born that way.
                 val hasSubtasks = connections.any { it.type == ConnectionType.ParentOf }
-                if (hasSubtasks) {
+                if (hasSubtasks || formState.autoUpdateStatusFromSubtasks) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp).padding(end = 12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
@@ -721,7 +727,11 @@ private fun ConnectionsSection(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = "Automatically sets status based on subtask statuses",
+                                text = if (hasSubtasks) {
+                                    "Automatically sets status based on subtask statuses"
+                                } else {
+                                    "No subtasks to derive a status from — turn this off to set it yourself"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

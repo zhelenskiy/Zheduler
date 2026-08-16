@@ -770,6 +770,27 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     }
 
     /**
+     * Demotes any of [taskIds] that is blocked only on work already resolved.
+     *
+     * Run once, after every task and connection is in place. Doing it as each task is written
+     * cannot work during an import: a blocker later in the file does not exist yet, reads as
+     * unresolved, and the outcome then depends on the order rows happen to come back in — which
+     * is unspecified, and differed between the two repositories.
+     */
+    protected suspend fun unblockTasksWithOnlyResolvedBlockers(taskIds: Collection<String>) {
+        taskIds.forEach { taskId ->
+            val task = getTaskById(taskId) ?: return@forEach
+            val status = task.status
+            if (status !is TaskStatus.Blocked) return@forEach
+            val normalized = withoutResolvedBlockers(status)
+            if (normalized != status) {
+                recordStatusChange(taskId, status, normalized, AutomaticChangeReason.Unblocked)
+                persistTaskUpdate(task.copy(status = normalized))
+            }
+        }
+    }
+
+    /**
      * [status], demoted to InProgress when everything it says it is waiting on is already
      * resolved. Any other status is returned as it is.
      *
