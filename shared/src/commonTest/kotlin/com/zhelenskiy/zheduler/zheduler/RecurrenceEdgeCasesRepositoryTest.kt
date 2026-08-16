@@ -193,7 +193,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 dayOfMonth = 29,
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState(lastOccurrenceDate = startFrom)
 
@@ -219,7 +220,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 dayOfMonth = 31,
                 timeOfDay = TimeOfDay(12, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState(lastOccurrenceDate = startFrom)
 
@@ -293,7 +295,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 dayOfWeek = RecurrenceDayOfWeek.MONDAY,
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -317,7 +320,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 dayOfWeek = RecurrenceDayOfWeek.MONDAY,
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -460,7 +464,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
             pattern = FixedPointPattern.DaysOfWeek(
                 days = RecurrenceDayOfWeek.entries.toSet().let { persistentSetOf(*it.toTypedArray()) }
             ),
-            startFrom = instant(2024, 1, 1, 0, 0)
+            startFrom = instant(2024, 1, 1, 0, 0),
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val display = rule.toBriefString()
         // Should mention it's daily or list all days
@@ -473,7 +478,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
             pattern = FixedPointPattern.DaysOfWeek(
                 days = persistentSetOf(RecurrenceDayOfWeek.WEDNESDAY)
             ),
-            startFrom = instant(2024, 1, 1, 0, 0)
+            startFrom = instant(2024, 1, 1, 0, 0),
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val display = rule.toBriefString()
         assertTrue(display.contains("WED"))
@@ -486,7 +492,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 ordinal = WeekOrdinal.SECOND,
                 dayOfWeek = RecurrenceDayOfWeek.TUESDAY
             ),
-            startFrom = instant(2024, 1, 1, 0, 0)
+            startFrom = instant(2024, 1, 1, 0, 0),
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val display = rule.toBriefString()
         assertTrue(display.contains("second") || display.contains("Second") || display.contains("2nd"))
@@ -500,7 +507,8 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
                 months = persistentSetOf(RecurrenceMonth.DECEMBER),
                 dayOfMonth = 25
             ),
-            startFrom = instant(2024, 1, 1, 0, 0)
+            startFrom = instant(2024, 1, 1, 0, 0),
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val display = rule.toBriefString()
         assertTrue(display.contains("December") || display.contains("25"))

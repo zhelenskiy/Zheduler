@@ -81,11 +81,21 @@ class GroupedTaskQueriesComparisonTest {
             val dbTasks = dbRepo.getTasksForGroup(dbSpaceId, filters, orderingRules, filterCriteria)
 
             assertEquals(inMemoryTasks.size, dbTasks.size, "Task count should match")
-            assertEquals(
-                inMemoryTasks.map { it.task.title }.toSet(),
-                dbTasks.map { it.task.title }.toSet(),
-                "Task titles should match"
-            )
+            if (orderingRules.isEmpty()) {
+                // Nothing was asked for, so nothing is promised about the order.
+                assertEquals(
+                    inMemoryTasks.map { it.task.title }.toSet(),
+                    dbTasks.map { it.task.title }.toSet(),
+                    "Task titles should match"
+                )
+            } else {
+                // Ordering is half of what these queries do, and comparing sets never saw it.
+                assertEquals(
+                    inMemoryTasks.map { it.task.title },
+                    dbTasks.map { it.task.title },
+                    "Task titles should match, in order"
+                )
+            }
 
             return inMemoryTasks to dbTasks
         }
@@ -114,7 +124,11 @@ class GroupedTaskQueriesComparisonTest {
 
             val inMemoryPaged = inMemoryRepo.readPages(inMemorySpaceId)
             val dbPaged = dbRepo.readPages(dbSpaceId)
-            assertEquals(inMemoryPaged.size, dbPaged.size, "Paged task count should match")
+            if (orderingRules.isEmpty()) {
+                assertEquals(inMemoryPaged.toSet(), dbPaged.toSet(), "Paged tasks should match")
+            } else {
+                assertEquals(inMemoryPaged, dbPaged, "Paged tasks should match, in order")
+            }
 
             val inMemoryWhole = inMemoryRepo.getTasksForGroup(inMemorySpaceId, filters, orderingRules, filterCriteria)
             val dbWhole = dbRepo.getTasksForGroup(dbSpaceId, filters, orderingRules, filterCriteria)
@@ -313,6 +327,56 @@ class GroupedTaskQueriesComparisonTest {
 
             val (_, dbTasks) = compareTasks(persistentListOf(priorityFilter), orderingRules)
             assertEquals(2, dbTasks.size, "Should have 2 high priority tasks")
+        }
+    }
+
+    @Test
+    fun `compare ordering where ties and nulls decide the order`() = runTest {
+        withTestContext {
+            setupTasks { spaceId ->
+                addTask(spaceId, title = "same priority a", priority = Priority(50))
+                addTask(spaceId, title = "same priority b", priority = Priority(50))
+                addTask(spaceId, title = "same priority c", priority = Priority(50))
+                addTask(spaceId, title = "higher", priority = Priority(90))
+                addTask(spaceId, title = "no priority 1", priority = null)
+                addTask(spaceId, title = "no priority 2", priority = null)
+            }
+
+            // Where the rule cannot decide, the id does — so the order is total and both
+            // implementations have to produce it. Null placement is the half most likely to
+            // differ: SQL sorts nulls by its own rule unless told otherwise.
+            for (nulls in NullPosition.entries) {
+                for (direction in OrderDirection.entries) {
+                    compareTasks(
+                        filters = persistentListOf(),
+                        orderingRules = persistentListOf(
+                            OrderingRule(OrderableField.Priority, direction, nulls),
+                            OrderingRule(OrderableField.Id, OrderDirection.Ascending),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `compare paged reads against an order the pages have to preserve`() = runTest {
+        withTestContext {
+            setupTasks { spaceId ->
+                repeat(7) { index ->
+                    addTask(spaceId, title = "task $index", priority = Priority(10 + index * 10))
+                }
+                addTask(spaceId, title = "unprioritised", priority = null)
+            }
+
+            comparePagedTasks(
+                filters = persistentListOf(),
+                orderingRules = persistentListOf(
+                    OrderingRule(OrderableField.Priority, OrderDirection.Descending, NullPosition.Last),
+                    OrderingRule(OrderableField.Id, OrderDirection.Ascending),
+                ),
+                pageSize = 3,
+            )
         }
     }
 
@@ -1599,6 +1663,70 @@ class GroupedTaskQueriesComparisonTest {
     // The filter panel's criteria are matched in Kotlin by the in-memory repository and in SQL by
     // the database one. These pin the two together: a criterion the SQL cannot express has to fail
     // here rather than silently return a different set to the task list.
+
+    /**
+     * Tasks around every boundary the relative due-date filters have, against a fixed clock.
+     *
+     * Mid-month on purpose: a rolling month from the 14th and the calendar month of March pick out
+     * visibly different sets, which is what let the two implementations disagree unnoticed.
+     */
+    private suspend fun TestContext.setupDueDateSpread(clock: Clock) = setupTasks { spaceId ->
+        val now = clock.now()
+        addTask(spaceId, title = "last week", dueDate = now - 7.days)
+        addTask(spaceId, title = "earlier this month", dueDate = now - 3.days)
+        addTask(spaceId, title = "yesterday", dueDate = now - 1.days)
+        addTask(spaceId, title = "today", dueDate = now + 1.hours)
+        addTask(spaceId, title = "tomorrow", dueDate = now + 1.days)
+        addTask(spaceId, title = "in six days", dueDate = now + 6.days)
+        addTask(spaceId, title = "in eight days", dueDate = now + 8.days)
+        addTask(spaceId, title = "next month", dueDate = now + 40.days)
+        addTask(spaceId, title = "no due date", dueDate = null)
+    }
+
+    /** 14 March 2024, 09:00 local — far enough into the month for either reading to differ. */
+    private val midMonthClock = object : Clock {
+        override fun now(): Instant =
+            LocalDate(2024, 3, 14).atStartOfDayIn(TimeZone.currentSystemDefault()) + 9.hours
+    }
+
+    @Test
+    fun `compare every relative dueDate criterion`() = runTest {
+        withTestContext(midMonthClock) {
+            setupDueDateSpread(midMonthClock)
+
+            for (filter in DueDateFilter.entries) {
+                if (filter == DueDateFilter.Custom) continue
+                compareTasks(
+                    filters = persistentListOf(),
+                    filterCriteria = TaskFilterCriteria(dueDateFilter = filter),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `relative dueDate criteria select the expected tasks`() = runTest {
+        withTestContext(midMonthClock) {
+            setupDueDateSpread(midMonthClock)
+
+            suspend fun titlesFor(filter: DueDateFilter): Set<String> =
+                compareTasks(persistentListOf(), filterCriteria = TaskFilterCriteria(dueDateFilter = filter))
+                    .second.map { it.task.title }.toSet()
+
+            assertEquals(
+                setOf("last week", "earlier this month", "yesterday"),
+                titlesFor(DueDateFilter.Overdue),
+            )
+            assertEquals(setOf("today"), titlesFor(DueDateFilter.Today))
+            assertEquals(setOf("today", "tomorrow", "in six days"), titlesFor(DueDateFilter.ThisWeek))
+            // The month ahead, not the calendar month: nothing already past, and nothing 40 days out.
+            assertEquals(
+                setOf("today", "tomorrow", "in six days", "in eight days"),
+                titlesFor(DueDateFilter.ThisMonth),
+            )
+            assertEquals(setOf("no due date"), titlesFor(DueDateFilter.NoDueDate))
+        }
+    }
 
     /** Tasks spanning every [EstimatedTimeFilter] bucket, including each boundary value. */
     private suspend fun TestContext.setupEstimatedTimeSpread() = setupTasks { spaceId ->

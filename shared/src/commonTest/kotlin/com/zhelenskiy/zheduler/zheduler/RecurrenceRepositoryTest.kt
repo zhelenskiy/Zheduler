@@ -170,7 +170,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 days = persistentSetOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY),
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -191,7 +192,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -210,7 +212,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -230,7 +233,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 dayOfMonth = 31,
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState(lastOccurrenceDate = startFrom)
 
@@ -252,7 +256,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 dayOfWeek = RecurrenceDayOfWeek.MONDAY,
                 timeOfDay = TimeOfDay(9, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -273,7 +278,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 dayOfWeek = RecurrenceDayOfWeek.FRIDAY,
                 timeOfDay = TimeOfDay(17, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -296,7 +302,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -317,7 +324,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
                 dayOfMonth = 15,
                 timeOfDay = TimeOfDay(12, 0)
             ),
-            startFrom = startFrom
+            startFrom = startFrom,
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         val state = RecurrenceState()
 
@@ -369,7 +377,8 @@ abstract class RecurrenceRepositoryTest: AbstractRepositoryTest {
             pattern = FixedPointPattern.DaysOfWeek(
                 days = persistentSetOf(RecurrenceDayOfWeek.TUESDAY, RecurrenceDayOfWeek.THURSDAY)
             ),
-            startFrom = instant(2024, 1, 1, 0, 0)
+            startFrom = instant(2024, 1, 1, 0, 0),
+            timezone = RecurrenceTimeZone.Specific("UTC"),
         ).toRule()
         assertTrue(rule.toBriefString().contains("TUE"))
         assertTrue(rule.toBriefString().contains("THU"))

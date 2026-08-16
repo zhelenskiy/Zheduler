@@ -1183,12 +1183,11 @@ class RoomTaskRepository(
         }
         val dueDateRange: Pair<Long, Long>? = when (filterCriteria.dueDateFilter) {
             DueDateFilter.Any, DueDateFilter.NoDueDate -> null
-            DueDateFilter.Overdue -> Long.MIN_VALUE to now.toEpochMilliseconds()
-            DueDateFilter.Today -> todayStart.toEpochMilliseconds() to todayEnd.toEpochMilliseconds()
-            DueDateFilter.ThisWeek -> todayStart.toEpochMilliseconds() to weekEnd.toEpochMilliseconds()
-            DueDateFilter.ThisMonth -> todayStart.toEpochMilliseconds() to monthEnd.toEpochMilliseconds()
             DueDateFilter.Custom -> (filterCriteria.customDueDateAfter?.toEpochMilliseconds() ?: Long.MIN_VALUE) to
                     (filterCriteria.customDueDateBefore?.toEpochMilliseconds()?.plus(1) ?: Long.MAX_VALUE)
+            // The relative ones come from the shared definition, so SQL and Kotlin cannot disagree.
+            else -> relativeDueDateRange(filterCriteria.dueDateFilter, now)!!
+                .let { (start, end) -> start.toEpochMilliseconds() to end.toEpochMilliseconds() }
         }
 
         return FilterParams(

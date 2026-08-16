@@ -8,8 +8,11 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
@@ -1137,6 +1140,29 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                 subtaskOfTaskIds.isNotBlank() || parentOfTaskIds.isNotBlank()
 
     /**
+     * The half-open instant range a relative due-date filter selects, or null when the filter is
+     * not a range at all ([DueDateFilter.Any], [DueDateFilter.NoDueDate], [DueDateFilter.Custom]).
+     *
+     * One definition for both repositories. They used to state these separately, and had drifted:
+     * "this month" meant the calendar month in Kotlin and the month ahead in SQL, so the same
+     * saved filter answered differently depending on which one served it. The month ahead is what
+     * both now mean — it is what "this week" already meant in either implementation, and days
+     * already past belong to [DueDateFilter.Overdue].
+     */
+    protected fun relativeDueDateRange(filter: DueDateFilter, now: Instant): Pair<Instant, Instant>? {
+        val tz = TimeZone.currentSystemDefault()
+        val today = now.toLocalDateTime(tz).date
+        val todayStart = today.atStartOfDayIn(tz)
+        return when (filter) {
+            DueDateFilter.Any, DueDateFilter.NoDueDate, DueDateFilter.Custom -> null
+            DueDateFilter.Overdue -> Instant.DISTANT_PAST to now
+            DueDateFilter.Today -> todayStart to today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
+            DueDateFilter.ThisWeek -> todayStart to today.plus(7, DateTimeUnit.DAY).atStartOfDayIn(tz)
+            DueDateFilter.ThisMonth -> todayStart to today.plus(1, DateTimeUnit.MONTH).atStartOfDayIn(tz)
+        }
+    }
+
+    /**
      * Filter tasks based on the provided criteria.
      * This is the shared filtering logic used by both repository implementations.
      */
@@ -1145,7 +1171,6 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         criteria: TaskFilterCriteria
     ): List<TaskWithTotals> {
         val now = clock.now()
-        val todayStart = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
         // Derived from the criteria, so parsed once here rather than per task.
         val searchTerms = criteria.searchQuery.trim()
             .takeIf { it.isNotEmpty() }
@@ -1180,19 +1205,10 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             val matchesDueDate = when (criteria.dueDateFilter) {
                 DueDateFilter.Any -> true
                 DueDateFilter.NoDueDate -> dueDate == null
-                DueDateFilter.Overdue -> dueDate != null && dueDate < now
-                DueDateFilter.Today -> dueDate != null &&
-                        dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date == todayStart
-
-                DueDateFilter.ThisWeek -> dueDate != null && run {
-                    val dueLocalDate = dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date
-                    val daysDiff = dueLocalDate.toEpochDays() - todayStart.toEpochDays()
-                    daysDiff in 0..6
-                }
-
-                DueDateFilter.ThisMonth -> dueDate != null && run {
-                    val dueLocalDate = dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date
-                    dueLocalDate.year == todayStart.year && dueLocalDate.month == todayStart.month
+                DueDateFilter.Overdue, DueDateFilter.Today,
+                DueDateFilter.ThisWeek, DueDateFilter.ThisMonth -> {
+                    val (start, end) = relativeDueDateRange(criteria.dueDateFilter, now)!!
+                    dueDate != null && dueDate >= start && dueDate < end
                 }
 
                 DueDateFilter.Custom -> {
