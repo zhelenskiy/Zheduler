@@ -6,9 +6,6 @@ import com.zhelenskiy.zheduler.zheduler.*
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
 import pro.respawn.flowmvi.api.MVIIntent
@@ -55,9 +52,7 @@ class TaskDetailContainer(
     private val repository: TaskRepository,
     private val spaceId: String,
     private val taskId: String
-) : Container<TaskDetailState, TaskDetailIntent, TaskDetailAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<TaskDetailState, TaskDetailIntent, TaskDetailAction> {
 
     override val store = store(TaskDetailState(), scope) {
         configure {

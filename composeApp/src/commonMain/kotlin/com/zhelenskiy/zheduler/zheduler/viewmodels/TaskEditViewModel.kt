@@ -13,9 +13,6 @@ import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentSet
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import pro.respawn.flowmvi.api.Container
@@ -70,9 +67,7 @@ class TaskEditContainer(
     private val spaceId: String,
     private val taskId: String,
     private val savedStateHandle: SavedStateHandle
-) : Container<TaskEditState, TaskEditIntent, TaskEditAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<TaskEditState, TaskEditIntent, TaskEditAction> {
 
     override val store = store(TaskEditState(), scope) {
         configure {

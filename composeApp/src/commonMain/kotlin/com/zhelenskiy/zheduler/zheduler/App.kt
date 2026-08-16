@@ -48,6 +48,7 @@ import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.ViewModeManage
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SavedFilterManagementScreen
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.rememberContainer
 import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
 import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
@@ -223,7 +224,7 @@ private fun AppContent(
         composable<TaskListRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<TaskListRoute>()
             val savedStateHandle = backStackEntry.savedStateHandle
-            val container = remember(route.spaceId) {
+            val container = rememberContainer(route.spaceId) {
                 appGraph.taskListContainerFactory.create(route.spaceId)
             }
 
@@ -270,7 +271,7 @@ private fun AppContent(
 
         composable<CalendarRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<CalendarRoute>()
-            val container = remember(route.spaceId) {
+            val container = rememberContainer(route.spaceId) {
                 appGraph.calendarContainerFactory.create(route.spaceId)
             }
             CalendarScreen(
@@ -313,7 +314,7 @@ private fun AppContent(
             }
         ) { backStackEntry ->
             val route = backStackEntry.toRoute<TaskDetailRoute>()
-            val container = remember(route.spaceId, route.taskId) {
+            val container = rememberContainer(route.spaceId, route.taskId) {
                 appGraph.taskDetailContainerFactory.create(
                     spaceId = route.spaceId,
                     taskId = route.taskId
@@ -347,7 +348,7 @@ private fun AppContent(
         composable<TaskEditRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<TaskEditRoute>()
             val savedStateHandle = backStackEntry.savedStateHandle
-            val container = remember(route.spaceId, route.taskId) {
+            val container = rememberContainer(route.spaceId, route.taskId) {
                 appGraph.taskEditContainerFactory.create(
                     spaceId = route.spaceId,
                     taskId = route.taskId,
@@ -409,7 +410,7 @@ private fun AppContent(
                         ConnectionType.valueOf(route.prefilledConnectionType)
                     )
                 } else null
-            val container = remember(route.spaceId, prefilledConnection, route.taskIdToCopy) {
+            val container = rememberContainer(route.spaceId, prefilledConnection, route.taskIdToCopy) {
                 appGraph.newTaskContainerFactory.create(
                     spaceId = route.spaceId,
                     prefilledConnection = prefilledConnection,
@@ -447,7 +448,7 @@ private fun AppContent(
 
         composable<ViewModeManagementRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<ViewModeManagementRoute>()
-            val container = remember(route.spaceId) {
+            val container = rememberContainer(route.spaceId) {
                 ViewModeContainer(appGraph.taskRepository, route.spaceId)
             }
 
@@ -480,7 +481,7 @@ private fun AppContent(
 
         composable<ViewModeEditorRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<ViewModeEditorRoute>()
-            val container = remember(route.spaceId) {
+            val container = rememberContainer(route.spaceId) {
                 ViewModeContainer(appGraph.taskRepository, route.spaceId)
             }
 
@@ -506,7 +507,7 @@ private fun AppContent(
 
         composable<SavedFilterManagementRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<SavedFilterManagementRoute>()
-            val container = remember(route.spaceId) {
+            val container = rememberContainer(route.spaceId) {
                 SavedFilterContainer(appGraph.taskRepository, route.spaceId)
             }
 

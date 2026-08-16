@@ -12,9 +12,6 @@ import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.persistentSetOf
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
@@ -76,9 +73,7 @@ class NewTaskContainer(
     private val spaceId: String,
     private val prefilledConnection: TaskConnection?,
     private val taskIdToCopy: String?
-) : Container<NewTaskState, NewTaskIntent, NewTaskAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<NewTaskState, NewTaskIntent, NewTaskAction> {
 
     override val store = store(NewTaskState(), scope) {
         configure {

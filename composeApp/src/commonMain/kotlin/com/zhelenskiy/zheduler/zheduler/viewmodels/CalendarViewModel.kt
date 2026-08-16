@@ -5,9 +5,6 @@ import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentMapOf
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.datetime.LocalDate
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
@@ -39,9 +36,7 @@ private typealias CalendarPipelineContext = PipelineContext<CalendarState, Calen
 class CalendarContainer(
     private val repository: TaskRepository,
     private val spaceId: String
-) : Container<CalendarState, CalendarIntent, CalendarAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<CalendarState, CalendarIntent, CalendarAction> {
 
     override val store = store(CalendarState(), scope) {
         configure {

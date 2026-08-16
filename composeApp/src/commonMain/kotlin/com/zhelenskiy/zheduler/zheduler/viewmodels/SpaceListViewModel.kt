@@ -8,9 +8,6 @@ import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.persistentSetOf
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
@@ -82,9 +79,7 @@ private typealias SpaceListPipelineContext = PipelineContext<SpaceListState, Spa
 
 class SpaceListContainer(
     private val repository: TaskRepository
-) : Container<SpaceListState, SpaceListIntent, SpaceListAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<SpaceListState, SpaceListIntent, SpaceListAction> {
 
     override val store = store(SpaceListState(), scope) {
         configure {

@@ -11,9 +11,6 @@ import com.zhelenskiy.zheduler.zheduler.paging.PagingDefaults
 import com.zhelenskiy.zheduler.zheduler.paging.tasksForGroupPagingSource
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId as generateIdImpl
 import kotlinx.collections.immutable.PersistentList
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,9 +59,7 @@ private typealias TaskListPipelineContext = PipelineContext<TaskListState, TaskL
 class TaskListContainer(
     val repository: TaskRepository,
     val spaceId: String
-) : Container<TaskListState, TaskListIntent, TaskListAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<TaskListState, TaskListIntent, TaskListAction> {
 
     override val store = store(TaskListState(), scope) {
         configure {

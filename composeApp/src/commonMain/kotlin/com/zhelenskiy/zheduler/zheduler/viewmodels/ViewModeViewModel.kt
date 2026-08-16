@@ -5,9 +5,6 @@ import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import com.zhelenskiy.zheduler.zheduler.ViewMode
 import com.zhelenskiy.zheduler.zheduler.paging.tagsPagingSource
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
@@ -41,9 +38,7 @@ private typealias ViewModePipelineContext = PipelineContext<ViewModeState, ViewM
 class ViewModeContainer(
     private val repository: TaskRepository,
     private val spaceId: String
-) : Container<ViewModeState, ViewModeIntent, ViewModeAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<ViewModeState, ViewModeIntent, ViewModeAction> {
 
     override val store = store(ViewModeState(), scope) {
         configure {

@@ -5,9 +5,6 @@ import com.zhelenskiy.zheduler.zheduler.SavedFilterWithViewMode
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import com.zhelenskiy.zheduler.zheduler.ViewMode
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId as generateIdImpl
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import pro.respawn.flowmvi.api.Container
 import pro.respawn.flowmvi.api.MVIAction
 import pro.respawn.flowmvi.api.MVIIntent
@@ -37,9 +34,7 @@ private typealias SavedFilterPipelineContext = PipelineContext<SavedFilterState,
 class SavedFilterContainer(
     private val repository: TaskRepository,
     private val spaceId: String
-) : Container<SavedFilterState, SavedFilterIntent, SavedFilterAction> {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+) : ScopedContainer(), Container<SavedFilterState, SavedFilterIntent, SavedFilterAction> {
 
     override val store = store(SavedFilterState(), scope) {
         configure {
