@@ -39,7 +39,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.EmptyState
 import com.zhelenskiy.zheduler.zheduler.components.common.EmptySearchResults
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.common.isEmptyAfterRefresh
-import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
@@ -245,7 +245,7 @@ private fun SpaceListContent(
                         modifier = Modifier.animateItem()
                     )
                 }
-                pagingAppendStatus(spaces)
+                pagingLoadStatus(spaces)
             }
         }
         AnimatedVisibility(
@@ -787,8 +787,12 @@ private fun ImportSpaceDialog(
     parentScope: CoroutineScope
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var jsonText by remember { mutableStateOf("") }
-    var pendingRequestId by remember { mutableStateOf<Long?>(null) }
+    // Both saved rather than remembered. A rotation used to take the pasted JSON with it, and —
+    // worse — the id of the import already running: the result then matched nothing, the dialog
+    // sat there as though nothing had happened, and importing again made a second copy of a space
+    // that had in fact arrived the first time.
+    var jsonText by rememberSaveable { mutableStateOf("") }
+    var pendingRequestId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     // Handle import result from state
     LaunchedEffect(importResult, pendingRequestId) {

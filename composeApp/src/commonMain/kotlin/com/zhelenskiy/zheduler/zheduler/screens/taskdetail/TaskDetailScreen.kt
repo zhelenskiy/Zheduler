@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.ui.text.style.TextDecoration
@@ -687,7 +688,14 @@ fun TaskDetailScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                // A task that is not there never stops loading. Descriptions linkify every id
+                // whether or not it still exists, so a reference to a deleted task used to land
+                // the reader on a spinner that would turn for as long as they let it.
+                if (state.loadAttempted) {
+                    Text("This task no longer exists.", textAlign = TextAlign.Center)
+                } else {
+                    CircularProgressIndicator()
+                }
             }
         }
     }

@@ -21,7 +21,7 @@ import com.zhelenskiy.zheduler.zheduler.ConnectionType
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import com.zhelenskiy.zheduler.zheduler.components.common.isEmptyAfterRefresh
-import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 
 @Composable
 fun ConnectionDialog(
@@ -197,7 +197,7 @@ private fun TaskSearchResults(
             )
         }
 
-        pagingAppendStatus(tasks)
+        pagingLoadStatus(tasks)
 
         if (tasks.isEmptyAfterRefresh) {
             item {

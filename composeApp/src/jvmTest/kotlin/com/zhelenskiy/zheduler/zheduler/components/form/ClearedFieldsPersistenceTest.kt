@@ -29,6 +29,7 @@ class ClearedFieldsPersistenceTest {
         dueDate = dueDate,
         status = TaskStatus.Open,
         connections = persistentSetOf(),
+        connectionsBase = persistentSetOf(),
         notifications = persistentListOf(),
         recurrenceRules = persistentListOf(),
         autoUpdateStatusFromSubtasks = false,

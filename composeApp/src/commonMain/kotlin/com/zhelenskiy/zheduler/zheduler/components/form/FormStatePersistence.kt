@@ -43,6 +43,14 @@ data class PersistedFormState(
     val dueDate: Instant?,
     val status: TaskStatus?,
     val connections: PersistentSet<TaskConnection>?,
+    /**
+     * The connections the form was built from, before the user touched anything.
+     *
+     * Kept because the task's connections can change in the database while the form is off the
+     * screen — creating a connected task from the edit screen writes the other half of the link —
+     * and telling that apart from the user's own edits needs the point both started from.
+     */
+    val connectionsBase: PersistentSet<TaskConnection>?,
     val notifications: PersistentList<String>?,
     val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>?,
     val autoUpdateStatusFromSubtasks: Boolean?,
@@ -78,6 +86,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
             dueDate = savedStateHandle.get<Long>(KEY_DUE_DATE)?.let(Instant::fromEpochMilliseconds),
             status = decode<TaskStatus>(KEY_STATUS),
             connections = decode<Set<TaskConnection>>(KEY_CONNECTIONS)?.toPersistentSet(),
+            connectionsBase = decode<Set<TaskConnection>>(KEY_CONNECTIONS_BASE)?.toPersistentSet(),
             notifications = decode<List<String>>(KEY_NOTIFICATIONS)?.toPersistentList(),
             recurrenceRules = decode<List<Pair<RecurrenceRule, RecurrenceState>>>(KEY_RECURRENCE_RULES)
                 ?.toPersistentList(),
@@ -99,6 +108,8 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         savedStateHandle[KEY_STATUS] = state.status?.let { Json.encodeToString<TaskStatus>(it) }
         savedStateHandle[KEY_CONNECTIONS] =
             state.connections?.let { Json.encodeToString<Set<TaskConnection>>(it) }
+        savedStateHandle[KEY_CONNECTIONS_BASE] =
+            state.connectionsBase?.let { Json.encodeToString<Set<TaskConnection>>(it) }
         savedStateHandle[KEY_NOTIFICATIONS] =
             state.notifications?.let { Json.encodeToString<List<String>>(it) }
         savedStateHandle[KEY_RECURRENCE_RULES] = state.recurrenceRules
@@ -116,6 +127,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         savedStateHandle.remove<Long>(KEY_DUE_DATE)
         savedStateHandle.remove<String>(KEY_STATUS)
         savedStateHandle.remove<String>(KEY_CONNECTIONS)
+        savedStateHandle.remove<String>(KEY_CONNECTIONS_BASE)
         savedStateHandle.remove<String>(KEY_NOTIFICATIONS)
         savedStateHandle.remove<String>(KEY_RECURRENCE_RULES)
         savedStateHandle.remove<Boolean>(KEY_AUTO_UPDATE_STATUS)
@@ -132,6 +144,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         const val KEY_DUE_DATE = "form_due_date"
         const val KEY_STATUS = "form_status"
         const val KEY_CONNECTIONS = "form_connections"
+        const val KEY_CONNECTIONS_BASE = "form_connections_base"
         const val KEY_NOTIFICATIONS = "form_notifications"
         const val KEY_RECURRENCE_RULES = "form_recurrence_rules"
         const val KEY_AUTO_UPDATE_STATUS = "form_auto_update_status"
@@ -148,6 +161,7 @@ fun TaskFormState.toPersistedState() = PersistedFormState(
     dueDate = dueDate,
     status = status,
     connections = connections,
+    connectionsBase = connections,
     notifications = notifications,
     recurrenceRules = recurrenceRules,
     autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks,
@@ -215,6 +229,7 @@ fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
         // contents is recorded too rather than leaving an older record standing.
         if (!edited && current == builtWith) return@LaunchedEffect
         edited = true
-        persistence.write(current)
+        // The base travels with the record: what the form started from, not what it holds now.
+        persistence.write(current.copy(connectionsBase = builtWith.connections))
     }
 }

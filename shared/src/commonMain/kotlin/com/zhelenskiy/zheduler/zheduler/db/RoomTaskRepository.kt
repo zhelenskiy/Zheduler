@@ -208,23 +208,15 @@ class RoomTaskRepository(
                 totalCount = dao.countSpaces(),
             )
         }
-        val searchInNameFlag = if (searchInName) 1L else 0L
-        val searchInPrefixFlag = if (searchInPrefix) 1L else 0L
-        return Page(
-            items = dao.filterSpacesPaged(
-                searchInName = searchInNameFlag,
-                query = query.escapedForLike(),
-                searchInPrefix = searchInPrefixFlag,
-                limit = limit,
-                offset = offset,
-            ).map { it.toModel() },
-            offset = offset,
-            totalCount = dao.countFilteredSpaces(
-                searchInName = searchInNameFlag,
-                query = query.escapedForLike(),
-                searchInPrefix = searchInPrefixFlag,
-            ),
-        )
+        // Matched here, not in SQL: SQLite's `LOWER` folds only A–Z, so a lower-case query found
+        // nothing in any alphabet but English. There are few enough spaces to read them all.
+        return dao.getAllSpacesPaged(limit = Int.MAX_VALUE, offset = 0)
+            .map { it.toModel() }
+            .filter { space ->
+                searchInName && space.name.contains(query, ignoreCase = true) ||
+                        searchInPrefix && space.idPrefix.contains(query, ignoreCase = true)
+            }
+            .toPage(offset, limit)
     }
 
     override suspend fun createSpace(name: String, idPrefix: String): Space? = mutex.withLock {
@@ -282,6 +274,68 @@ class RoomTaskRepository(
     override suspend fun getAllTasks(spaceId: String): List<Task> =
         hydrateTasks(spaceId, dao.getTasksBySpace(spaceId))
 
+    /**
+     * Whether a picker row answers [query], by id or by title.
+     *
+     * Judged here rather than in SQL. SQLite's own `LOWER` folds nothing but A–Z, so a query typed
+     * in lower case found nothing in any alphabet but English — while the in-memory repository,
+     * which uses Kotlin's `contains(ignoreCase = true)`, matched it. The main filter box was moved
+     * off SQL for the same reason.
+     */
+    private fun Tasks.matchesPickerQuery(query: String): Boolean =
+        query.isBlank() || id.contains(query, ignoreCase = true) || title.contains(query, ignoreCase = true)
+
+    /**
+     * One window of picker rows, and whether more follow.
+     *
+     * Rows are read in chunks and offered to [accept]; only those it takes count towards the
+     * window, so the total is not known without scanning the whole space — which is why callers
+     * report `totalCount == null` and lean on `hasMore`.
+     */
+    private suspend fun scanPickerRows(
+        spaceId: String,
+        excludeTaskId: String?,
+        offset: Int,
+        limit: Int,
+        accept: suspend (Tasks) -> Boolean,
+    ): Pair<List<Tasks>, Boolean> {
+        val windowStart = offset.coerceAtLeast(0)
+        val windowSize = limit.coerceAtLeast(0)
+        // One extra accepted row tells us whether a further page exists without counting them all.
+        val wanted = if (windowSize >= Int.MAX_VALUE - 1) Int.MAX_VALUE else windowSize + 1
+        val scanSize = maxOf(windowSize, CANDIDATE_SCAN_SIZE)
+
+        val acceptedRows = mutableListOf<Tasks>()
+        var skipped = 0
+        var scanOffset = 0
+        while (acceptedRows.size < wanted) {
+            val rows = dao.searchTasksForConnectionPaged(
+                spaceId = spaceId,
+                id = excludeTaskId,
+                searchQuery = "",
+                limit = scanSize,
+                offset = scanOffset,
+            )
+            if (rows.isEmpty()) break
+            scanOffset += rows.size
+
+            for (row in rows) {
+                if (!accept(row)) continue
+                if (skipped < windowStart) {
+                    skipped++
+                    continue
+                }
+                acceptedRows.add(row)
+                if (acceptedRows.size == wanted) break
+            }
+
+            if (rows.size < scanSize) break
+        }
+
+        val hasMore = acceptedRows.size > windowSize
+        return (if (hasMore) acceptedRows.subList(0, windowSize) else acceptedRows) to hasMore
+    }
+
     override suspend fun filterTasksForSelectionPage(
         spaceId: String,
         excludeTaskId: String?,
@@ -289,17 +343,36 @@ class RoomTaskRepository(
         offset: Int,
         limit: Int
     ): Page<Task> {
-        val rows = dao.searchTasksForConnectionPaged(
+        // Nothing typed: the window is a plain slice, and the total comes for free.
+        if (searchQuery.isBlank()) {
+            val rows = dao.searchTasksForConnectionPaged(
+                spaceId = spaceId,
+                id = excludeTaskId,
+                searchQuery = "",
+                limit = limit,
+                offset = offset,
+            )
+            return Page(
+                items = hydrateTasks(spaceId, rows),
+                offset = offset,
+                totalCount = dao.countTasksForConnection(spaceId, excludeTaskId, ""),
+            )
+        }
+
+        // Matching in Kotlin costs a scan of the space's rows, but this picker promises a total,
+        // and only the window that is actually shown is loaded with its connections.
+        val window = dao.searchTasksForConnectionPaged(
             spaceId = spaceId,
             id = excludeTaskId,
-            searchQuery = searchQuery.escapedForLike(),
-            limit = limit,
-            offset = offset,
-        )
+            searchQuery = "",
+            limit = Int.MAX_VALUE,
+            offset = 0,
+        ).filter { it.matchesPickerQuery(searchQuery) }.toPage(offset, limit)
+
         return Page(
-            items = hydrateTasks(spaceId, rows),
-            offset = offset,
-            totalCount = dao.countTasksForConnection(spaceId, excludeTaskId, searchQuery.escapedForLike()),
+            items = hydrateTasks(spaceId, window.items),
+            offset = window.offset,
+            totalCount = window.totalCount,
         )
     }
 
@@ -333,45 +406,15 @@ class RoomTaskRepository(
         offset: Int,
         limit: Int
     ): Page<Task> {
-        val windowStart = offset.coerceAtLeast(0)
-        val windowSize = limit.coerceAtLeast(0)
-        // One extra accepted row tells us whether a further page exists without counting them all.
-        val wanted = if (windowSize >= Int.MAX_VALUE - 1) Int.MAX_VALUE else windowSize + 1
-        val scanSize = maxOf(windowSize, CANDIDATE_SCAN_SIZE)
-
-        val acceptedRows = mutableListOf<Tasks>()
-        var skipped = 0
-        var scanOffset = 0
-        while (acceptedRows.size < wanted) {
-            val rows = dao.searchTasksForConnectionPaged(
-                spaceId = spaceId,
-                id = excludeTaskId,
-                searchQuery = searchQuery.escapedForLike(),
-                limit = scanSize,
-                offset = scanOffset,
-            )
-            if (rows.isEmpty()) break
-            scanOffset += rows.size
-
-            for (row in rows) {
-                if (row.id in excludeTaskIds) continue
-                if (wouldCreateCycle(excludeTaskId, row.id, connectionType, existingConnections)) continue
-                if (skipped < windowStart) {
-                    skipped++
-                    continue
-                }
-                acceptedRows.add(row)
-                if (acceptedRows.size == wanted) break
-            }
-
-            if (rows.size < scanSize) break
+        // Cheapest test first: the search rejects most rows without touching the database again.
+        val (windowRows, hasMore) = scanPickerRows(spaceId, excludeTaskId, offset, limit) { row ->
+            row.matchesPickerQuery(searchQuery) &&
+                    row.id !in excludeTaskIds &&
+                    !wouldCreateCycle(excludeTaskId, row.id, connectionType, existingConnections)
         }
-
-        val hasMore = acceptedRows.size > windowSize
-        val windowRows = if (hasMore) acceptedRows.subList(0, windowSize) else acceptedRows
         return Page(
             items = hydrateTasks(spaceId, windowRows),
-            offset = windowStart,
+            offset = offset.coerceAtLeast(0),
             totalCount = null,
             hasMore = hasMore,
         )
@@ -544,17 +587,15 @@ class RoomTaskRepository(
         excludeTags: Set<String>,
         offset: Int,
         limit: Int
-    ): Page<String> = Page(
-        items = dao.filterTagsForSpacePaged(
-            spaceId = spaceId,
-            searchQuery = searchQuery.escapedForLike(),
-            excludeTags = excludeTags,
-            limit = limit,
-            offset = offset,
-        ),
-        offset = offset,
-        totalCount = dao.countFilteredTagsForSpace(spaceId, searchQuery.escapedForLike(), excludeTags),
-    )
+    ): Page<String> {
+        // Same as the space and task pickers: the match is Kotlin's, because SQLite's `LOWER`
+        // folds only A–Z. A space's tag vocabulary is small enough to read in one go.
+        val available = dao.getAllTagsForSpace(spaceId).filter { it !in excludeTags }
+        val matching =
+            if (searchQuery.isBlank()) available
+            else available.filter { it.contains(searchQuery, ignoreCase = true) }
+        return matching.sorted().toPage(offset, limit)
+    }
 
     override suspend fun addTag(spaceId: String, tag: String): Boolean = mutex.withLock {
         val name = tag.trim()
@@ -714,14 +755,18 @@ class RoomTaskRepository(
     override suspend fun getTasksBlockedBy(blockerId: String): List<Task> =
         hydrateTasksAcrossSpaces(dao.getTasksBlockedBy(blockerId))
 
-    private suspend fun addSymmetricConnectionUnsafe(sourceTaskId: String, connection: TaskConnection) {
+    private suspend fun addSymmetricConnectionUnsafe(
+        sourceTaskId: String,
+        connection: TaskConnection,
+        cascadeParentStatus: Boolean = true,
+    ) {
         val targetTask = getByIdUnsafe(connection.targetTaskId) ?: return
         val symmetricConnection = TaskConnection(sourceTaskId, connection.type.symmetric)
 
         if (!targetTask.connections.contains(symmetricConnection)) {
             dao.insertConnection(connection.targetTaskId, sourceTaskId, connection.type.symmetric.name)
 
-            if (symmetricConnection.type == ConnectionType.ParentOf) {
+            if (cascadeParentStatus && symmetricConnection.type == ConnectionType.ParentOf) {
                 updateParentStatusIfNeeded(connection.targetTaskId)
             }
         }
@@ -1054,7 +1099,7 @@ class RoomTaskRepository(
                 val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
                 task.connections.forEach { conn ->
                     val newTargetId = oldToNewTaskId[conn.targetTaskId] ?: return@forEach
-                    addConnectionUnsafe(newTaskId, newTargetId, conn.type)
+                    addConnectionUnsafe(newTaskId, newTargetId, conn.type, cascadeParentStatus = false)
                 }
             }
 
@@ -1160,7 +1205,22 @@ class RoomTaskRepository(
         return task
     }
 
-    private suspend fun addConnectionUnsafe(fromTaskId: String, toTaskId: String, type: ConnectionType): Boolean {
+    /**
+     * Links two tasks, both directions.
+     *
+     * [cascadeParentStatus] is off for import, which is restoring a status every task already has
+     * rather than making a change. Edges arrive one at a time, so a parent that derives its status
+     * would recompute it from however many subtasks had been linked so far and pass through
+     * statuses it never held — each a real change to everything downstream. A parent momentarily
+     * Done released the tasks waiting on it for good, so a task exported as Blocked came back
+     * unblocked, with invented history to match.
+     */
+    private suspend fun addConnectionUnsafe(
+        fromTaskId: String,
+        toTaskId: String,
+        type: ConnectionType,
+        cascadeParentStatus: Boolean = true,
+    ): Boolean {
         val fromTask = getByIdUnsafe(fromTaskId) ?: return false
         if (getByIdUnsafe(toTaskId) == null) return false
 
@@ -1172,7 +1232,7 @@ class RoomTaskRepository(
         if (wouldCreateCycle(fromTaskId, toTaskId, type, fromTask.connections)) return false
 
         dao.insertConnection(fromTaskId, toTaskId, type.name)
-        addSymmetricConnectionUnsafe(fromTaskId, connection)
+        addSymmetricConnectionUnsafe(fromTaskId, connection, cascadeParentStatus)
 
         return true
     }
@@ -2024,11 +2084,14 @@ class RoomTaskRepository(
     }
 
     /**
-     * Totals for every candidate, computed from rows plus two connection queries instead of the
-     * per-task lookups a fully loaded task list would need.
+     * Totals for every candidate, computed from rows plus a few queries instead of the per-task
+     * lookups a fully loaded task list would need.
      *
-     * Like the task-level calculation, dependents are only followed within the candidate set, and
-     * blocked tasks are considered across all spaces.
+     * The graph is the whole space, not the candidates. A dependency does not stop existing
+     * because the group or the filter hides the task at the other end of it — following only the
+     * candidates gave a task one total on the grouped screen, another on the filtered list, and a
+     * third on its own detail page, and made the two repositories disagree outright. Blocked tasks
+     * are considered across all spaces, as at task level.
      */
     private suspend fun calculateCandidateTotals(
         spaceId: String,
@@ -2038,13 +2101,14 @@ class RoomTaskRepository(
 
         val dependentsBySource = dao.getConnectionsBySpaceAndType(spaceId, dependentType)
             .groupBy({ it.sourceTaskId }, { it.targetTaskId })
-        val nodes = rows.map { it.toTotalsNode(dependentsBySource[it.id].orEmpty()) }
+        val nodes = dao.getTasksBySpace(spaceId).map { it.toTotalsNode(dependentsBySource[it.id].orEmpty()) }
 
         val blockedDependentsBySource = dao.getConnectionsForBlockedTasks(dependentType)
             .groupBy({ it.sourceTaskId }, { it.targetTaskId })
         val blockedNodes = dao.getBlockedTasks().map { it.toTotalsNode(blockedDependentsBySource[it.id].orEmpty()) }
 
-        return calculateTotals(nodes, blockedNodes)
+        val totals = calculateTotals(nodes, blockedNodes)
+        return if (rows.size == nodes.size) totals else rows.associate { it.id to (totals[it.id] ?: TaskTotals(null, null)) }
     }
 
     /** [getOrderableValue] for a row that has not been loaded into a [Task] yet. */
@@ -2293,13 +2357,17 @@ class RoomTaskRepository(
 
     /**
      * Compute range filter type based on includeNull flag and whether range bounds are present.
-     * Returns: 0 = Not applied, 1 = Null only, 2 = Range only, 3 = Null + Range
+     * Returns: 1 = Null only, 2 = Range only, 3 = Null + Range
+     *
+     * A group with neither bound set and null values excluded is still a restriction: it admits
+     * whatever has a value. "Range only" with no bounds says exactly that. Reading it as no
+     * restriction at all — which the editor lets the user build — let the tasks with no value into
+     * the group in SQL while the shared predicate put them in Uncategorized.
      */
     private fun rangeFilterType(includeNull: Boolean, hasRange: Boolean): Long = when {
         includeNull && hasRange -> 3L // Null + Range
         includeNull -> 1L // Null only
-        hasRange -> 2L // Range only
-        else -> 0L // Not applied
+        else -> 2L // Range only, bounded or not
     }
 
     /**

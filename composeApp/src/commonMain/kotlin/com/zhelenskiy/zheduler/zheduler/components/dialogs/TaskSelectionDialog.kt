@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
 import com.zhelenskiy.zheduler.zheduler.Task
-import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import kotlinx.collections.immutable.PersistentSet
 
 @Composable
@@ -98,7 +98,7 @@ fun TaskSelectionDialog(
                             }
                         }
                     }
-                    pagingAppendStatus(filteredTasks)
+                    pagingLoadStatus(filteredTasks)
                 }
             }
         },

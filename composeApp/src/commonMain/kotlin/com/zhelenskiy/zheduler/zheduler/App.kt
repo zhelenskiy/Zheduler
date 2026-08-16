@@ -277,8 +277,15 @@ private fun AppContent(
      */
     fun openTask(taskId: String, fallbackSpaceId: String) {
         navigationScope.launch {
-            val spaceId = appGraph.taskRepository.getSpaceIdForTask(taskId) ?: fallbackSpaceId
-            navController.navigate(TaskDetailRoute(spaceId, taskId))
+            // A lookup that fails must not take the app with it: this runs in the composition's
+            // own scope, where nothing catches an exception and Android ends the process. Opening
+            // the task in the space being read from is what happened before there was a lookup at
+            // all, so it is a fair thing to fall back to.
+            val spaceId = runCatching { appGraph.taskRepository.getSpaceIdForTask(taskId) }
+                .getOrNull() ?: fallbackSpaceId
+            // The database round-trip leaves room for a second tap before the first navigates,
+            // which used to stack two copies of the same screen.
+            navController.navigate(TaskDetailRoute(spaceId, taskId)) { launchSingleTop = true }
         }
     }
 

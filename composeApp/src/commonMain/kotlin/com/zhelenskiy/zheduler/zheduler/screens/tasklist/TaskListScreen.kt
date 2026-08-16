@@ -44,7 +44,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.EmptySearchResults
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.common.ScreenState
 import com.zhelenskiy.zheduler.zheduler.components.common.mapData
-import com.zhelenskiy.zheduler.zheduler.components.common.pagingAppendStatus
+import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import com.zhelenskiy.zheduler.zheduler.components.common.dataOrNull
 import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
@@ -580,7 +580,7 @@ private fun LazyListScope.taskCards(
             )
         }
     }
-    pagingAppendStatus(tasks, keyPrefix = "${groupKey}_")
+    pagingLoadStatus(tasks, keyPrefix = "${groupKey}_")
 }
 
 /**
@@ -813,7 +813,7 @@ fun TaskListScreen(
     val currentSpace = state.currentSpace
     val allTags = state.allTags ?: emptySet()
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
-    var showSaveFilterDialog by remember { mutableStateOf(false) }
+    var showSaveFilterDialog by rememberSaveable { mutableStateOf(false) }
 
     val dataVersion by container.dataVersion.collectAsState()
 

@@ -8,6 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.Alignment
+import com.zhelenskiy.zheduler.zheduler.TaskConnection
+import kotlinx.collections.immutable.PersistentSet
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -76,15 +78,20 @@ fun TaskEditScreen(
     // other half of the link into the task being edited. Only that difference is taken, though —
     // replacing the set wholesale reverted the connections the user had just added or removed,
     // silently, on the way back from creating one.
-    var syncedConnections by remember(currentTask.id) { mutableStateOf(currentTask.connections) }
+    //
+    // Where the difference is measured from is the whole of it. A restored form holds edits made
+    // against the connections the task had when the user left, so that is the mark — reading it
+    // off the freshly loaded task instead made the link just created look like no change at all,
+    // and saving then deleted it.
+    var syncedConnections by remember(currentTask.id) {
+        mutableStateOf(container.formPersistence.read()?.connectionsBase ?: currentTask.connections)
+    }
     LaunchedEffect(state.task) {
         val freshTask = state.task ?: return@LaunchedEffect
         val fresh = freshTask.connections
         if (fresh == syncedConnections) return@LaunchedEffect
 
-        val added = fresh - syncedConnections
-        val removed = syncedConnections - fresh
-        formState.connections = formState.connections.addAll(added).removeAll(removed)
+        formState.connections = mergedConnections(formState.connections, syncedConnections, fresh)
         syncedConnections = fresh
     }
 
@@ -117,8 +124,9 @@ fun TaskEditScreen(
         }
     }
 
-    // The toolbar arrow is not the only way out. Android's back gesture, and the browser's back
-    // button, used to pop straight past the check and take the edits with them.
+    // The toolbar arrow is not the only way out: Android's back gesture used to pop straight past
+    // the check and take the edits with it. The browser's back button still does — see BackHandler,
+    // which has nothing to bind to on web.
     BackHandler(enabled = !showDiscardChangesDialog) { handleBackPress() }
 
     if (showDiscardChangesDialog) {
@@ -211,3 +219,15 @@ private fun TaskEditPlaceholder(loadAttempted: Boolean, onNavigateBack: () -> Un
         }
     }
 }
+
+/**
+ * [current] with the changes made to the task's connections since [base] folded in.
+ *
+ * The form's own edits are kept: only what the database gained or lost relative to the set the
+ * form was built from is applied on top.
+ */
+internal fun mergedConnections(
+    current: PersistentSet<TaskConnection>,
+    base: PersistentSet<TaskConnection>,
+    fresh: PersistentSet<TaskConnection>,
+): PersistentSet<TaskConnection> = current.addAll(fresh - base).removeAll(base - fresh)

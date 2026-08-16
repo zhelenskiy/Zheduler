@@ -52,6 +52,23 @@ class PickerSearchComparisonTest {
     }
 
     @Test
+    fun `picker search ignores case outside the ASCII range`() = runTest {
+        // SQLite's own LOWER folds nothing but A-Z, so a query typed in lower case found nothing
+        // in any language whose alphabet is not English, while the in-memory side matched.
+        for (repository in repositories()) {
+            val space = repository.createSpace("Test", "TEST")!!
+            repository.addTask(space.id, title = "Купить хлеб")
+            repository.addTask(space.id, title = "Something else")
+
+            assertEquals(
+                listOf("Купить хлеб"),
+                repository.searchTasksForConnection(space.id, null, "купить", connectionType = ConnectionType.RelatesTo, existingConnections = emptySet()).map { it.title },
+                "$repository",
+            )
+        }
+    }
+
+    @Test
     fun `tag search treats wildcards as characters`() = runTest {
         for (repository in repositories()) {
             val space = repository.createSpace("Test", "TEST")!!
@@ -75,6 +92,31 @@ class PickerSearchComparisonTest {
             assertEquals(
                 listOf("Q1 100% done"),
                 repository.filterSpaces("100%", searchInName = true, searchInPrefix = false).map { it.name },
+                "$repository",
+            )
+        }
+    }
+
+    @Test
+    fun `tag search ignores case outside the ASCII range`() = runTest {
+        for (repository in repositories()) {
+            val space = repository.createSpace("Test", "TEST")!!
+            repository.addTag(space.id, "Дом")
+            repository.addTag(space.id, "work")
+
+            assertEquals(listOf("Дом"), repository.filterTags(space.id, "дом", emptySet()), "$repository")
+        }
+    }
+
+    @Test
+    fun `space search ignores case outside the ASCII range`() = runTest {
+        for (repository in repositories()) {
+            repository.createSpace("Работа", "AAA")
+            repository.createSpace("Home", "BBB")
+
+            assertEquals(
+                listOf("Работа"),
+                repository.filterSpaces("работа", searchInName = true, searchInPrefix = false).map { it.name },
                 "$repository",
             )
         }

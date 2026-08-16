@@ -32,6 +32,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.TagSelectionDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeAction
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeIntent
 import org.jetbrains.compose.resources.painterResource
@@ -58,7 +59,12 @@ fun ViewModeEditorScreen(
     onColorSettingsChange: (ColorSettings) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val state by container.store.subscribe()
+    val state by container.store.subscribe { action ->
+        when (action) {
+            // Only once it is actually saved: see ViewModeAction.ViewModeSaved.
+            is ViewModeAction.ViewModeSaved -> onSave()
+        }
+    }
     val isCopy = copyFromViewModeId != null
 
     var viewMode by remember { mutableStateOf<ViewMode?>(null) }
@@ -120,7 +126,6 @@ fun ViewModeEditorScreen(
                     IconButton(
                         onClick = {
                             container.store.intent(ViewModeIntent.SaveViewMode(editorState.toViewMode()))
-                            onSave()
                         },
                         enabled = isValid && editorState.name.isNotBlank()
                     ) {

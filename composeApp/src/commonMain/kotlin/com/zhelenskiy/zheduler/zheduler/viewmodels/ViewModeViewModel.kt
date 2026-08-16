@@ -31,7 +31,16 @@ sealed interface ViewModeIntent : MVIIntent {
     data class FilterTags(val searchQuery: String, val excludeTags: Set<String>) : ViewModeIntent
 }
 
-sealed interface ViewModeAction : MVIAction
+sealed interface ViewModeAction : MVIAction {
+    /**
+     * The view mode is in the database.
+     *
+     * The editor waits for this before leaving. Navigating on the button press instead closed the
+     * screen — and with it the scope the store runs in — while the write was still in flight, so a
+     * save could simply not happen, silently.
+     */
+    data object ViewModeSaved : ViewModeAction
+}
 
 private typealias ViewModePipelineContext = PipelineContext<ViewModeState, ViewModeIntent, ViewModeAction>
 
@@ -84,6 +93,7 @@ class ViewModeContainer(
         val viewModes = repository.getAllViewModes(spaceId)
         val activeViewMode = repository.getActiveViewMode(spaceId)
         updateState { copy(viewModes = viewModes, activeViewMode = activeViewMode) }
+        action(ViewModeAction.ViewModeSaved)
     }
 
     private suspend fun ViewModePipelineContext.deleteViewMode(viewModeId: String) {

@@ -19,6 +19,8 @@ import kotlin.time.Instant
 
 data class TaskDetailState(
     val taskWithTotals: TaskWithTotals? = null,
+    /** Whether the load has run, so the screen can tell "not read yet" from "no such task". */
+    val loadAttempted: Boolean = false,
     val connectionsByType: Map<ConnectionType, List<Task>> = emptyMap(),
     val currentSpaceIdPrefix: String? = null,
     val allSpacePrefixes: List<String> = emptyList(),
@@ -66,6 +68,7 @@ class TaskDetailContainer(
         updateState {
             copy(
                 taskWithTotals = taskWithTotals,
+                loadAttempted = true,
                 connectionsByType = connectionsByType,
                 statusTimeline = statusTimeline
             )

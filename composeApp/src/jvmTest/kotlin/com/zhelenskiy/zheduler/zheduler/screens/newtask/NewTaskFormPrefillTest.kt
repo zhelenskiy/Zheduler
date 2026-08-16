@@ -115,6 +115,7 @@ class NewTaskFormPrefillTest {
                 dueDate = null,
                 status = null,
                 connections = null,
+                connectionsBase = null,
                 notifications = null,
                 recurrenceRules = null,
                 autoUpdateStatusFromSubtasks = null,
