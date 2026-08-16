@@ -900,15 +900,8 @@ class RoomTaskRepository(
         }
 
         return mutex.withLock {
-            var newPrefix = exportData.space.idPrefix
-            var counter = 1
-            while (dao.prefixExists(newPrefix)) {
-                newPrefix = "${exportData.space.idPrefix}$counter"
-                counter++
-            }
-
-            val spaces = dao.getAllSpaces()
-            val newSpaceId = "space-${spaces.size}-$newPrefix"
+            val newPrefix = uniqueSpacePrefix(exportData.space.idPrefix) { dao.prefixExists(it) }
+            val newSpaceId = "space-${dao.countSpaces()}-$newPrefix"
             val newSpace = Space(id = newSpaceId, name = exportData.space.name, idPrefix = newPrefix)
 
             dao.insertSpace(newSpaceId, newSpace.name, newPrefix)
@@ -920,6 +913,7 @@ class RoomTaskRepository(
                 val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
 
                 val remappedStatus = remapBlockedStatus(task.status, oldToNewTaskId)
+                val timeline = exportData.statusTimelines[task.id].orEmpty()
 
                 addTaskUnsafe(
                     spaceId = newSpaceId,
@@ -934,12 +928,12 @@ class RoomTaskRepository(
                     notifications = task.notifications,
                     customId = newTaskId,
                     recurrenceRules = task.recurrenceRules,
-                    autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
+                    autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks,
+                    // Its own creation entry would date the task to the moment of the import.
+                    recordInitialStatusChange = timeline.isEmpty(),
                 )
 
-                val oldTaskId = task.id
-                val timeline = exportData.statusTimelines[oldTaskId] ?: emptyList()
-                timeline.drop(1).forEach { statusChange ->
+                timeline.forEach { statusChange ->
                     dao.insertStatusChange(
                         taskId = newTaskId,
                         timestamp = statusChange.timestamp.toEpochMilliseconds(),
@@ -978,7 +972,9 @@ class RoomTaskRepository(
         notifications: PersistentList<TaskNotification>,
         customId: String?,
         recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
-        autoUpdateStatusFromSubtasks: Boolean
+        autoUpdateStatusFromSubtasks: Boolean,
+        /** Import writes the task's real history instead; see [importSpaceFromJson]. */
+        recordInitialStatusChange: Boolean = true,
     ): Task? {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
@@ -1031,13 +1027,15 @@ class RoomTaskRepository(
             addSymmetricConnectionUnsafe(taskId, connection)
         }
 
-        dao.insertStatusChange(
-            taskId = taskId,
-            timestamp = clock.now().toEpochMilliseconds(),
-            previousStatusJson = null,
-            newStatusJson = status.toJson(),
-            automaticChangeReasonJson = null
-        )
+        if (recordInitialStatusChange) {
+            dao.insertStatusChange(
+                taskId = taskId,
+                timestamp = clock.now().toEpochMilliseconds(),
+                previousStatusJson = null,
+                newStatusJson = status.toJson(),
+                automaticChangeReasonJson = null
+            )
+        }
 
         tags.forEach { dao.insertTagForSpace(spaceId, it) }
 

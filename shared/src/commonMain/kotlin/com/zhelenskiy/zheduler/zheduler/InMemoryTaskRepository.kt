@@ -666,11 +666,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
 
         return mutex.withLock {
-            var newPrefix = exportData.space.idPrefix
-            var counter = 1
-            while (spaces.values.any { it.idPrefix == newPrefix }) {
-                newPrefix = "${exportData.space.idPrefix}$counter"
-                counter++
+            val newPrefix = uniqueSpacePrefix(exportData.space.idPrefix) { candidate ->
+                spaces.values.any { it.idPrefix == candidate }
             }
 
             val newSpaceId = "space-${spaces.size}-$newPrefix"

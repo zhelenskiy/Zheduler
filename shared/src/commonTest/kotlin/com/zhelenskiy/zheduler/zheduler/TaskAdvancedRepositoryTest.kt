@@ -23,8 +23,39 @@ class DatabaseTaskAdvancedRepositoryTest: TaskAdvancedRepositoryTest(), Database
  */
 abstract class TaskAdvancedRepositoryTest: AbstractRepositoryTest {
 
+    /** A clock that moves on every reading, so timeline entries are distinguishable. */
+    private class TickingClock(start: Instant) : Clock {
+        private var next = start
+        override fun now(): Instant = next.also { next += 1.hours }
+    }
 
     // ==================== Export/Import Tests ====================
+
+    @Test
+    fun `importing a space keeps the exported status timeline`() = runTest {
+        val clock = TickingClock(Instant.fromEpochMilliseconds(1_700_000_000_000))
+        val repo = createEmptyRepository(clock)
+        val spaceId = repo.createSpace("Test", "TEST")!!.id
+
+        val task = repo.addTask(spaceId, title = "Tracked")!!
+        repo.updateTask(task.copy(status = TaskStatus.InProgress))
+        repo.updateTask(task.copy(status = TaskStatus.Done))
+
+        val exported = repo.getStatusTimeline(task.id)
+        assertEquals(3, exported.size, "creation plus two status changes")
+
+        val json = repo.exportSpaceToJson(spaceId)!!
+        val importedSpace = repo.importSpaceFromJson(json)!!
+        val importedTaskId = repo.getAllTasks(importedSpace.id).single().id
+
+        val imported = repo.getStatusTimeline(importedTaskId)
+
+        assertEquals(
+            exported.map { it.timestamp to it.newStatus },
+            imported.map { it.timestamp to it.newStatus },
+            "an imported task should carry the history it was exported with",
+        )
+    }
 
     @Test
     fun `exportSpaceToJson returns null for non-existent space`() = runTest {

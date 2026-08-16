@@ -835,6 +835,33 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     // ============ Import/Export helpers ============
 
     /**
+     * A space prefix based on [base] that no existing space uses.
+     *
+     * The suffix has to be letters: [Space] rejects anything else, so the obvious "TEST1" made
+     * importing a space whose prefix was taken throw instead of importing.
+     */
+    protected suspend fun uniqueSpacePrefix(base: String, isTaken: suspend (String) -> Boolean): String {
+        if (!isTaken(base)) return base
+        var index = 0
+        while (true) {
+            val candidate = base + letterSuffix(index)
+            if (!isTaken(candidate)) return candidate
+            index++
+        }
+    }
+
+    /** 0 -> "A", 25 -> "Z", 26 -> "AA", counting in base 26 with no zero digit. */
+    private fun letterSuffix(index: Int): String {
+        val letters = StringBuilder()
+        var remaining = index
+        while (remaining >= 0) {
+            letters.append('A' + remaining % 26)
+            remaining = remaining / 26 - 1
+        }
+        return letters.reverse().toString()
+    }
+
+    /**
      * Create a mapping from old task IDs to new task IDs for import operations.
      * @param tasks The tasks being imported
      * @param newPrefix The new prefix for task IDs
