@@ -147,6 +147,11 @@ class SpaceListContainer(
 
     private suspend fun SpaceListPipelineContext.clearAllData() {
         repository.clearAllData()
+        // This container is app-scoped and outlives every space, so anything cached per space has
+        // to go with them. Space ids are handed out as "space-<count>-<prefix>" and are reused
+        // after a deletion, so a stale entry does not merely linger — it can be found again under
+        // a new space and shown as its own.
+        updateState { copy(tagsBySpace = persistentMapOf(), lastExportResult = null, lastImportResult = null) }
         loadSpaces()
     }
 
@@ -193,6 +198,8 @@ class SpaceListContainer(
     private suspend fun SpaceListPipelineContext.deleteSpace(prefix: String) {
         val result = repository.deleteSpace(prefix)
         if (result) {
+            // See clearAllData: a deleted space's id can come back on a new one.
+            updateState { copy(tagsBySpace = tagsBySpace.remove(prefix), lastExportResult = null) }
             loadSpaces()
         }
         action(SpaceListAction.SpaceDeleted(result))

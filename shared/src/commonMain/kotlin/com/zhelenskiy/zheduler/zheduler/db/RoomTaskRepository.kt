@@ -426,30 +426,21 @@ class RoomTaskRepository(
             }
         }
 
+        // A level at a time, reading the whole frontier's connections in one query. Walking node
+        // by node with getTaskById cost two queries each — and the tasks it read were thrown away,
+        // since only the ids are wanted here and the rows are batch-read afterwards anyway.
         val needed = mutableSetOf<String>()
-        val pendingIds = ArrayDeque<String>()
-        pendingIds.add(task.id)
+        var frontier = setOf(task.id)
 
-        while (pendingIds.isNotEmpty()) {
-            val currentId = pendingIds.removeFirst()
-            if (currentId in needed) continue
-            needed.add(currentId)
+        while (frontier.isNotEmpty()) {
+            needed.addAll(frontier)
 
-            val current = getTaskById(currentId) ?: continue
+            val dependents = chunkedByIds(frontier) { dao.getConnectionsForTasks(it) }
+                .filter { it.type == ConnectionType.IsDependencyOf.name }
+                .map { it.targetTaskId }
+            val blocked = frontier.flatMap { id -> blockerToBlockedTasks[id].orEmpty().map { it.id } }
 
-            current.connections
-                .filter { it.type == ConnectionType.IsDependencyOf }
-                .forEach { connection ->
-                    if (connection.targetTaskId !in needed) {
-                        pendingIds.add(connection.targetTaskId)
-                    }
-                }
-
-            blockerToBlockedTasks[currentId]?.forEach { blockedTask ->
-                if (blockedTask.id !in needed) {
-                    pendingIds.add(blockedTask.id)
-                }
-            }
+            frontier = (dependents + blocked).filterTo(mutableSetOf()) { it !in needed }
         }
 
         return needed
@@ -1137,15 +1128,24 @@ class RoomTaskRepository(
     // protect processDateBasedRecurrences with mutex (not both, to avoid deadlock with non-reentrant mutex).
     // processRecurrenceTrigger is also protected independently for when it's called directly.
 
+    // Both write a timeline entry and then the task itself, so both need one transaction around
+    // them like every other mutation here: killed between the two, the timeline gained an
+    // automatic entry for a recurrence the task had not actually advanced through, and the next
+    // startup processed it again and wrote a second.
+
     override suspend fun processRecurrenceTrigger(
         taskId: String,
         triggerEvent: RecurrenceTriggerEvent
     ): Task? = mutex.withLock {
-        processRecurrenceTriggerInternal(taskId, triggerEvent)?.also { notifyChanged() }
+        database.withWriteTransaction {
+            processRecurrenceTriggerInternal(taskId, triggerEvent)
+        }.alsoNotifyIf { it != null }
     }
 
     override suspend fun processDateBasedRecurrences(currentTime: Instant): List<Task> = mutex.withLock {
-        processDateBasedRecurrencesInternal(currentTime).also { if (it.isNotEmpty()) notifyChanged() }
+        database.withWriteTransaction {
+            processDateBasedRecurrencesInternal(currentTime)
+        }.alsoNotifyIf { it.isNotEmpty() }
     }
 
     // ============ SQL-based grouped task queries ============

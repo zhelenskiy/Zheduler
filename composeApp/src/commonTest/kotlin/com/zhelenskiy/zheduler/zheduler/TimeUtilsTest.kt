@@ -4,7 +4,9 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.util.formatCompactDateTime
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,42 +44,51 @@ class TimeUtilsTest {
     }
 
     // ==================== formatDueDate Tests ====================
+    //
+    // Against a fixed clock, and asserting the label. These used to read
+    // `assertTrue(result.contains("Today") || result.contains("at"))`, which every branch
+    // satisfies — the relative ones append " at HH:MM" and the fallback formatDate contains
+    // " at " too — so they passed whatever the day classification did.
+
+    /** Noon on 15 March 2024, local. */
+    private val fixedNow = LocalDateTime(2024, 3, 15, 12, 0)
+        .toInstant(TimeZone.currentSystemDefault())
+
+    private val fixedClock = object : Clock {
+        override fun now(): Instant = fixedNow
+    }
+
+    /** [local], formatted against [fixedClock]. */
+    private fun format(local: LocalDateTime): String =
+        formatDueDate(local.toInstant(TimeZone.currentSystemDefault()), fixedClock)
 
     @Test
-    fun `formatDueDate for today contains Today`() {
-        val now = Clock.System.now()
-        val result = formatDueDate(now)
-        assertTrue(result.contains("Today") || result.contains("at"))
+    fun `formatDueDate labels today`() {
+        assertEquals("Today at 09:05", format(LocalDateTime(2024, 3, 15, 9, 5)))
     }
 
     @Test
-    fun `formatDueDate for tomorrow contains Tomorrow`() {
-        val tomorrow = Clock.System.now() + 1.days
-        val result = formatDueDate(tomorrow)
-        assertTrue(result.contains("Tomorrow") || result.contains("at"))
+    fun `formatDueDate labels tomorrow`() {
+        assertEquals("Tomorrow at 17:30", format(LocalDateTime(2024, 3, 16, 17, 30)))
     }
 
     @Test
-    fun `formatDueDate for yesterday contains Yesterday`() {
-        val yesterday = Clock.System.now() - 1.days
-        val result = formatDueDate(yesterday)
-        assertTrue(result.contains("Yesterday") || result.contains("at"))
+    fun `formatDueDate labels yesterday`() {
+        assertEquals("Yesterday at 00:00", format(LocalDateTime(2024, 3, 14, 0, 0)))
     }
 
     @Test
-    fun `formatDueDate includes time component`() {
-        val now = Clock.System.now()
-        val result = formatDueDate(now)
-        assertTrue(result.contains("at"))
-        assertTrue(result.contains(":"))
+    fun `formatDueDate spells out anything further away`() {
+        assertEquals("April 14, 2024 at 08:00", format(LocalDateTime(2024, 4, 14, 8, 0)))
+        assertEquals("March 1, 2024 at 08:00", format(LocalDateTime(2024, 3, 1, 8, 0)))
     }
 
     @Test
-    fun `formatDueDate for far future shows month and day`() {
-        val farFuture = Clock.System.now() + 30.days
-        val result = formatDueDate(farFuture)
-        // Should contain month name and day
-        assertTrue(result.contains(",") || result.isNotBlank())
+    fun `formatDueDate compares calendar days, not elapsed hours`() {
+        // 23 hours ahead of noon is tomorrow morning, not "today".
+        assertEquals("Tomorrow at 11:00", format(LocalDateTime(2024, 3, 16, 11, 0)))
+        // And half an hour before midnight is still today.
+        assertEquals("Today at 23:30", format(LocalDateTime(2024, 3, 15, 23, 30)))
     }
 
     // ==================== formatCompactDateTime Tests ====================
@@ -110,11 +121,14 @@ class TimeUtilsTest {
 
     @Test
     fun `formatCompactDateTime pads hours minutes seconds`() {
-        // Create instant with single-digit time components
-        val instant = Instant.fromEpochMilliseconds(0) // Jan 1, 1970 00:00:00 UTC
-        val result = formatCompactDateTime(instant)
-        // Should have padded format like "00:00:00"
-        assertTrue(result.contains("00:00:00") || result.contains(":"))
+        val midnight = LocalDateTime(2024, 1, 5, 0, 0, 0).toInstant(TimeZone.currentSystemDefault())
+        assertEquals("Jan 5 00:00:00", formatCompactDateTime(midnight))
+    }
+
+    @Test
+    fun `formatCompactDateTime spells out a full timestamp`() {
+        val moment = LocalDateTime(2024, 11, 30, 14, 3, 9).toInstant(TimeZone.currentSystemDefault())
+        assertEquals("Nov 30 14:03:09", formatCompactDateTime(moment))
     }
 
     // ==================== parseCompactTimeToPeriod Integration Tests ====================

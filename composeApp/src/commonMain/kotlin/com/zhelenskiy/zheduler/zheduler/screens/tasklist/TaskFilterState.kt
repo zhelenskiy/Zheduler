@@ -11,8 +11,13 @@ import kotlin.time.Instant
 
 @Stable
 class TaskFilterState {
+    companion object {
+        /** Which fields the search box looks in until the user says otherwise. */
+        val DefaultTextSearchFields = persistentSetOf(TaskTextSearchField.Id, TaskTextSearchField.Title)
+    }
+
     var searchQuery by mutableStateOf("")
-    var textSearchFields by mutableStateOf(persistentSetOf(TaskTextSearchField.Id, TaskTextSearchField.Title))
+    var textSearchFields by mutableStateOf(DefaultTextSearchFields)
     var statusFilters by mutableStateOf<PersistentSet<TaskStatus>>(persistentSetOf())
     var dueDateFilter by mutableStateOf(DueDateFilter.Any)
     var priorityFilter by mutableStateOf(PriorityFilter.Any)
@@ -108,6 +113,8 @@ class TaskFilterState {
 
     fun clearAll() {
         searchQuery = ""
+        // "Clear all filters" left a modified field selection behind.
+        textSearchFields = DefaultTextSearchFields
         statusFilters = persistentSetOf()
         dueDateFilter = DueDateFilter.Any
         priorityFilter = PriorityFilter.Any

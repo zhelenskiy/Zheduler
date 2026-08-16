@@ -102,7 +102,7 @@ private fun FilterCategoryChipsRow(
             title = "Search in",
             isExpanded = expandedCategory == FilterCategory.SearchIn,
             onClick = { onCategoryClick(FilterCategory.SearchIn) },
-            hasActiveFilter = filterState.textSearchFields != setOf(TaskTextSearchField.Title)
+            hasActiveFilter = filterState.textSearchFields != TaskFilterState.DefaultTextSearchFields
         )
 
         FilterCategoryChip(

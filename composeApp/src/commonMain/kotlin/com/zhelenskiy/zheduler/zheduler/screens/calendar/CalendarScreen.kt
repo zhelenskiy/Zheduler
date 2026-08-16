@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +60,18 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 @Suppress("UnusedReceiverParameter")
+/** [YearMonth] as the pair of numbers a platform state registry can hold. */
+private val yearMonthSaver = listSaver<YearMonth, Int>(
+    save = { listOf(it.year, it.month.number) },
+    restore = { YearMonth(it[0], Month(it[1])) },
+)
+
+/** A nullable [LocalDate] as its epoch day, or an empty list for none. */
+private val localDateSaver = listSaver<LocalDate?, Int>(
+    save = { date -> date?.let { listOf(it.toEpochDays().toInt()) } ?: emptyList() },
+    restore = { saved -> saved.firstOrNull()?.let { LocalDate.fromEpochDays(it.toLong()) } },
+)
+
 @Composable
 fun BoxScope.AnimatedVisibility(
     visible: Boolean,
@@ -147,10 +161,15 @@ fun CalendarScreen(
 
     val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()) }
 
-    var currentMonth by remember {
+    // Saveable: opening a task from a status-change card rebuilds this composition on the way
+    // back, and on Android so does a rotation. Plain remember dropped the month the user had
+    // browsed to and the day they had picked, snapping back to today each time.
+    var currentMonth by rememberSaveable(stateSaver = yearMonthSaver) {
         mutableStateOf(YearMonth(today.year, today.month))
     }
-    var selectedDate by remember { mutableStateOf<LocalDate?>(today.date) }
+    var selectedDate by rememberSaveable(stateSaver = localDateSaver) {
+        mutableStateOf<LocalDate?>(today.date)
+    }
 
     // Track navigation direction for slide animation
     var isNavigatingForward: Boolean? by remember { mutableStateOf(true) }

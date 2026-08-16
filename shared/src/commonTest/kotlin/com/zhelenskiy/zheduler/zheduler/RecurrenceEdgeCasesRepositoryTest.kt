@@ -3,6 +3,7 @@
 package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Done
+import com.zhelenskiy.zheduler.zheduler.TaskStatus.InProgress
 import com.zhelenskiy.zheduler.zheduler.TaskStatus.Open
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
 import kotlinx.collections.immutable.persistentListOf
@@ -439,21 +440,26 @@ abstract class RecurrenceEdgeCasesRepositoryTest: AbstractRepositoryTest {
     }
 
     @Test
-    fun `createNextOccurrence resets status`() {
-        val task = Task(
-            id = "TEST-1",
-            title = "Test",
-            spaceId = "space-1",
-            status = Done
+    fun `a fired rule resets the task to the status it names`() {
+        // Was named after createNextOccurrence, which does not exist: it built a task with copy()
+        // and asserted the arguments back, so it passed with the recurrence engine deleted.
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                period = RecurrencePeriod.ofDays(1),
+                firstOccurrence = instant(2024, 1, 1, 0, 0),
+                timezone = RecurrenceTimeZone.Specific("UTC"),
+            ),
+            statusChangeTrigger = StatusChange(requiredStatuses = persistentSetOf(Done)),
+            resetToStatus = InProgress,
         )
 
-        val nextTask = task.copy(
-            status = Open,
-            dueDate = instant(2024, 1, 15, 0, 0)
+        val result = RecurrenceService.processRecurrence(
+            rules = persistentListOf(rule to RecurrenceState(nextOccurrenceDate = instant(2024, 1, 2, 0, 0))),
+            triggerEvent = RecurrenceTriggerEvent(Done, instant(2024, 1, 2, 12, 0)),
         )
 
-        assertEquals(Open, nextTask.status)
-        assertEquals(instant(2024, 1, 15, 0, 0), nextTask.dueDate)
+        assertNotNull(result)
+        assertEquals(InProgress, result.second, "the rule names the status to come back as")
     }
 
     // ==================== Display String Edge Cases ====================

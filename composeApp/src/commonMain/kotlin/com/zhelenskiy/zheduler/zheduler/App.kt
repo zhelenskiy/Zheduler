@@ -19,6 +19,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.lifecycle.Lifecycle
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.materialkolor.rememberDynamicColorScheme
@@ -119,6 +122,17 @@ fun rememberThemeState(): ThemeState {
     }
 
     return themeState
+}
+
+/**
+ * Pops [this] destination, once.
+ *
+ * A tap handler can run twice before the first pop takes effect — trivial with a mouse — and the
+ * second one then removes the screen underneath as well, landing the user somewhere they never
+ * asked to go. A destination that is no longer resumed has already been popped.
+ */
+private fun NavController.popOnce(from: NavBackStackEntry) {
+    if (from.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) popBackStack()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -289,7 +303,7 @@ private fun AppContent(
             CalendarScreen(
                 container = container,
                 onNavigateBack = {
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onNavigateToSpaceList = {
                     navController.popBackStack(SpaceListRoute, inclusive = false)
@@ -338,7 +352,7 @@ private fun AppContent(
                 externalRefreshTrigger = refreshTrigger,
                 onNavigateBack = {
                     refreshTrigger++
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onNavigateToEdit = {
                     navController.navigate(TaskEditRoute(route.spaceId, route.taskId))
@@ -373,7 +387,7 @@ private fun AppContent(
                 container = container,
                 onNavigateBack = {
                     refreshTrigger++
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onAddNewTaskWithConnection = { targetTaskId, connectionType ->
                     navController.navigate(
@@ -438,13 +452,13 @@ private fun AppContent(
                 container = container,
                 onNavigateBack = {
                     refreshTrigger++
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onTaskCreated = { taskId ->
                     refreshTrigger++
                     if (route.returnToEditTaskId != null) {
                         // Just pop back to the parent task - it will stay in edit mode
-                        navController.popBackStack()
+                        navController.popOnce(backStackEntry)
                     } else {
                         navController.navigate(TaskDetailRoute(route.spaceId, taskId, fromCreation = true)) {
                             popUpTo<NewTaskRoute> { inclusive = true }
@@ -483,7 +497,7 @@ private fun AppContent(
                 },
                 onBack = {
                     refreshTrigger++
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onNavigateToSpaceList = {
                     navController.popBackStack(SpaceListRoute, inclusive = false)
@@ -510,10 +524,10 @@ private fun AppContent(
                 copyFromViewModeId = route.copyFromViewModeId,
                 spaceId = route.spaceId,
                 onSave = {
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onCancel = {
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
@@ -537,11 +551,11 @@ private fun AppContent(
                 onLoad = { filter ->
                     // Navigate back with the filter to apply
                     navController.previousBackStackEntry?.savedStateHandle?.set("loadedFilterId", filter.id)
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onBack = {
                     refreshTrigger++
-                    navController.popBackStack()
+                    navController.popOnce(backStackEntry)
                 },
                 onNavigateToSpaceList = {
                     navController.popBackStack(SpaceListRoute, inclusive = false)

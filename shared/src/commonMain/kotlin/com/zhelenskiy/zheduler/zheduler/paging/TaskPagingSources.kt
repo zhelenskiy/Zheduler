@@ -30,14 +30,6 @@ fun TaskRepository.tasksForGroupPagingSource(
     getTasksForGroupPage(spaceId, filters, orderingRules, filterCriteria, offset, limit)
 }
 
-/** All tasks of a space matching the filter panel's criteria. */
-fun TaskRepository.filteredTasksPagingSource(
-    spaceId: String,
-    criteria: TaskFilterCriteria,
-): PagingSource<Int, TaskWithTotals> = OffsetPagingSource { offset, limit ->
-    getAllWithTotalsFilteredPage(spaceId, criteria, offset, limit)
-}
-
 /** Candidates for the task-selection dialogs (blockers, recurrence targets, ...). */
 fun TaskRepository.taskSelectionPagingSource(
     spaceId: String,

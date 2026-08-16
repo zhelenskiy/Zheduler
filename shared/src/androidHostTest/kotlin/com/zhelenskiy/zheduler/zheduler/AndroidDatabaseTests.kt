@@ -61,6 +61,14 @@ class AndroidDatabaseSearchTasksForConnectionTest : SearchTasksForConnectionTest
 @Config(manifest = Config.NONE, sdk = [28])
 class AndroidDatabaseSavedFilterRepositoryTest : SavedFilterRepositoryTest(), DatabaseRepositoryTest
 
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [28])
+class AndroidDatabasePaginationRepositoryTest : PaginationRepositoryTest(), DatabaseRepositoryTest
+
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [28])
+class AndroidDatabaseTotalsDiamondGraphTest : TotalsDiamondGraphTest(), DatabaseRepositoryTest
+
 // The `*ComparisonTest` suites drive both repository implementations inside one test, so unlike the
 // suites above they have no per-platform subclass to hang @RunWith(RobolectricTestRunner) on, and
 // without a Robolectric environment opening a database fails outright. They are excluded here (see

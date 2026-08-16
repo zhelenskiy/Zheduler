@@ -148,13 +148,16 @@ const commandMap = {
 
 function handleMessage(e) {
     const requestMsg = e.data;
-    if (!Object.hasOwn(requestMsg, 'data') && requestMsg.data == null) {
+    // Either condition means there is nothing to act on. With `&&`, a message carrying an explicit
+    // `data: null` passed the guard and the next line threw inside the worker, so no reply was ever
+    // posted for that id and the caller waited for one forever.
+    if (!Object.hasOwn(requestMsg, 'data') || requestMsg.data == null) {
         postMessage(
             {'id': requestMsg.id, 'error': "Invalid request, missing 'data'."}
         );
         return;
     }
-    if (!Object.hasOwn(requestMsg.data, 'cmd') && requestMsg.data.cmd == null) {
+    if (!Object.hasOwn(requestMsg.data, 'cmd') || requestMsg.data.cmd == null) {
         postMessage(
             {'id': requestMsg.id, 'error': "Invalid request, missing 'cmd'."}
         );

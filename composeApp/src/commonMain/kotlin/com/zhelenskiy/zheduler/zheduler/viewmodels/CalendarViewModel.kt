@@ -51,9 +51,10 @@ class CalendarContainer(
 
     private suspend fun CalendarPipelineContext.loadTask(taskId: String) {
         val task = repository.getTaskById(taskId) ?: return
-        updateState {
-            if (taskId in loadedTasks) this else copy(loadedTasks = loadedTasks.putting(taskId, task))
-        }
+        // Always the freshly read task. Keeping the cached one meant a blocker or referenced task
+        // edited from this screen still showed its old title and status on return, for as long as
+        // the screen stayed open.
+        updateState { copy(loadedTasks = loadedTasks.putting(taskId, task)) }
     }
 
     private suspend fun CalendarPipelineContext.loadStatusChanges(
