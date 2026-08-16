@@ -667,9 +667,16 @@ private fun ConnectionTaskIdFields(filterState: TaskFilterState, spaceIdPrefix: 
 @Composable
 private fun TagsFilterOptions(filterState: TaskFilterState, allTags: Set<String>) {
     var tagSearchQuery by remember { mutableStateOf("") }
-    val filteredTags = remember(allTags, tagSearchQuery) {
-        if (tagSearchQuery.isBlank()) allTags.sorted()
-        else allTags.filter { it.contains(tagSearchQuery, ignoreCase = true) }.sorted()
+    val selectedTags = filterState.selectedTags
+    val filteredTags = remember(allTags, tagSearchQuery, selectedTags) {
+        val matching =
+            if (tagSearchQuery.isBlank()) allTags.sorted()
+            else allTags.filter { it.contains(tagSearchQuery, ignoreCase = true) }.sorted()
+        // Selected tags lead the row whatever the search says, and even when the space no longer
+        // offers them. A tag that has since been taken off every task — or one restored from a
+        // saved filter — still filters the list, and with no chip there was nothing left to click
+        // to switch it off.
+        (selectedTags.sorted() + matching).distinct()
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

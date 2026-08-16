@@ -83,6 +83,22 @@ class TaskFormState(
         }
     }
 
+    /**
+     * Puts both dialog-owned lists back, as [FormStatePersistence] stored them.
+     *
+     * Row identities are made afresh: they only ever have to be unique among the rows on screen,
+     * and the ones from before the form was rebuilt are gone with it.
+     */
+    fun restoreEntries(
+        notifications: PersistentList<String>,
+        recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
+    ) {
+        this.notifications = notifications
+        this.recurrenceRules = recurrenceRules
+        notificationIds = freshIds(notifications.size)
+        recurrenceRuleIds = freshIds(recurrenceRules.size)
+    }
+
     fun removeRecurrenceRule(index: Int) {
         recurrenceRules = recurrenceRules.removingAt(index)
         recurrenceRuleIds = recurrenceRuleIds.removingAt(index)

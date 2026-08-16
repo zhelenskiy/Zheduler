@@ -111,6 +111,9 @@ interface ZhedulerDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: String): Tasks?
 
+    @Query("SELECT spaceId FROM tasks WHERE id = :id")
+    suspend fun getSpaceIdForTask(id: String): String?
+
     @Query("SELECT * FROM tasks WHERE id IN (:ids)")
     suspend fun getTasksByIds(ids: Collection<String>): List<Tasks>
 

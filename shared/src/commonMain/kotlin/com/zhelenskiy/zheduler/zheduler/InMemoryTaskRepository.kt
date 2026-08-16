@@ -62,6 +62,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun getSpaceById(id: String): Space? = mutex.withLock { spaces[id] }
 
+    override suspend fun getSpaceIdForTask(taskId: String): String? =
+        mutex.withLock { tasks[taskId]?.spaceId }
+
     override suspend fun filterSpacesPage(
         query: String,
         searchInName: Boolean,

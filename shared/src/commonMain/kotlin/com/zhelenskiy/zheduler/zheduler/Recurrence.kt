@@ -1022,7 +1022,12 @@ object RecurrenceCalculator {
     fun shouldTrigger(
         rule: RecurrenceRule, event: RecurrenceTriggerEvent, recurrenceState: RecurrenceState
     ): Boolean = when {
-        rule.statusChangeTrigger is StatusChange && event.currentStatus !in rule.statusChangeTrigger.requiredStatuses ->
+        // By kind, not by value. The picker offers one chip per kind and stores a bare instance
+        // for it — `Blocked(no blockers)`, `Declined(no reason)` — while a real task carries the
+        // blockers it waits on and the reason it was declined. Full-value equality meant those two
+        // chips selected a status no task could ever be in, so their rules could never fire.
+        rule.statusChangeTrigger is StatusChange &&
+                rule.statusChangeTrigger.requiredStatuses.none { it::class == event.currentStatus::class } ->
             false
         rule.timeRecurrenceTrigger != null && recurrenceState.nextOccurrenceDate != null && event.currentTime < recurrenceState.nextOccurrenceDate ->
             false

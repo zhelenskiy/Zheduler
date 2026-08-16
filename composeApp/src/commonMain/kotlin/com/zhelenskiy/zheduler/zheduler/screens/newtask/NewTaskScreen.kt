@@ -10,6 +10,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
+import com.zhelenskiy.zheduler.zheduler.components.common.BackHandler
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
@@ -71,6 +72,9 @@ fun NewTaskScreen(
             onNavigateBack()
         }
     }
+
+    // Same as the toolbar arrow: a system back gesture asks before throwing the draft away.
+    BackHandler(enabled = !showDiscardChangesDialog) { handleBackPress() }
 
     if (showDiscardChangesDialog) {
         DiscardChangesDialog(

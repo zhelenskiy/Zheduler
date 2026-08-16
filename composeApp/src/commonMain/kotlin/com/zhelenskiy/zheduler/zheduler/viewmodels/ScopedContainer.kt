@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -49,6 +50,18 @@ abstract class ScopedContainer(
     val failures: SharedFlow<Throwable> = _failures.asSharedFlow()
 
     /**
+     * Reports something that failed outside a store intent.
+     *
+     * The recover plugin only covers work the store runs. A screen that awaits a repository call
+     * straight from an effect is outside it, and an exception there escapes into the composition,
+     * where nothing catches it — on Android that ends the process. Such call sites route their
+     * failures here so they reach the same snackbar.
+     */
+    fun report(failure: Throwable) {
+        _failures.tryEmit(failure)
+    }
+
+    /**
      * Names the store and gives it somewhere to put the exceptions its intents raise.
      *
      * Without a recover plugin FlowMVI rethrows into the store's coroutine, and this scope has no
@@ -81,6 +94,22 @@ abstract class ScopedContainer(
 @Composable
 fun <T : AutoCloseable> rememberContainer(vararg keys: Any?, create: () -> T): T =
     remember(*keys) { ClosedOnForget(create()) }.container
+
+/**
+ * Runs [block], handing anything it throws to [ScopedContainer.report] and answering [fallback].
+ *
+ * For repository calls a screen awaits directly. Cancellation is not a failure and is rethrown, so
+ * leaving the screen mid-load stays silent.
+ */
+suspend fun <T> ScopedContainer.reportingFailure(fallback: T, block: suspend () -> T): T =
+    try {
+        block()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (failure: Throwable) {
+        report(failure)
+        fallback
+    }
 
 private class ClosedOnForget<T : AutoCloseable>(val container: T) : RememberObserver {
     override fun onRemembered() = Unit

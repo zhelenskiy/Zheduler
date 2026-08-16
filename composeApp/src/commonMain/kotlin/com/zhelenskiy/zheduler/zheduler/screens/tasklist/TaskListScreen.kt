@@ -51,6 +51,7 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDia
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.reportingFailure
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListIntent
 import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.compose.dsl.subscribe
@@ -859,12 +860,14 @@ fun TaskListScreen(
     LaunchedEffect(loadedFilterId, uiState.value) {
         if (loadedFilterId != null && uiState.value.dataOrNull != null && !filterApplied) {
             filterApplied = true
-            applySavedFilter(
-                loadedFilterId = loadedFilterId,
-                container = container,
-                filterState = filterState,
-                uiState = uiState
-            )
+            container.reportingFailure(Unit) {
+                applySavedFilter(
+                    loadedFilterId = loadedFilterId,
+                    container = container,
+                    filterState = filterState,
+                    uiState = uiState
+                )
+            }
             onFilterLoaded()
         }
     }
@@ -914,8 +917,17 @@ fun TaskListScreen(
                     },
                     onSaveFilter = { showSaveFilterDialog = true },
                     shouldAnimate = currentUiState.shouldAnimate,
-                    onGetTaskGroups = container::getTaskGroups,
-                    onCountTasks = container::countTasksForGroup,
+                    // Reported rather than thrown: these are awaited straight from effects, so
+                    // a database error would otherwise escape into the composition, where the
+                    // store's recover plugin cannot reach it.
+                    onGetTaskGroups = { mode, level, filters, criteria ->
+                        container.reportingFailure(emptyList()) {
+                            container.getTaskGroups(mode, level, filters, criteria)
+                        }
+                    },
+                    onCountTasks = { filters, criteria ->
+                        container.reportingFailure(0) { container.countTasksForGroup(filters, criteria) }
+                    },
                     onGetTaskPages = container::tasksForGroupPages,
                     onTaskClick = onTaskClick,
                     onDelete = { taskToDelete = it },

@@ -63,6 +63,17 @@ interface TaskRepository {
     suspend fun getSpaceById(id: String): Space?
 
     /**
+     * The id of the space a task belongs to.
+     *
+     * Task ids are unique across the whole database and a description may reference a task in any
+     * space, so opening one found that way needs the space it actually lives in — not whichever
+     * space the reader happened to be reading from.
+     *
+     * @return The owning space's id, or null if there is no such task
+     */
+    suspend fun getSpaceIdForTask(taskId: String): String?
+
+    /**
      * Create a new space with the given name and ID prefix.
      * @param name The space name
      * @param idPrefix The prefix for task IDs in this space (e.g., "PRJ")

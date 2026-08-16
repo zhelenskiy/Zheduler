@@ -12,6 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -306,10 +309,23 @@ fun SpaceListScreen(
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     val spaces = container.spaces.collectAsLazyPagingItems()
+    val dialogState = rememberDialogState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val state by container.store.subscribe { action ->
         // Handle actions if needed
         when (action) {
-            is SpaceListAction.SpaceAdded,
+            is SpaceListAction.SpaceAdded -> {
+                // No space back means the prefix is already taken: the one failure the dialog's
+                // own validation cannot see. It used to close on the way out and say nothing, so
+                // the space simply never appeared.
+                if (action.space == null) {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("That ID prefix is already used by another space")
+                    }
+                }
+                onRefresh()
+            }
             is SpaceListAction.SpaceUpdated,
             is SpaceListAction.SpaceDeleted -> onRefresh()
             else -> Unit
@@ -319,10 +335,6 @@ fun SpaceListScreen(
     LaunchedEffect(refreshTrigger) {
         container.store.intent(SpaceListIntent.LoadSpaces)
     }
-
-    val dialogState = rememberDialogState()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
     var importedSpaceName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(importedSpaceName) {
@@ -527,7 +539,7 @@ private fun SpaceListDialogs(
 }
 
 @Composable
-private fun rememberDialogState() = remember {
+private fun rememberDialogState() = rememberSaveable(saver = DialogState.Saver) {
     DialogState(
         showNewSpace = false,
         spaceToDelete = null,
@@ -553,6 +565,43 @@ private class DialogState(
     var spaceToExport by mutableStateOf(spaceToExport)
     var showImport by mutableStateOf(showImport)
     var showEraseAllData by mutableStateOf(showEraseAllData)
+
+    companion object {
+        /**
+         * Kept across activity recreation, so that a rotation does not close whatever dialog is
+         * open. It mattered most for export: the file picker outlives the rotation and hands back
+         * a file that Android has already created, and with the dialog gone there was nothing left
+         * holding the export — so the backup the user had just named stayed empty.
+         */
+        val Saver: Saver<DialogState, Any> = listSaver(
+            save = { state ->
+                listOf(
+                    state.showNewSpace,
+                    state.spaceToDelete?.toList(),
+                    state.spaceToEdit?.toList(),
+                    state.spaceToExport?.toList(),
+                    state.showImport,
+                    state.showEraseAllData,
+                )
+            },
+            restore = { saved ->
+                DialogState(
+                    showNewSpace = saved[0] as Boolean,
+                    spaceToDelete = spaceOf(saved[1]),
+                    spaceToEdit = spaceOf(saved[2]),
+                    spaceToExport = spaceOf(saved[3]),
+                    showImport = saved[4] as Boolean,
+                    showEraseAllData = saved[5] as Boolean,
+                )
+            },
+        )
+
+        private fun Space.toList() = listOf(id, name, idPrefix)
+
+        @Suppress("UNCHECKED_CAST")
+        private fun spaceOf(saved: Any?): Space? = (saved as List<String>?)
+            ?.let { (id, name, idPrefix) -> Space(id = id, name = name, idPrefix = idPrefix) }
+    }
 }
 
 private enum class ExportAction { Copy, Save, Download }
@@ -569,13 +618,18 @@ private fun ExportSpaceDialog(
     var prettyPrint by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
 
-    // What to do with the export once it arrives, and which request it is waiting for.
-    var pendingAction by remember { mutableStateOf<ExportAction?>(null) }
-    var pendingRequestId by remember { mutableStateOf<Long?>(null) }
+    // What to do with the export once it arrives, and which request it is waiting for. Saved, not
+    // merely remembered: the export itself is held by the app-scoped container and survives an
+    // activity recreation, and this is what still ties it to the file the user is saving into.
+    // By name: what a platform can put in its saved state is a short list of primitive types, and
+    // an enum constant is not on it everywhere.
+    var pendingActionName by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingRequestId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val pendingAction = pendingActionName?.let(ExportAction::valueOf)
 
     /** Asks for a fresh export and records what to do with it. */
     fun requestExport(action: ExportAction) {
-        pendingAction = action
+        pendingActionName = action.name
         pendingRequestId = onExportSpace(space.id, prettyPrint)
     }
 
@@ -608,7 +662,10 @@ private fun ExportSpaceDialog(
             ExportAction.Download -> {
                 if (json != null) {
                     val fileName = space.name.replace(Regex("[^a-zA-Z0-9-_]"), "_")
-                    write(json, fileName)
+                    // With the extension: the browser saves exactly the name it is given, and an
+                    // extensionless file is one the import picker — which filters on .json — will
+                    // not offer back. Save gets the same through its defaultExtension.
+                    write(json, "$fileName.json")
                 }
                 onDismiss()
                 parentScope.launch {
@@ -635,7 +692,7 @@ private fun ExportSpaceDialog(
                 }
             }
         }
-        pendingAction = null
+        pendingActionName = null
         pendingRequestId = null
         pendingFile = null
     }
@@ -743,7 +800,9 @@ private fun ImportSpaceDialog(
         } else {
             "Invalid JSON data"
         }
-        onDismiss()
+        // The dialog stays open when the import failed. Closing it threw away whatever had been
+        // pasted or loaded, so one bad character cost the user the whole payload.
+        if (space != null) onDismiss()
         parentScope.launch {
             snackbarHostState.showSnackbar(message)
         }

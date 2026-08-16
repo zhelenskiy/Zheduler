@@ -27,6 +27,8 @@ import kotlin.time.Instant
 
 data class TaskEditState(
     val task: Task? = null,
+    /** Whether the load has run, so the screen can tell "not read yet" from "no such task". */
+    val loadAttempted: Boolean = false,
     val currentSpaceIdPrefix: String? = null,
     val allSpacePrefixes: List<String> = emptyList(),
     val loadedTasks: PersistentMap<String, Task> = persistentMapOf()
@@ -90,6 +92,7 @@ class TaskEditContainer(
         updateState {
             copy(
                 task = task,
+                loadAttempted = true,
                 currentSpaceIdPrefix = currentSpaceIdPrefix,
                 allSpacePrefixes = allSpacePrefixes
             )

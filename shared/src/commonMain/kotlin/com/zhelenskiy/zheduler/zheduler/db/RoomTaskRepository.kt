@@ -191,6 +191,9 @@ class RoomTaskRepository(
     override suspend fun getSpaceById(id: String): Space? =
         dao.getSpaceById(id)?.toModel()
 
+    override suspend fun getSpaceIdForTask(taskId: String): String? =
+        dao.getSpaceIdForTask(taskId)
+
     override suspend fun filterSpacesPage(
         query: String,
         searchInName: Boolean,

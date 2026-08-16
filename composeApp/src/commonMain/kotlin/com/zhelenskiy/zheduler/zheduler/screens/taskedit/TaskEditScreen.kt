@@ -5,10 +5,15 @@ package com.zhelenskiy.zheduler.zheduler.screens.taskedit
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.ConnectionType
+import com.zhelenskiy.zheduler.zheduler.components.common.BackHandler
 import com.zhelenskiy.zheduler.zheduler.components.common.TaskFormTopAppBar
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DiscardChangesDialog
 import com.zhelenskiy.zheduler.zheduler.components.form.TaskFormContent
@@ -55,7 +60,13 @@ fun TaskEditScreen(
         )
     }
 
-    val currentTask = state.task ?: return
+    val currentTask = state.task
+    if (currentTask == null) {
+        // Nothing at all was drawn here before: no bar, no message, no way out. A task deleted in
+        // another window, or a link to one that never existed, left the user on an empty screen.
+        TaskEditPlaceholder(loadAttempted = state.loadAttempted, onNavigateBack = onNavigateBack)
+        return
+    }
 
     val formState = rememberTaskFormState(currentTask)
 
@@ -105,6 +116,10 @@ fun TaskEditScreen(
             onNavigateBack()
         }
     }
+
+    // The toolbar arrow is not the only way out. Android's back gesture, and the browser's back
+    // button, used to pop straight past the check and take the edits with them.
+    BackHandler(enabled = !showDiscardChangesDialog) { handleBackPress() }
 
     if (showDiscardChangesDialog) {
         DiscardChangesDialog(
@@ -165,6 +180,34 @@ fun TaskEditScreen(
                 allSpacePrefixes = state.allSpacePrefixes,
                 taskId = currentTask.id
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TaskEditPlaceholder(loadAttempted: Boolean, onNavigateBack: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Edit task") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (loadAttempted) {
+                Text("This task no longer exists.", textAlign = TextAlign.Center)
+            } else {
+                CircularProgressIndicator()
+            }
         }
     }
 }

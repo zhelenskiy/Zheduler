@@ -187,7 +187,11 @@ fun SingleRecurrenceRuleDialog(
     }
 
     val isTerminationCountValid = termination.afterOccurrences?.let { it.count >= 0 } ?: true
-    val isFormValid = selectedTimeTrigger !is FormResult.Failure && isTerminationCountValid
+    // A rule needs something to fire it. Save used to stay enabled with every trigger cleared and
+    // then quietly keep the old rule: the dialog closed, nothing had changed, and nothing said so.
+    // Removing a rule is what the list's delete button is for.
+    val hasTrigger = selectedTimeTrigger is Success || statusChangesTrigger != null
+    val isFormValid = selectedTimeTrigger !is FormResult.Failure && isTerminationCountValid && hasTrigger
 
     AlertDialog(
         onDismissRequest = onDismiss,

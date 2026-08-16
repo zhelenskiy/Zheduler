@@ -9,8 +9,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
+import com.zhelenskiy.zheduler.zheduler.RecurrenceRule
+import com.zhelenskiy.zheduler.zheduler.RecurrenceState
+import com.zhelenskiy.zheduler.zheduler.TaskConnection
+import com.zhelenskiy.zheduler.zheduler.TaskStatus
+import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.serialization.json.Json
 import kotlin.time.ExperimentalTime
@@ -19,8 +25,14 @@ import kotlin.time.Instant
 /**
  * The part of a task form that survives process death.
  *
- * Only the plain fields are kept. Connections, notifications and recurrence rules are left out:
- * they are edited through their own dialogs, and a half-entered one is not worth restoring.
+ * The whole form, not just the typed fields. What a dialog puts into the form is a finished edit
+ * like any other — a status set, a connection added, a recurrence rule configured — and leaving
+ * these out meant that stepping away from the edit screen for even a moment, to create a connected
+ * task, silently rolled all of them back while the typed fields stayed.
+ *
+ * The dialog-owned values are stored as JSON and read back defensively: [null] means the record
+ * could not be decoded, and the form keeps what it has rather than being blanked by a value that
+ * an older or newer build wrote in a shape this one does not understand.
  */
 data class PersistedFormState(
     val title: String?,
@@ -29,6 +41,11 @@ data class PersistedFormState(
     val estimatedTime: String?,
     val tags: PersistentSet<String>,
     val dueDate: Instant?,
+    val status: TaskStatus?,
+    val connections: PersistentSet<TaskConnection>?,
+    val notifications: PersistentList<String>?,
+    val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>?,
+    val autoUpdateStatusFromSubtasks: Boolean?,
 )
 
 /**
@@ -59,8 +76,17 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
                 ?.toPersistentSet()
                 ?: persistentSetOf(),
             dueDate = savedStateHandle.get<Long>(KEY_DUE_DATE)?.let(Instant::fromEpochMilliseconds),
+            status = decode<TaskStatus>(KEY_STATUS),
+            connections = decode<Set<TaskConnection>>(KEY_CONNECTIONS)?.toPersistentSet(),
+            notifications = decode<List<String>>(KEY_NOTIFICATIONS)?.toPersistentList(),
+            recurrenceRules = decode<List<Pair<RecurrenceRule, RecurrenceState>>>(KEY_RECURRENCE_RULES)
+                ?.toPersistentList(),
+            autoUpdateStatusFromSubtasks = savedStateHandle[KEY_AUTO_UPDATE_STATUS],
         )
     }
+
+    private inline fun <reified T> decode(key: String): T? =
+        savedStateHandle.get<String>(key)?.let { runCatching { Json.decodeFromString<T>(it) }.getOrNull() }
 
     fun write(state: PersistedFormState) {
         savedStateHandle[KEY_PRESENT] = true
@@ -70,6 +96,14 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         savedStateHandle[KEY_ESTIMATED_TIME] = state.estimatedTime
         savedStateHandle[KEY_TAGS] = Json.encodeToString<Set<String>>(state.tags)
         savedStateHandle[KEY_DUE_DATE] = state.dueDate?.toEpochMilliseconds()
+        savedStateHandle[KEY_STATUS] = state.status?.let { Json.encodeToString<TaskStatus>(it) }
+        savedStateHandle[KEY_CONNECTIONS] =
+            state.connections?.let { Json.encodeToString<Set<TaskConnection>>(it) }
+        savedStateHandle[KEY_NOTIFICATIONS] =
+            state.notifications?.let { Json.encodeToString<List<String>>(it) }
+        savedStateHandle[KEY_RECURRENCE_RULES] = state.recurrenceRules
+            ?.let { Json.encodeToString<List<Pair<RecurrenceRule, RecurrenceState>>>(it) }
+        savedStateHandle[KEY_AUTO_UPDATE_STATUS] = state.autoUpdateStatusFromSubtasks
     }
 
     fun clear() {
@@ -80,6 +114,11 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         savedStateHandle.remove<String>(KEY_ESTIMATED_TIME)
         savedStateHandle.remove<String>(KEY_TAGS)
         savedStateHandle.remove<Long>(KEY_DUE_DATE)
+        savedStateHandle.remove<String>(KEY_STATUS)
+        savedStateHandle.remove<String>(KEY_CONNECTIONS)
+        savedStateHandle.remove<String>(KEY_NOTIFICATIONS)
+        savedStateHandle.remove<String>(KEY_RECURRENCE_RULES)
+        savedStateHandle.remove<Boolean>(KEY_AUTO_UPDATE_STATUS)
     }
 
     private companion object {
@@ -91,6 +130,11 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         const val KEY_ESTIMATED_TIME = "form_estimated_time"
         const val KEY_TAGS = "form_tags"
         const val KEY_DUE_DATE = "form_due_date"
+        const val KEY_STATUS = "form_status"
+        const val KEY_CONNECTIONS = "form_connections"
+        const val KEY_NOTIFICATIONS = "form_notifications"
+        const val KEY_RECURRENCE_RULES = "form_recurrence_rules"
+        const val KEY_AUTO_UPDATE_STATUS = "form_auto_update_status"
     }
 }
 
@@ -102,6 +146,11 @@ fun TaskFormState.toPersistedState() = PersistedFormState(
     estimatedTime = estimatedTime,
     tags = tags,
     dueDate = dueDate,
+    status = status,
+    connections = connections,
+    notifications = notifications,
+    recurrenceRules = recurrenceRules,
+    autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks,
 )
 
 /**
@@ -118,6 +167,17 @@ fun PersistedFormState.applyTo(formState: TaskFormState) {
     formState.estimatedTime = estimatedTime.orEmpty()
     formState.tags = tags
     formState.dueDate = dueDate
+    // Except a value that would not decode: that is a record this build cannot read, not an edit
+    // the user made, and overwriting a live form with it would lose more than it restored.
+    status?.let { formState.status = it }
+    connections?.let { formState.connections = it }
+    autoUpdateStatusFromSubtasks?.let { formState.autoUpdateStatusFromSubtasks = it }
+    if (notifications != null || recurrenceRules != null) {
+        formState.restoreEntries(
+            notifications = notifications ?: formState.notifications,
+            recurrenceRules = recurrenceRules ?: formState.recurrenceRules,
+        )
+    }
 }
 
 /**
@@ -145,7 +205,10 @@ fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
         restored = true
     }
 
-    LaunchedEffect(this, restored, title, description, priority, estimatedTime, tags, dueDate) {
+    LaunchedEffect(
+        this, restored, title, description, priority, estimatedTime, tags, dueDate,
+        status, connections, notifications, recurrenceRules, autoUpdateStatusFromSubtasks,
+    ) {
         if (!restored) return@LaunchedEffect
         val current = toPersistedState()
         // Once it has diverged it keeps being written, so returning the form to its original

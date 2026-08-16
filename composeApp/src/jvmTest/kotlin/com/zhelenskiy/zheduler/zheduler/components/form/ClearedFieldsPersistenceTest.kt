@@ -3,6 +3,8 @@
 package com.zhelenskiy.zheduler.zheduler.components.form
 
 import androidx.lifecycle.SavedStateHandle
+import com.zhelenskiy.zheduler.zheduler.TaskStatus
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,6 +27,11 @@ class ClearedFieldsPersistenceTest {
         estimatedTime = "",
         tags = tags.let { persistentSetOf<String>().addAll(it) },
         dueDate = dueDate,
+        status = TaskStatus.Open,
+        connections = persistentSetOf(),
+        notifications = persistentListOf(),
+        recurrenceRules = persistentListOf(),
+        autoUpdateStatusFromSubtasks = false,
     )
 
     @Test

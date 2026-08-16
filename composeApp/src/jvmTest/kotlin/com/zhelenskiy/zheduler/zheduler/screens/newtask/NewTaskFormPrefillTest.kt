@@ -113,6 +113,11 @@ class NewTaskFormPrefillTest {
                 estimatedTime = null,
                 tags = persistentSetOf(),
                 dueDate = null,
+                status = null,
+                connections = null,
+                notifications = null,
+                recurrenceRules = null,
+                autoUpdateStatusFromSubtasks = null,
             )
         )
 

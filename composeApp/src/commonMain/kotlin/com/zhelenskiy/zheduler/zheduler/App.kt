@@ -15,6 +15,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.navigation.compose.NavHost
@@ -159,9 +163,21 @@ private fun NavController.popOnce(from: NavBackStackEntry) {
 fun App(themeState: ThemeState = rememberThemeState()) {
     // Seeded from the existing graph so a recreated activity draws its first frame with content.
     var appGraph by remember { mutableStateOf(peekAppGraph()) }
+    var startupFailure by remember { mutableStateOf<Throwable?>(null) }
 
     LaunchedEffect(Unit) {
-        if (appGraph == null) appGraph = obtainAppGraph()
+        if (appGraph == null) {
+            // A database that cannot be opened used to leave the spinner turning for as long as
+            // the user was willing to wait, with nothing anywhere saying why. There is no store
+            // yet at this point, so this is the only place the failure can be shown.
+            try {
+                appGraph = obtainAppGraph()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Throwable) {
+                startupFailure = failure
+            }
+        }
     }
 
     val onThemeModeChange: (ThemeMode) -> Unit = { themeState.themeMode = it }
@@ -202,7 +218,18 @@ fun App(themeState: ThemeState = rememberThemeState()) {
                     modifier = Modifier.fillMaxSize().padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    val failure = startupFailure
+                    if (failure == null) {
+                        CircularProgressIndicator()
+                    } else {
+                        Text(
+                            text = "Could not open the database: " +
+                                (failure.message ?: failure::class.simpleName ?: "unknown error"),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(24.dp)
+                        )
+                    }
                 }
             }
         }
@@ -237,6 +264,23 @@ private fun AppContent(
 
     val navController = rememberNavController()
     var refreshTrigger by remember { mutableStateOf(0) }
+    val navigationScope = rememberCoroutineScope()
+
+    /**
+     * Opens [taskId], in the space that task belongs to.
+     *
+     * A description can reference a task in any space, and the reference used to be opened as
+     * though it lived in the space being read from: the screen then showed the other space's task
+     * with this space's prefix, and its connection pickers searched the wrong space entirely.
+     * [fallbackSpaceId] covers a task that has since been deleted, where the old behaviour is no
+     * worse than anything else available.
+     */
+    fun openTask(taskId: String, fallbackSpaceId: String) {
+        navigationScope.launch {
+            val spaceId = appGraph.taskRepository.getSpaceIdForTask(taskId) ?: fallbackSpaceId
+            navController.navigate(TaskDetailRoute(spaceId, taskId))
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -283,7 +327,7 @@ private fun AppContent(
                     savedStateHandle["loadedFilterId"] = null
                 },
                 onTaskClick = { taskId ->
-                    navController.navigate(TaskDetailRoute(route.spaceId, taskId))
+                    openTask(taskId, fallbackSpaceId = route.spaceId)
                 },
                 onAddTask = {
                     navController.navigate(NewTaskRoute(spaceId = route.spaceId))
@@ -328,7 +372,7 @@ private fun AppContent(
                     navController.popBackStack(SpaceListRoute, inclusive = false)
                 },
                 onTaskClick = { taskId ->
-                    navController.navigate(TaskDetailRoute(route.spaceId, taskId))
+                    openTask(taskId, fallbackSpaceId = route.spaceId)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
@@ -377,7 +421,7 @@ private fun AppContent(
                     navController.navigate(TaskEditRoute(route.spaceId, route.taskId))
                 },
                 onTaskClick = { taskId ->
-                    navController.navigate(TaskDetailRoute(route.spaceId, taskId))
+                    openTask(taskId, fallbackSpaceId = route.spaceId)
                 },
                 onNavigateToSpaceList = {
                     navController.popBackStack(SpaceListRoute, inclusive = false)
@@ -419,7 +463,7 @@ private fun AppContent(
                     )
                 },
                 onTaskClick = { taskId ->
-                    navController.navigate(TaskDetailRoute(route.spaceId, taskId))
+                    openTask(taskId, fallbackSpaceId = route.spaceId)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
@@ -485,7 +529,7 @@ private fun AppContent(
                     }
                 },
                 onTaskClick = { taskId ->
-                    navController.navigate(TaskDetailRoute(route.spaceId, taskId))
+                    openTask(taskId, fallbackSpaceId = route.spaceId)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
