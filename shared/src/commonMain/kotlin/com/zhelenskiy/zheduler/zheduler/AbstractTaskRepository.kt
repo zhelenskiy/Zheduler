@@ -2,10 +2,6 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
-import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.NthDayOfWeekInMonths
-import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.YearlyOnDate
-import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AfterTimeout
-import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.channels.BufferOverflow
@@ -955,6 +951,37 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     }
 
     /**
+     * The bounds a `Custom` estimated-time criterion asks for, in seconds; either end may be
+     * absent, and an unparseable bound is simply not a bound.
+     *
+     * The criterion is entered as compact time ("1h30m"), never as a number, so it has to go
+     * through [parseCompactTimeToPeriod] — the database repository binds these same two values.
+     */
+    protected fun customEstimatedTimeBounds(criteria: TaskFilterCriteria): Pair<Long?, Long?> =
+        parseCompactTimeToPeriod(criteria.customEstimatedTimeMin)?.toApproximateSeconds() to
+                parseCompactTimeToPeriod(criteria.customEstimatedTimeMax)?.toApproximateSeconds()
+
+    /**
+     * Whether an estimate of [estimatedTimeSeconds] satisfies the criteria's estimated-time filter.
+     *
+     * Fixed buckets are half-open, so neighbouring ones cannot both claim a boundary value; a
+     * custom range is inclusive at both ends, because "30m to 1h" means to include both.
+     */
+    protected fun matchesEstimatedTime(criteria: TaskFilterCriteria, estimatedTimeSeconds: Long?): Boolean {
+        val filter = criteria.estimatedTimeFilter
+        if (filter == EstimatedTimeFilter.Any) return true
+        if (filter == EstimatedTimeFilter.NoEstimate) return estimatedTimeSeconds == null
+        if (estimatedTimeSeconds == null) return false
+
+        // Only Any, NoEstimate and Custom have no bucket, and the first two are already handled.
+        val bucket = filter.bucketSeconds
+        val (min, max) = bucket ?: customEstimatedTimeBounds(criteria)
+        val aboveMin = min == null || estimatedTimeSeconds >= min
+        val belowMax = max == null || if (bucket != null) estimatedTimeSeconds < max else estimatedTimeSeconds <= max
+        return aboveMin && belowMax
+    }
+
+    /**
      * Filter tasks based on the provided criteria.
      * This is the shared filtering logic used by both repository implementations.
      */
@@ -1071,62 +1098,11 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
             }
 
             // Estimated time filter (time is stored in seconds)
-            val estimatedTime = task.estimatedTime
-            val estimatedTimeSeconds = estimatedTime?.toApproximateSeconds()
-            val matchesEstimatedTime = when (criteria.estimatedTimeFilter) {
-                EstimatedTimeFilter.Any -> true
-                EstimatedTimeFilter.NoEstimate -> estimatedTime == null
-                EstimatedTimeFilter.Quick -> estimatedTimeSeconds != null && estimatedTimeSeconds < 15 * 60 // < 15 min
-                EstimatedTimeFilter.Short -> estimatedTimeSeconds != null && estimatedTimeSeconds in (15 * 60)..(30 * 60 - 1) // 15-30 min
-                EstimatedTimeFilter.Medium -> estimatedTimeSeconds != null && estimatedTimeSeconds in (30 * 60)..(60 * 60 - 1) // 30 min - 1 hr
-                EstimatedTimeFilter.Long -> estimatedTimeSeconds != null && estimatedTimeSeconds in (60 * 60)..(4 * 60 * 60 - 1) // 1-4 hrs
-                EstimatedTimeFilter.VeryLong -> estimatedTimeSeconds != null && estimatedTimeSeconds >= 4 * 60 * 60 // > 4 hrs
-                EstimatedTimeFilter.Custom -> {
-                    val minPeriod = parseCompactTimeToPeriod(criteria.customEstimatedTimeMin)
-                    val maxPeriod = parseCompactTimeToPeriod(criteria.customEstimatedTimeMax)
-                    val minSeconds = minPeriod?.toApproximateSeconds()
-                    val maxSeconds = maxPeriod?.toApproximateSeconds()
-
-                    when {
-                        estimatedTimeSeconds == null -> false
-                        minSeconds != null && maxSeconds != null -> estimatedTimeSeconds in minSeconds..maxSeconds
-                        minSeconds != null -> estimatedTimeSeconds >= minSeconds
-                        maxSeconds != null -> estimatedTimeSeconds <= maxSeconds
-                        else -> true
-                    }
-                }
-            }
+            val estimatedTimeSeconds = task.estimatedTime?.toApproximateSeconds()
+            val matchesEstimatedTime = matchesEstimatedTime(criteria, estimatedTimeSeconds)
 
             // Recurrence filter - matches if ANY rule matches the criteria
-            val matchesRecurrence = when (criteria.recurrenceFilter) {
-                RecurrenceFilter.Any -> true
-                RecurrenceFilter.NoRecurrence -> task.recurrenceRules.isEmpty()
-                RecurrenceFilter.HasRecurrence -> task.recurrenceRules.isNotEmpty()
-                RecurrenceFilter.AfterTimeout -> task.recurrenceRules.any { (rule, _) ->
-                    rule.timeRecurrenceTrigger is AfterTimeout
-                }
-
-                RecurrenceFilter.FixedDaysOfWeek -> task.recurrenceRules.any { (rule, _) ->
-                    rule.timeRecurrenceTrigger.let {
-                        it is AtFixedPoints && it.pattern is FixedPointPattern.DaysOfWeek
-                    }
-                }
-
-                RecurrenceFilter.FixedDayOfMonth -> task.recurrenceRules.any { (rule, _) ->
-                    val recurrenceTrigger = rule.timeRecurrenceTrigger
-                    recurrenceTrigger is AtFixedPoints && recurrenceTrigger.pattern is FixedPointPattern.DayOfMonth
-                }
-
-                RecurrenceFilter.NthDayOfWeek -> task.recurrenceRules.any { (rule, _) ->
-                    val recurrenceTrigger = rule.timeRecurrenceTrigger
-                    recurrenceTrigger is AtFixedPoints && recurrenceTrigger.pattern is FixedPointPattern.NthDayOfWeekInMonth
-                }
-
-                RecurrenceFilter.Yearly -> task.recurrenceRules.any { (rule, _) ->
-                    val recurrenceTrigger = rule.timeRecurrenceTrigger
-                    recurrenceTrigger is AtFixedPoints && (recurrenceTrigger.pattern is YearlyOnDate || recurrenceTrigger.pattern is NthDayOfWeekInMonths)
-                }
-            }
+            val matchesRecurrence = criteria.recurrenceFilter.matches(task.recurrenceRules)
 
             // Notifications filter
             val matchesNotifications = when (criteria.notificationsFilter) {

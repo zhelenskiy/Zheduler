@@ -85,6 +85,56 @@ enum class RecurrenceFilter {
     }
 }
 
+/** Whether the `isRecurring` column answers this filter on its own, or [matches] must refine it. */
+internal val RecurrenceFilter.bucketedInSqlOnly: Boolean
+    get() = when (this) {
+        RecurrenceFilter.Any, RecurrenceFilter.NoRecurrence, RecurrenceFilter.HasRecurrence -> false
+        else -> true
+    }
+
+/**
+ * Whether a task's recurrence rules satisfy this filter.
+ *
+ * Both repositories decide it here: which kind of rule a task carries lives inside the serialized
+ * rules, so the database one narrows on `isRecurring` and refines the candidates through this
+ * rather than keeping a second definition that can drift.
+ */
+internal fun RecurrenceFilter.matches(rules: List<Pair<RecurrenceRule, RecurrenceState>>): Boolean {
+    fun anyPattern(predicate: (FixedPointPattern) -> Boolean) = rules.any { (rule, _) ->
+        val trigger = rule.timeRecurrenceTrigger
+        trigger is RecurrenceTrigger.AtFixedPoints && predicate(trigger.pattern)
+    }
+
+    return when (this) {
+        RecurrenceFilter.Any -> true
+        RecurrenceFilter.NoRecurrence -> rules.isEmpty()
+        RecurrenceFilter.HasRecurrence -> rules.isNotEmpty()
+        RecurrenceFilter.AfterTimeout ->
+            rules.any { (rule, _) -> rule.timeRecurrenceTrigger is RecurrenceTrigger.AfterTimeout }
+        RecurrenceFilter.FixedDaysOfWeek -> anyPattern { it is FixedPointPattern.DaysOfWeek }
+        RecurrenceFilter.FixedDayOfMonth -> anyPattern { it is FixedPointPattern.DayOfMonth }
+        RecurrenceFilter.NthDayOfWeek -> anyPattern { it is FixedPointPattern.NthDayOfWeekInMonth }
+        RecurrenceFilter.Yearly ->
+            anyPattern { it is FixedPointPattern.YearlyOnDate || it is FixedPointPattern.NthDayOfWeekInMonths }
+    }
+}
+
+/**
+ * The half-open `[min, max)` bounds in seconds a fixed [EstimatedTimeFilter] bucket accepts, or
+ * `null` for the three that are not ranges.
+ *
+ * Read by both repositories, so neither can disagree about whether 30 minutes is Short or Medium.
+ */
+internal val EstimatedTimeFilter.bucketSeconds: Pair<Long?, Long?>?
+    get() = when (this) {
+        EstimatedTimeFilter.Any, EstimatedTimeFilter.NoEstimate, EstimatedTimeFilter.Custom -> null
+        EstimatedTimeFilter.Quick -> null to 15L * 60
+        EstimatedTimeFilter.Short -> 15L * 60 to 30L * 60
+        EstimatedTimeFilter.Medium -> 30L * 60 to 60L * 60
+        EstimatedTimeFilter.Long -> 60L * 60 to 4L * 60 * 60
+        EstimatedTimeFilter.VeryLong -> 4L * 60 * 60 to null
+    }
+
 enum class NotificationsFilter {
     Any, NoNotifications, HasNotifications;
 

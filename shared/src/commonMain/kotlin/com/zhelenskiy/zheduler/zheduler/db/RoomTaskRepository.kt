@@ -1069,6 +1069,8 @@ class RoomTaskRepository(
         val todayEnd = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
         val weekEnd = today.plus(7, DateTimeUnit.DAY).atStartOfDayIn(tz)
         val monthEnd = today.plus(1, DateTimeUnit.MONTH).atStartOfDayIn(tz)
+        val estimatedTimeBounds = filterCriteria.estimatedTimeFilter.bucketSeconds
+            ?: customEstimatedTimeBounds(filterCriteria)
 
         return FilterParams(
             searchQuery = filterCriteria.searchQuery.takeIf { it.isNotBlank() },
@@ -1102,39 +1104,22 @@ class RoomTaskRepository(
             monthEndMillis = monthEnd.toEpochMilliseconds(),
             customDueDateAfter = filterCriteria.customDueDateAfter?.toEpochMilliseconds(),
             customDueDateBefore = filterCriteria.customDueDateBefore?.toEpochMilliseconds(),
+            // 0 = any, 1 = no estimate, 2 = bucket [min, max), 3 = custom [min, max].
             estimatedTimeFilterType = when (filterCriteria.estimatedTimeFilter) {
                 EstimatedTimeFilter.Any -> 0L
                 EstimatedTimeFilter.NoEstimate -> 1L
-                EstimatedTimeFilter.Quick -> 2L // < 15 min
-                EstimatedTimeFilter.Short -> 3L // 15-30 min
-                EstimatedTimeFilter.Medium -> 3L // 30-60 min
-                EstimatedTimeFilter.Long -> 3L // 1-4 hrs
-                EstimatedTimeFilter.VeryLong -> 4L // > 4 hrs
                 EstimatedTimeFilter.Custom -> 3L
+                else -> 2L
             },
-            estimatedTimeMinMinutes = when (filterCriteria.estimatedTimeFilter) {
-                EstimatedTimeFilter.Short -> 15L
-                EstimatedTimeFilter.Medium -> 30L
-                EstimatedTimeFilter.Long -> 60L
-                EstimatedTimeFilter.VeryLong -> 240L
-                EstimatedTimeFilter.Custom -> filterCriteria.customEstimatedTimeMin.toLongOrNull()
-                else -> null
-            },
-            estimatedTimeMaxMinutes = when (filterCriteria.estimatedTimeFilter) {
-                EstimatedTimeFilter.Quick -> 15L
-                EstimatedTimeFilter.Short -> 30L
-                EstimatedTimeFilter.Medium -> 60L
-                EstimatedTimeFilter.Long -> 240L
-                EstimatedTimeFilter.Custom -> filterCriteria.customEstimatedTimeMax.toLongOrNull()
-                else -> null
-            },
+            estimatedTimeMinSeconds = estimatedTimeBounds.first,
+            estimatedTimeMaxSeconds = estimatedTimeBounds.second,
+            // SQL only separates recurring from non-recurring; see `recurrenceFilter` below.
             recurrenceFilterType = when (filterCriteria.recurrenceFilter) {
                 RecurrenceFilter.Any -> 0L
                 RecurrenceFilter.NoRecurrence -> 1L
-                RecurrenceFilter.HasRecurrence, RecurrenceFilter.AfterTimeout,
-                RecurrenceFilter.FixedDaysOfWeek, RecurrenceFilter.FixedDayOfMonth,
-                RecurrenceFilter.NthDayOfWeek, RecurrenceFilter.Yearly -> 2L
+                else -> 2L
             },
+            recurrenceFilter = filterCriteria.recurrenceFilter,
             notificationsFilterType = when (filterCriteria.notificationsFilter) {
                 NotificationsFilter.Any -> 0L
                 NotificationsFilter.NoNotifications -> 1L
@@ -1321,8 +1306,8 @@ class RoomTaskRepository(
             customDueDateAfter = filterParams.customDueDateAfter,
             customDueDateBefore = filterParams.customDueDateBefore,
             estimatedTimeFilterType = filterParams.estimatedTimeFilterType,
-            estimatedTimeMinMinutes = filterParams.estimatedTimeMinMinutes,
-            estimatedTimeMaxMinutes = filterParams.estimatedTimeMaxMinutes,
+            estimatedTimeMinSeconds = filterParams.estimatedTimeMinSeconds,
+            estimatedTimeMaxSeconds = filterParams.estimatedTimeMaxSeconds,
             recurrenceFilterType = filterParams.recurrenceFilterType,
             notificationsFilterType = filterParams.notificationsFilterType,
             autoUpdateStatusFilterType = filterParams.autoUpdateStatusFilterType,
@@ -1362,6 +1347,11 @@ class RoomTaskRepository(
             requireParentOf = filterParams.requireParentOf,
             requireNotSubtask = filterParams.requireNotSubtask
         )
+
+        // The kind of rule is only visible once the rules are decoded; see RecurrenceFilter.matches.
+        if (filterParams.recurrenceFilter.bucketedInSqlOnly) {
+            rows = rows.filter { filterParams.recurrenceFilter.matches(it.recurrenceRulesJson.toRecurrenceRuleList()) }
+        }
 
         // Handle HasTags filters (from group filters) - get matching task IDs via SQL
         for (tagsFilter in hasTagsFilters) {
@@ -1623,9 +1613,11 @@ class RoomTaskRepository(
         val customDueDateAfter: Long? = null,
         val customDueDateBefore: Long? = null,
         val estimatedTimeFilterType: Long = 0,
-        val estimatedTimeMinMinutes: Long? = null,
-        val estimatedTimeMaxMinutes: Long? = null,
+        val estimatedTimeMinSeconds: Long? = null,
+        val estimatedTimeMaxSeconds: Long? = null,
         val recurrenceFilterType: Long = 0,
+        /** Applied in Kotlin: SQL cannot tell one kind of recurrence rule from another. */
+        val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,
         val notificationsFilterType: Long = 0,
         val autoUpdateStatusFilterType: Long = 0,
         // Status filters from TaskFilterCriteria

@@ -1559,4 +1559,171 @@ class GroupedTaskQueriesComparisonTest {
             )
         }
     }
+
+    // ==================== TaskFilterCriteria parity tests ====================
+    //
+    // The filter panel's criteria are matched in Kotlin by the in-memory repository and in SQL by
+    // the database one. These pin the two together: a criterion the SQL cannot express has to fail
+    // here rather than silently return a different set to the task list.
+
+    /** Tasks spanning every [EstimatedTimeFilter] bucket, including each boundary value. */
+    private suspend fun TestContext.setupEstimatedTimeSpread() = setupTasks { spaceId ->
+        addTask(spaceId, title = "10m", estimatedTime = RecurrencePeriod(minutes = 10))
+        addTask(spaceId, title = "15m", estimatedTime = RecurrencePeriod(minutes = 15))
+        addTask(spaceId, title = "29m", estimatedTime = RecurrencePeriod(minutes = 29))
+        addTask(spaceId, title = "30m", estimatedTime = RecurrencePeriod(minutes = 30))
+        addTask(spaceId, title = "59m", estimatedTime = RecurrencePeriod(minutes = 59))
+        addTask(spaceId, title = "1h", estimatedTime = RecurrencePeriod(hours = 1))
+        addTask(spaceId, title = "3h59m", estimatedTime = RecurrencePeriod(hours = 3, minutes = 59))
+        addTask(spaceId, title = "4h", estimatedTime = RecurrencePeriod(hours = 4))
+        addTask(spaceId, title = "5h", estimatedTime = RecurrencePeriod(hours = 5))
+        addTask(spaceId, title = "none", estimatedTime = null)
+    }
+
+    @Test
+    fun `compare estimatedTime criteria buckets`() = runTest {
+        withTestContext {
+            setupEstimatedTimeSpread()
+
+            for (filter in EstimatedTimeFilter.entries) {
+                if (filter == EstimatedTimeFilter.Custom) continue
+                compareTasks(
+                    filters = persistentListOf(),
+                    filterCriteria = TaskFilterCriteria(estimatedTimeFilter = filter),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `compare estimatedTime criteria buckets select the expected tasks`() = runTest {
+        withTestContext {
+            setupEstimatedTimeSpread()
+
+            suspend fun titlesFor(filter: EstimatedTimeFilter): Set<String> =
+                compareTasks(persistentListOf(), filterCriteria = TaskFilterCriteria(estimatedTimeFilter = filter))
+                    .second.map { it.task.title }.toSet()
+
+            assertEquals(setOf("10m"), titlesFor(EstimatedTimeFilter.Quick))
+            assertEquals(setOf("15m", "29m"), titlesFor(EstimatedTimeFilter.Short))
+            assertEquals(setOf("30m", "59m"), titlesFor(EstimatedTimeFilter.Medium))
+            assertEquals(setOf("1h", "3h59m"), titlesFor(EstimatedTimeFilter.Long))
+            assertEquals(setOf("4h", "5h"), titlesFor(EstimatedTimeFilter.VeryLong))
+            assertEquals(setOf("none"), titlesFor(EstimatedTimeFilter.NoEstimate))
+        }
+    }
+
+    @Test
+    fun `compare custom estimatedTime criteria`() = runTest {
+        withTestContext {
+            setupEstimatedTimeSpread()
+
+            // The filter panel stores these as compact time strings, not numbers.
+            val bounded = TaskFilterCriteria(
+                estimatedTimeFilter = EstimatedTimeFilter.Custom,
+                customEstimatedTimeMin = "30m",
+                customEstimatedTimeMax = "1h",
+            )
+            val (_, boundedDb) = compareTasks(persistentListOf(), filterCriteria = bounded)
+            // Custom bounds are inclusive on both ends, unlike the fixed buckets.
+            assertEquals(setOf("30m", "59m", "1h"), boundedDb.map { it.task.title }.toSet())
+
+            compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(
+                    estimatedTimeFilter = EstimatedTimeFilter.Custom,
+                    customEstimatedTimeMin = "4h",
+                ),
+            )
+            compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(
+                    estimatedTimeFilter = EstimatedTimeFilter.Custom,
+                    customEstimatedTimeMax = "15m",
+                ),
+            )
+            // Unparseable bounds degrade to "has an estimate", as the in-memory path does.
+            compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(
+                    estimatedTimeFilter = EstimatedTimeFilter.Custom,
+                    customEstimatedTimeMin = "not a period",
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `compare recurrence criteria kinds`() = runTest {
+        withTestContext {
+            val start = Clock.System.now()
+            setupTasks { spaceId ->
+                addTask(
+                    spaceId, title = "timeout",
+                    recurrenceRules = persistentListOf(
+                        RecurrenceRule(
+                            timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                                period = RecurrencePeriod.ofWeeks(1),
+                                firstOccurrence = start,
+                            ),
+                            statusChangeTrigger = null,
+                            resetToStatus = TaskStatus.Open,
+                        ) to RecurrenceState()
+                    ),
+                )
+                addTask(
+                    spaceId, title = "weekly",
+                    recurrenceRules = persistentListOf(
+                        RecurrenceRule(
+                            timeRecurrenceTrigger = RecurrenceTrigger.AtFixedPoints(
+                                pattern = FixedPointPattern.DaysOfWeek(persistentSetOf(RecurrenceDayOfWeek.MONDAY)),
+                                startFrom = start,
+                            ),
+                            statusChangeTrigger = null,
+                            resetToStatus = TaskStatus.Open,
+                        ) to RecurrenceState()
+                    ),
+                )
+                addTask(
+                    spaceId, title = "monthly",
+                    recurrenceRules = persistentListOf(
+                        RecurrenceRule(
+                            timeRecurrenceTrigger = RecurrenceTrigger.AtFixedPoints(
+                                pattern = FixedPointPattern.DayOfMonth(15),
+                                startFrom = start,
+                            ),
+                            statusChangeTrigger = null,
+                            resetToStatus = TaskStatus.Open,
+                        ) to RecurrenceState()
+                    ),
+                )
+                addTask(spaceId, title = "plain")
+            }
+
+            for (filter in RecurrenceFilter.entries) {
+                compareTasks(
+                    filters = persistentListOf(),
+                    filterCriteria = TaskFilterCriteria(recurrenceFilter = filter),
+                )
+            }
+
+            val (_, timeoutOnly) = compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(recurrenceFilter = RecurrenceFilter.AfterTimeout),
+            )
+            assertEquals(setOf("timeout"), timeoutOnly.map { it.task.title }.toSet())
+
+            val (_, weeklyOnly) = compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(recurrenceFilter = RecurrenceFilter.FixedDaysOfWeek),
+            )
+            assertEquals(setOf("weekly"), weeklyOnly.map { it.task.title }.toSet())
+
+            val (_, monthlyOnly) = compareTasks(
+                persistentListOf(),
+                filterCriteria = TaskFilterCriteria(recurrenceFilter = RecurrenceFilter.FixedDayOfMonth),
+            )
+            assertEquals(setOf("monthly"), monthlyOnly.map { it.task.title }.toSet())
+        }
+    }
 }
