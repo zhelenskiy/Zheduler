@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +82,10 @@ fun ViewModeEditorScreen(
     // The read happens once. A restored editor already holds the answer, and loading over it would
     // undo the edits the restore just brought back.
     var loadAttempted by rememberSaveable { mutableStateOf(false) }
+    // A mode was asked for and did not arrive — deleted meanwhile, or the read failed. Recorded so
+    // that the screen does not present itself as "new": the editor would then be empty, and Save
+    // would mint a fresh id and add a second view mode instead of changing the one asked for.
+    var loadFailed by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(viewModeId, copyFromViewModeId) {
         if (loadAttempted) return@LaunchedEffect
         // Awaited straight from an effect, so a database error is reported rather than thrown into
@@ -94,8 +99,14 @@ fun ViewModeEditorScreen(
                 else -> null
             }
         }
+        loadFailed = loaded == null && (viewModeId != null || copyFromViewModeId != null)
         loaded?.let(editorState::startFrom)
         loadAttempted = true
+    }
+
+    if (loadFailed) {
+        ViewModeEditorPlaceholder(onCancel)
+        return
     }
     val validationResult by rememberViewModeValidation(editorState)
     val isValid = validationResult is GroupingValidationResult.Valid
@@ -1307,6 +1318,36 @@ private fun NullPositionIcon(nullPosition: NullPosition) {
                 fontWeight = FontWeight.Bold,
                 lineHeight = textSize
             )
+        }
+    }
+}
+
+/**
+ * Shown when the view mode to edit could not be read.
+ *
+ * Not an empty editor: that one offers Save, and saving would create a second view mode rather
+ * than change the one the user opened.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ViewModeEditorPlaceholder(onCancel: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Edit View Mode") },
+                navigationIcon = {
+                    IconButton(onClick = onCancel) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("This view mode could not be opened.", textAlign = TextAlign.Center)
         }
     }
 }

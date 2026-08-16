@@ -423,7 +423,18 @@ class RoomTaskRepository(
     override suspend fun getAllSpacePrefixes(): List<String> =
         dao.getAllPrefixes()
 
+    /**
+     * Totals for a whole space, under the lock.
+     *
+     * Several reads go into them — the space's tasks, the blocked tasks across all spaces, their
+     * connections — and a write landing between two of them yielded totals computed from a state
+     * that never existed. Writers take this lock; the in-memory repository holds its own for the
+     * same span, so without this the two could not even be compared.
+     */
     override suspend fun getAllTasksWithTotals(spaceId: String): List<TaskWithTotals> =
+        mutex.withLock { getAllTasksWithTotalsUnsafe(spaceId) }
+
+    private suspend fun getAllTasksWithTotalsUnsafe(spaceId: String): List<TaskWithTotals> =
         calculateTotals(getAllTasks(spaceId), getBlockedTasks())
 
     override suspend fun getTaskById(id: String): Task? = getByIdUnsafe(id)
@@ -433,14 +444,15 @@ class RoomTaskRepository(
         return loadTaskWithConnections(entity)
     }
 
-    override suspend fun getTasksByIdWithTotals(id: String): TaskWithTotals? {
-        val task = getTaskById(id) ?: return null
+    /** One task's totals, under the lock; see [getAllTasksWithTotals]. */
+    override suspend fun getTasksByIdWithTotals(id: String): TaskWithTotals? = mutex.withLock {
+        val task = getTaskById(id) ?: return@withLock null
         val blockedTasks = getBlockedTasks()
         val neededTaskIds = collectNeededTaskIds(task, blockedTasks)
         // Batch fetch all necessary tasks in a single query
         val tasksById = getTasksByIds(neededTaskIds).associateByToPersistentMap { it.id }.putting(task.id, task)
         val totals = taskTotals(task, blockedTasks, tasksById)
-        return TaskWithTotals(
+        TaskWithTotals(
             task = task,
             totalDueDate = totals.totalDueDate,
             totalPriority = totals.totalPriority,
@@ -682,7 +694,10 @@ class RoomTaskRepository(
         )
     }
 
-    override suspend fun updateTask(task: Task): Task? = mutex.withLock {
+    override suspend fun updateTask(incoming: Task): Task? = mutex.withLock {
+        // As on the add path: the column keeps milliseconds, so the task handed back has to be
+        // rounded too, or it will not match the one the next read produces.
+        val task = incoming.copy(dueDate = storableDueDate(incoming.dueDate))
         // A task's row, the connections on both sides of it, its tags and the status changes
         // cascading from it are one edit; half of it leaves connections pointing one way only.
         database.withWriteTransaction {
@@ -715,8 +730,11 @@ class RoomTaskRepository(
 
         syncToDatabase(finalTask)
 
-        val newTags = finalTask.tags.removingAll(oldTask.tags)
-        newTags.forEach { dao.insertTagForSpace(finalTask.spaceId, it) }
+        // Every tag the task carries, not only the ones new to the task. A tag deleted from the
+        // space's vocabulary stays on the tasks that had it, so saving such a task puts it back in
+        // the vocabulary — which is what the in-memory repository does, and what moving a task to
+        // another space needs. The insert ignores duplicates.
+        finalTask.tags.forEach { dao.insertTagForSpace(finalTask.spaceId, it) }
 
         // Update task_tags junction table
         if (finalTask.tags != oldTask.tags) {
@@ -896,10 +914,11 @@ class RoomTaskRepository(
         offset: Int,
         limit: Int
     ): Page<TaskWithTotals> =
-        filterTasksWithCriteria(getAllTasksWithTotals(spaceId), criteria).toPage(offset, limit)
+        mutex.withLock { filterTasksWithCriteria(getAllTasksWithTotalsUnsafe(spaceId), criteria) }
+            .toPage(offset, limit)
 
     override suspend fun countAllWithTotalsFiltered(spaceId: String, criteria: TaskFilterCriteria): Int =
-        filterTasksWithCriteria(getAllTasksWithTotals(spaceId), criteria).size
+        mutex.withLock { filterTasksWithCriteria(getAllTasksWithTotalsUnsafe(spaceId), criteria) }.size
 
     /**
      * The stored filter panel, or a fresh one if what is stored cannot be read.
@@ -1027,7 +1046,13 @@ class RoomTaskRepository(
             tasks = spaceTasks,
             statusTimelines = spaceTimelines,
             nextId = nextId,
-            tags = spaceTags
+            tags = spaceTags,
+            // Only the space's own: the built-in modes exist everywhere and are not the user's.
+            // One that cannot be decoded is left out rather than failing the whole export.
+            viewModes = dao.getAllCustomViewModes(spaceId).mapNotNull { row ->
+                runCatching { row.configJson.toViewMode(spaceId, row.id, row.name) }.getOrNull()
+            },
+            savedFilters = dao.getAllSavedFilters(spaceId).mapNotNull { it.toSavedFilterModel() },
         )
 
         val json = if (prettyPrint) jsonPretty else jsonCompact
@@ -1105,6 +1130,25 @@ class RoomTaskRepository(
 
             exportData.tags.forEach { dao.insertTagForSpace(newSpaceId, it) }
 
+            val (viewModes, filters) = importedSettings(exportData, newSpaceId, oldToNewTaskId)
+            viewModes.forEach { mode ->
+                dao.insertOrUpdateCustomViewMode(
+                    id = mode.id,
+                    spaceId = newSpaceId,
+                    name = mode.name,
+                    configJson = mode.toConfigJson(),
+                )
+            }
+            filters.forEach { filter ->
+                dao.insertOrUpdateSavedFilter(
+                    id = filter.id,
+                    spaceId = newSpaceId,
+                    name = filter.name,
+                    criteriaJson = filter.criteria.toJson(),
+                    viewModeId = filter.viewModeId,
+                )
+            }
+
             // Now that every task exists, and not before.
             unblockTasksWithOnlyResolvedBlockers(oldToNewTaskId.values)
 
@@ -1135,7 +1179,7 @@ class RoomTaskRepository(
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
 
         // Rounded to the millisecond the column stores, so the returned task matches a later read.
-        val effectiveDueDate = dueDate?.let { Instant.fromEpochMilliseconds(it.toEpochMilliseconds()) }
+        val effectiveDueDate = storableDueDate(dueDate)
         val status = if (autoUpdateStatusFromSubtasks) {
             val subtasksIds = connections
                 .mapNotNull { if (it.type == ConnectionType.ParentOf) it.targetTaskId else null }
@@ -2132,9 +2176,10 @@ class RoomTaskRepository(
         parentFilters: PersistentList<GroupFilter>,
         filterCriteria: TaskFilterCriteria
     ): List<TaskGroupInfo> {
-        // Get all tasks with totals filtered by criteria
+        // Get all tasks with totals filtered by criteria. The unsafe variant: this already runs
+        // under the lock, which is not reentrant.
         val today = today()
-        val allTasks = getAllWithTotalsFiltered(spaceId, filterCriteria)
+        val allTasks = filterTasksWithCriteria(getAllTasksWithTotalsUnsafe(spaceId), filterCriteria)
 
         // Apply parent filters
         val filteredTasks = allTasks.filter { task ->

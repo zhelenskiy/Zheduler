@@ -31,7 +31,14 @@ data class SpaceExportData(
     val tasks: List<Task>,
     val statusTimelines: Map<String, List<StatusChange>>,
     val nextId: Int,
-    val tags: Set<String>
+    val tags: Set<String>,
+    /**
+     * The space's own view modes and saved filters, so that restoring a backup restores the way
+     * the user had arranged the space and not only its tasks. Both default to empty: a file
+     * written before they were carried still reads.
+     */
+    val viewModes: List<ViewMode> = emptyList(),
+    val savedFilters: List<SavedFilter> = emptyList(),
 )
 
 /**
@@ -333,6 +340,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         if (!spaces.containsKey(spaceId)) return@withLock null
         allOrNothing {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
+        // The same refusals the database makes with its primary key and its foreign keys, so a
+        // save that fails there does not quietly succeed here. Taking an id that already belongs
+        // to a task overwrote that task — in any space — and threw away its history with it.
+        require(taskId !in tasks) { "A task with id $taskId already exists" }
+        requireTargetsExist(connections)
 
         val status = if (autoUpdateStatusFromSubtasks) {
             val subtasksIds = connections
@@ -347,7 +359,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             title = title,
             description = description,
             status = status,
-            dueDate = dueDate,
+            // Rounded as the database rounds it, so both repositories store the same instant.
+            dueDate = storableDueDate(dueDate),
             priority = priority,
             estimatedTime = estimatedTime,
             tags = tags,
@@ -381,9 +394,13 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
     }
 
-    override suspend fun updateTask(task: Task): Task? = mutex.withLock {
+    override suspend fun updateTask(incoming: Task): Task? = mutex.withLock {
+        val task = incoming.copy(dueDate = storableDueDate(incoming.dueDate))
         val oldTask = tasks[task.id] ?: return@withLock null
         allOrNothing {
+        // As in addTask: what the database's foreign keys would refuse, this refuses too.
+        require(task.spaceId in spaces) { "No space ${task.spaceId}" }
+        requireTargetsExist(task.connections)
 
         val removedConnections = oldTask.connections.removingAll(task.connections)
         removedConnections.forEach { connection ->
@@ -473,6 +490,21 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         notifyChanged()
 
         true
+    }
+
+    /**
+     * Refuses a connection to a task that is not there.
+     *
+     * The database has a foreign key on the connection table and rejects the whole save; without
+     * this the oracle stored the dangling edge and reported success, so the same edit — a target
+     * deleted between opening the picker and pressing Save — failed on one and passed on the other.
+     */
+    private fun requireTargetsExist(connections: Set<TaskConnection>) {
+        connections.forEach { connection ->
+            require(connection.targetTaskId in tasks) {
+                "No task ${connection.targetTaskId} to connect to"
+            }
+        }
     }
 
     private suspend fun addSymmetricConnectionUnsafe(sourceTaskId: String, connection: TaskConnection) {
@@ -699,7 +731,10 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             tasks = spaceTasks,
             statusTimelines = spaceTimelines,
             nextId = nextId,
-            tags = spaceTags
+            tags = spaceTags,
+            // Only the space's own: the built-in modes exist everywhere and are not the user's.
+            viewModes = customViewModes[spaceId]?.values?.toList().orEmpty(),
+            savedFilters = savedFilters[spaceId]?.values?.toList().orEmpty(),
         )
 
         val json = if (prettyPrint) jsonPretty else jsonCompact
@@ -777,6 +812,14 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             // cycle — every edge is checked when it is made, and the id remapping is injective —
             // so this can only be reached with a hand-edited file, and neither answer is unsafe.
             tagsBySpace.getOrPut(newSpace.id) { mutableSetOf() }.addAll(exportData.tags)
+
+            val (viewModes, filters) = importedSettings(exportData, newSpaceId, oldToNewTaskId)
+            viewModes.forEach { mode ->
+                customViewModes.getOrPut(newSpaceId) { mutableMapOf() }[mode.id] = mode
+            }
+            filters.forEach { filter ->
+                savedFilters.getOrPut(newSpaceId) { mutableMapOf() }[filter.id] = filter
+            }
 
             // Now that every task exists, and not before. See the Room import.
             unblockTasksWithOnlyResolvedBlockers(oldToNewTaskId.values)

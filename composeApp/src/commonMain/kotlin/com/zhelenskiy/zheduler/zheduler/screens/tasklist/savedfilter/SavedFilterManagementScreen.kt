@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Home
 import com.zhelenskiy.zheduler.zheduler.TaskFilterCriteria
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -59,8 +60,14 @@ fun SavedFilterManagementScreen(
     val state by container.store.subscribe()
 
     var filterToDelete by remember { mutableStateOf<SavedFilter?>(null) }
-    var filterToEdit by remember { mutableStateOf<SavedFilter?>(null) }
-    var showCreateDialog by remember { mutableStateOf(false) }
+    // By id, and saved: an activity recreation used to close the editing dialog and drop the edit
+    // without a word. Worse, the dialog's own saved fields outlived it, and the next filter opened
+    // for editing came up holding them — Save then wrote that name onto the wrong filter.
+    var filterIdToEdit by rememberSaveable { mutableStateOf<String?>(null) }
+    var showCreateDialog by rememberSaveable { mutableStateOf(false) }
+    val filterToEdit = filterIdToEdit?.let { id ->
+        state.savedFilters.firstOrNull { it.filter.id == id }?.filter
+    }
 
     Scaffold(
         topBar = {
@@ -85,7 +92,7 @@ fun SavedFilterManagementScreen(
             savedFilters = state.savedFilters,
             padding = padding,
             onLoad = onLoad,
-            onEdit = { filterToEdit = it },
+            onEdit = { filterIdToEdit = it.id },
             onDelete = { filterToDelete = it }
         )
     }
@@ -108,9 +115,9 @@ fun SavedFilterManagementScreen(
         generateId = container::generateId,
         onSave = { updatedFilter ->
             container.store.intent(SavedFilterIntent.SaveFilter(updatedFilter))
-            filterToEdit = null
+            filterIdToEdit = null
         },
-        onDismiss = { filterToEdit = null }
+        onDismiss = { filterIdToEdit = null }
     )
 
     CreateFilterDialog(

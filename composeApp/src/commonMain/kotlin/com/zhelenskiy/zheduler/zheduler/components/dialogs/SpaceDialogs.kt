@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -34,9 +35,12 @@ fun NewSpaceDialog(
     onDismiss: () -> Unit,
     onSpaceCreated: (name: String, idPrefix: String) -> Unit
 ) {
-    var spaceName by remember { mutableStateOf("") }
-    var idPrefix by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    // Saved, not remembered: the space-list dialogs already reopen after an activity recreation,
+    // so leaving these behind brought the dialog back with both fields blank — which reads as a
+    // dialog the user never filled in rather than one that lost what they typed.
+    var spaceName by rememberSaveable { mutableStateOf("") }
+    var idPrefix by rememberSaveable { mutableStateOf("") }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val idPrefixFocusRequester = remember { FocusRequester() }
 
     val isValid = spaceName.isNotBlank() && idPrefix.matches(Regex("^[A-Z]+$"))
@@ -167,9 +171,14 @@ fun EditSpaceDialog(
     onAddTag: ((String) -> Unit)? = null,
     onDeleteTag: ((String) -> Unit)? = null
 ) {
-    var spaceName by remember { mutableStateOf(space.name) }
-    var newTagText by remember { mutableStateOf("") }
-    var tagToDelete by remember { mutableStateOf<String?>(null) }
+    // Keyed on the space, and saved: see NewSpaceDialog. The key keeps a name typed for one space
+    // from being handed to the next one opened, the way saved state otherwise follows the position
+    // in the composition rather than what is being edited.
+    var spaceName by rememberSaveable(key = "editSpace:name:${space.id}") { mutableStateOf(space.name) }
+    var newTagText by rememberSaveable(key = "editSpace:newTag:${space.id}") { mutableStateOf("") }
+    var tagToDelete by rememberSaveable(key = "editSpace:tagToDelete:${space.id}") {
+        mutableStateOf<String?>(null)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,

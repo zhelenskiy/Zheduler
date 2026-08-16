@@ -374,8 +374,21 @@ private fun MutableMap<FilterChipType, String>.addAutoUpdateChip(criteria: TaskF
 }
 
 private fun MutableMap<FilterChipType, String>.addConnectionChips(criteria: TaskFilterCriteria) {
+    /** The ids typed for [type], which narrow the list whether or not its chip is ticked. */
+    fun idsFor(type: ConnectionTypeOption): String = when (type) {
+        ConnectionTypeOption.DependsOn -> criteria.dependsOnTaskIds
+        ConnectionTypeOption.IsDependencyOf -> criteria.isDependencyOfTaskIds
+        ConnectionTypeOption.RelatesTo -> criteria.relatesToTaskIds
+        ConnectionTypeOption.SubtaskOf -> criteria.subtaskOfTaskIds
+        ConnectionTypeOption.ParentOf -> criteria.parentOfTaskIds
+        ConnectionTypeOption.NotSubtask -> ""
+    }
+
     ConnectionTypeOption.entries.forEach { type ->
-        if (type in criteria.connectionTypeFilters) {
+        // Ticked, or holding ids that are filtering anyway: a chip is how the user finds a filter
+        // in force, so one that only shows while its type is ticked hides the very case where the
+        // list is short for a reason nothing on screen explains.
+        if (type in criteria.connectionTypeFilters || idsFor(type).isNotBlank()) {
             val (chipType, label) = when (type) {
                 ConnectionTypeOption.DependsOn ->
                     FilterChipType.ConnectionDependsOn to if (criteria.dependsOnTaskIds.isNotBlank())

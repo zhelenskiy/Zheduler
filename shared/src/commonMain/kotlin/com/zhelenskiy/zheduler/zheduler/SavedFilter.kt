@@ -2,12 +2,16 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.serialization.Serializable
 import kotlin.time.ExperimentalTime
 
 /**
  * Represents a saved filter configuration that can be stored and loaded.
  * Optionally includes a reference to a view mode to apply when loading.
+ *
+ * Serializable because a space's export carries its saved filters; see [SpaceExportData].
  */
+@Serializable
 data class SavedFilter(
     val id: String,
     val name: String,

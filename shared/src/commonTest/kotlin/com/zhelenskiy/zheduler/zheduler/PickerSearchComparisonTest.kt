@@ -1,5 +1,6 @@
 package com.zhelenskiy.zheduler.zheduler
 
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -119,6 +120,23 @@ class PickerSearchComparisonTest {
                 repository.filterSpaces("работа", searchInName = true, searchInPrefix = false).map { it.name },
                 "$repository",
             )
+        }
+    }
+
+    @Test
+    fun `saving a task puts its tags back in the space vocabulary`() = runTest {
+        // Deleting a tag takes it out of the vocabulary but leaves it on the tasks that carry it,
+        // so saving such a task offers it again. Room used to insert only the tags new to the task,
+        // and the two repositories then disagreed about what the picker should show.
+        for (repository in repositories()) {
+            val space = repository.createSpace("Test", "TEST")!!
+            val task = repository.addTask(space.id, title = "tagged", tags = persistentSetOf("work"))!!
+            repository.deleteTag(space.id, "work")
+            assertEquals(emptyList(), repository.filterTags(space.id, "", emptySet()), "$repository: not deleted")
+
+            repository.updateTask(repository.getTaskById(task.id)!!.copy(title = "tagged, renamed"))
+
+            assertEquals(listOf("work"), repository.filterTags(space.id, "", emptySet()), "$repository")
         }
     }
 

@@ -102,6 +102,38 @@ class TaskDescriptionFieldTest {
         assertEquals(DescriptionEditorKind.Rich, settings.descriptionEditorFor("ZH-2"))
     }
 
+    /**
+     * The settings are read from disk after the app starts, so the first form composed can be
+     * built before they land. Taking the choice once left that task in the wrong editor for the
+     * whole visit, whatever the file said.
+     */
+    @Test
+    fun theStoredChoiceIsHonouredWhenItArrivesLate() = runComposeUiTest {
+        val settings = EditorSettingsState()
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalEditorSettings provides settings) {
+                    Column {
+                        TaskDescriptionField(
+                            markdown = "one\n",
+                            onMarkdownChange = {},
+                            label = "Description",
+                            taskId = "ZH-1",
+                        )
+                    }
+                }
+            }
+        }
+        waitForIdle()
+        onNodeWithText(DescriptionEditorKind.Rich.label).assertIsSelected()
+
+        // What the read from disk does when it finally lands.
+        settings.restore(mapOf("ZH-1" to DescriptionEditorKind.Markdown))
+        waitForIdle()
+
+        onNodeWithText(DescriptionEditorKind.Markdown.label).assertIsSelected()
+    }
+
     @Composable
     private fun Field(markdown: String, onMarkdownChange: (String) -> Unit) {
         // Provided per test: the composition local's default is a single shared holder, so

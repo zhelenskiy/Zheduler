@@ -154,7 +154,10 @@ private fun FilterCategoryChipsRow(
             hasActiveFilter = filterState.connectionTypeFilters.isNotEmpty()
         )
 
-        if (allTags.isNotEmpty()) {
+        // Also when the space has no tags left to offer but some are still selected. Deleting a tag
+        // from a space does not take it off the tasks that carry it, so the filter stays in force —
+        // and hiding the whole category left it working with nothing on screen to switch it off.
+        if (allTags.isNotEmpty() || filterState.selectedTags.isNotEmpty()) {
             FilterCategoryChip(
                 title = "Tags",
                 isExpanded = expandedCategory == FilterCategory.Tags,
@@ -598,15 +601,23 @@ private fun ConnectionsFilterOptions(filterState: TaskFilterState, spaceIdPrefix
 
 @Composable
 private fun ConnectionTaskIdFields(filterState: TaskFilterState, spaceIdPrefix: String?) {
-    if (filterState.connectionTypeFilters.isEmpty()) return
-
     val examplePrefix = spaceIdPrefix ?: "TASK"
 
-    if (ConnectionTypeOption.DependsOn in filterState.connectionTypeFilters) {
+    /**
+     * One id field, shown while its connection type is ticked — or while it still holds something.
+     *
+     * Ids narrow the list on their own, ticked or not. Showing the field only alongside its chip
+     * meant that clearing the chip hid text that went on filtering: a short list, nothing on
+     * screen accounting for it, and the same state saved into saved filters and restored on the
+     * next launch.
+     */
+    @Composable
+    fun IdField(option: ConnectionTypeOption, label: String, value: String, onValueChange: (String) -> Unit) {
+        if (option !in filterState.connectionTypeFilters && value.isEmpty()) return
         OutlinedTextField(
-            value = filterState.dependsOnTaskIds,
-            onValueChange = { filterState.dependsOnTaskIds = it },
-            label = { Text("Depends on (Task IDs)", style = MaterialTheme.typography.labelSmall) },
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
             placeholder = { Text("e.g., $examplePrefix-100, $examplePrefix-200", style = MaterialTheme.typography.bodySmall) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -614,53 +625,26 @@ private fun ConnectionTaskIdFields(filterState: TaskFilterState, spaceIdPrefix: 
         )
     }
 
-    if (ConnectionTypeOption.IsDependencyOf in filterState.connectionTypeFilters) {
-        OutlinedTextField(
-            value = filterState.isDependencyOfTaskIds,
-            onValueChange = { filterState.isDependencyOfTaskIds = it },
-            label = { Text("Is dependency of (Task IDs)", style = MaterialTheme.typography.labelSmall) },
-            placeholder = { Text("e.g., $examplePrefix-100, $examplePrefix-200", style = MaterialTheme.typography.bodySmall) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodySmall
-        )
-    }
-
-    if (ConnectionTypeOption.RelatesTo in filterState.connectionTypeFilters) {
-        OutlinedTextField(
-            value = filterState.relatesToTaskIds,
-            onValueChange = { filterState.relatesToTaskIds = it },
-            label = { Text("Relates to (Task IDs)", style = MaterialTheme.typography.labelSmall) },
-            placeholder = { Text("e.g., $examplePrefix-100, $examplePrefix-200", style = MaterialTheme.typography.bodySmall) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodySmall
-        )
-    }
-
-    if (ConnectionTypeOption.SubtaskOf in filterState.connectionTypeFilters) {
-        OutlinedTextField(
-            value = filterState.subtaskOfTaskIds,
-            onValueChange = { filterState.subtaskOfTaskIds = it },
-            label = { Text("Is subtask of (Task IDs)", style = MaterialTheme.typography.labelSmall) },
-            placeholder = { Text("e.g., $examplePrefix-100, $examplePrefix-200", style = MaterialTheme.typography.bodySmall) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodySmall
-        )
-    }
-
-    if (ConnectionTypeOption.ParentOf in filterState.connectionTypeFilters) {
-        OutlinedTextField(
-            value = filterState.parentOfTaskIds,
-            onValueChange = { filterState.parentOfTaskIds = it },
-            label = { Text("Is parent for (Task IDs)", style = MaterialTheme.typography.labelSmall) },
-            placeholder = { Text("e.g., $examplePrefix-100, $examplePrefix-200", style = MaterialTheme.typography.bodySmall) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodySmall
-        )
-    }
+    IdField(
+        ConnectionTypeOption.DependsOn, "Depends on (Task IDs)",
+        filterState.dependsOnTaskIds,
+    ) { filterState.dependsOnTaskIds = it }
+    IdField(
+        ConnectionTypeOption.IsDependencyOf, "Is dependency of (Task IDs)",
+        filterState.isDependencyOfTaskIds,
+    ) { filterState.isDependencyOfTaskIds = it }
+    IdField(
+        ConnectionTypeOption.RelatesTo, "Relates to (Task IDs)",
+        filterState.relatesToTaskIds,
+    ) { filterState.relatesToTaskIds = it }
+    IdField(
+        ConnectionTypeOption.SubtaskOf, "Is subtask of (Task IDs)",
+        filterState.subtaskOfTaskIds,
+    ) { filterState.subtaskOfTaskIds = it }
+    IdField(
+        ConnectionTypeOption.ParentOf, "Is parent for (Task IDs)",
+        filterState.parentOfTaskIds,
+    ) { filterState.parentOfTaskIds = it }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

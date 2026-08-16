@@ -279,7 +279,7 @@ private fun AppContent(
     // a second tap before the first navigates, and two taps on one reference opened it twice.
     var taskBeingOpened by remember { mutableStateOf<String?>(null) }
 
-    fun openTask(taskId: String, fallbackSpaceId: String) {
+    fun openTask(taskId: String, fallbackSpaceId: String, from: NavBackStackEntry) {
         if (taskBeingOpened == taskId) return
         taskBeingOpened = taskId
         navigationScope.launch {
@@ -294,7 +294,14 @@ private fun AppContent(
                 // its arguments, so following a reference from one task to another replaced the
                 // first task's entry instead of stacking on it — and Back skipped everything the
                 // reader had walked through.
-                navController.navigate(TaskDetailRoute(spaceId, taskId))
+                //
+                // The screen that asked has to still be the one on top. The in-flight guard above
+                // only covers the lookup; the tap handler stays live for the whole enter
+                // transition after it, which is long enough for a second click to stack the same
+                // task twice. See popOnce, which reads the same signal for the same reason.
+                if (from.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    navController.navigate(TaskDetailRoute(spaceId, taskId))
+                }
             } finally {
                 taskBeingOpened = null
             }
@@ -346,7 +353,7 @@ private fun AppContent(
                     savedStateHandle["loadedFilterId"] = null
                 },
                 onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId)
+                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
                 },
                 onAddTask = {
                     navController.navigate(NewTaskRoute(spaceId = route.spaceId))
@@ -391,7 +398,7 @@ private fun AppContent(
                     navController.popBackStack(SpaceListRoute, inclusive = false)
                 },
                 onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId)
+                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
@@ -440,7 +447,7 @@ private fun AppContent(
                     navController.navigate(TaskEditRoute(route.spaceId, route.taskId))
                 },
                 onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId)
+                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
                 },
                 onNavigateToSpaceList = {
                     navController.popBackStack(SpaceListRoute, inclusive = false)
@@ -482,7 +489,7 @@ private fun AppContent(
                     )
                 },
                 onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId)
+                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
@@ -548,7 +555,7 @@ private fun AppContent(
                     }
                 },
                 onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId)
+                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
                 },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,

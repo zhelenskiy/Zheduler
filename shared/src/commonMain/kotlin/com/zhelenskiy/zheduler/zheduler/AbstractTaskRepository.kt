@@ -1197,6 +1197,65 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     }
 
     /**
+     * The space's own view modes and saved filters, carried into an import under fresh ids.
+     *
+     * Ids have to change: the file may be imported beside the space it came from, and a view mode
+     * or filter id is unique across the database. A filter pointing at one of the space's own view
+     * modes is repointed at its copy; one pointing at a built-in mode keeps that id, since built-in
+     * modes are the same everywhere. Task ids named in a filter's criteria are remapped like every
+     * other reference to a task.
+     */
+    protected fun importedSettings(
+        exportData: SpaceExportData,
+        newSpaceId: String,
+        oldToNewTaskId: Map<String, String>,
+    ): Pair<List<ViewMode>, List<SavedFilter>> {
+        val viewModeIds = exportData.viewModes.associate { it.id to "$newSpaceId:vm:${it.id}" }
+        val viewModes = exportData.viewModes.map { mode ->
+            mode.copy(id = viewModeIds.getValue(mode.id), spaceId = newSpaceId)
+        }
+        val filters = exportData.savedFilters.map { filter ->
+            filter.copy(
+                id = "$newSpaceId:filter:${filter.id}",
+                spaceId = newSpaceId,
+                viewModeId = filter.viewModeId?.let { viewModeIds[it] ?: it },
+                criteria = filter.criteria.withRemappedTaskIds(oldToNewTaskId),
+            )
+        }
+        return viewModes to filters
+    }
+
+    /** The criteria with every task id it names replaced by the one that task was imported under. */
+    private fun TaskFilterCriteria.withRemappedTaskIds(oldToNewTaskId: Map<String, String>): TaskFilterCriteria {
+        fun remap(ids: String): String =
+            if (ids.isBlank()) ids
+            else ids.split(",").joinToString(", ") { raw ->
+                val id = raw.trim()
+                oldToNewTaskId.entries.firstOrNull { it.key.equals(id, ignoreCase = true) }?.value ?: id
+            }
+
+        return copy(
+            dependsOnTaskIds = remap(dependsOnTaskIds),
+            isDependencyOfTaskIds = remap(isDependencyOfTaskIds),
+            relatesToTaskIds = remap(relatesToTaskIds),
+            subtaskOfTaskIds = remap(subtaskOfTaskIds),
+            parentOfTaskIds = remap(parentOfTaskIds),
+            blockedByTaskIds = remap(blockedByTaskIds),
+        )
+    }
+
+    /**
+     * [dueDate] as storage can hold it: whole milliseconds.
+     *
+     * A `dueDate` carries whatever precision the caller had — a clock reading on the JVM is
+     * microseconds — while the column is milliseconds, so a task handed back unrounded did not
+     * match the one a later read produced, and the in-memory repository, which rounds nothing at
+     * all, disagreed with the database about the same input.
+     */
+    protected fun storableDueDate(dueDate: Instant?): Instant? =
+        dueDate?.let { Instant.fromEpochMilliseconds(it.toEpochMilliseconds()) }
+
+    /**
      * The current date by the repository's clock, which a due-date group is measured from. Read
      * once per query and passed down, so a query cannot straddle midnight.
      */
@@ -1262,7 +1321,13 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         }
     }
 
-    /** The connection-id criteria, parsed once; see [matchesConnectionsByTaskIds]. */
+    /**
+     * The connection-id criteria, parsed once; see [matchesConnectionsByTaskIds].
+     *
+     * These stand on their own: ids narrow the list whether or not the matching connection-type
+     * chip is also ticked. The panel is what has to keep up — it shows every id field that holds
+     * something, so nothing filters from off screen.
+     */
     protected fun connectionIdFilters(criteria: TaskFilterCriteria): Map<ConnectionType, Set<String>> = mapOf(
         ConnectionType.DependsOn to parseTaskIds(criteria.dependsOnTaskIds),
         ConnectionType.IsDependencyOf to parseTaskIds(criteria.isDependencyOfTaskIds),

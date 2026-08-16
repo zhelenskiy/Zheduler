@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -79,6 +80,44 @@ class RefusedSaveComparisonTest {
             }
 
             assertEquals(before, repository.snapshot(space.id), "$repository: the refused task is still there")
+        }
+    }
+
+    @Test
+    fun `an id that is already taken is refused rather than overwritten`() = runTest {
+        for (repository in repositories()) {
+            val space = repository.createSpace("Test", "TEST")!!
+            val existing = repository.addTask(space.id, title = "already here")!!
+            val before = repository.snapshot(space.id)
+
+            // The database's primary key refuses this. The in-memory repository used to replace
+            // the task — in any space — and throw away its history with it.
+            assertFails("$repository: the id was taken and the save went through anyway") {
+                repository.addTask(space.id, title = "impostor", customId = existing.id)
+            }
+
+            assertEquals(before, repository.snapshot(space.id), "$repository")
+            assertEquals("already here", repository.getTaskById(existing.id)!!.title, "$repository")
+        }
+    }
+
+    @Test
+    fun `a connection to a task that is not there is refused`() = runTest {
+        for (repository in repositories()) {
+            val space = repository.createSpace("Test", "TEST")!!
+            val before = repository.snapshot(space.id)
+
+            // What the picker offered has since been deleted; the database's foreign key refuses
+            // the whole save, and the oracle used to store the dangling edge and report success.
+            assertFails("$repository: a connection to nothing was accepted") {
+                repository.addTask(
+                    space.id,
+                    title = "points at nothing",
+                    connections = persistentSetOf(TaskConnection("TEST-404", ConnectionType.DependsOn)),
+                )
+            }
+
+            assertEquals(before, repository.snapshot(space.id), "$repository")
         }
     }
 
