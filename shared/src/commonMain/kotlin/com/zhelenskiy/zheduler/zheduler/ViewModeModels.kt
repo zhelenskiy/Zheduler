@@ -495,8 +495,14 @@ fun GroupDefinition.toFilter(field: GroupableField): GroupFilter = when (field) 
 
 /**
  * Groups and orders tasks according to the view mode configuration.
+ *
+ * The repositories page groups straight out of storage rather than through this; it stays as the
+ * one place that spells the grouping rules out end to end over a plain list, which is how they are
+ * tested.
+ *
+ * @param today the date due-date groups are measured from.
  */
-fun ViewMode.applyTo(tasks: List<TaskWithTotals>): List<TaskGroup> {
+fun ViewMode.applyTo(tasks: List<TaskWithTotals>, today: LocalDate): List<TaskGroup> {
     if (groupingLevels.isEmpty()) {
         // No grouping, just order
         return listOf(
@@ -507,13 +513,14 @@ fun ViewMode.applyTo(tasks: List<TaskWithTotals>): List<TaskGroup> {
         )
     }
 
-    return applyGroupingLevel(tasks, groupingLevels, 0)
+    return applyGroupingLevel(tasks, groupingLevels, 0, today)
 }
 
 private fun ViewMode.applyGroupingLevel(
     tasks: List<TaskWithTotals>,
     levels: List<GroupingLevel>,
-    currentLevel: Int
+    currentLevel: Int,
+    today: LocalDate
 ): List<TaskGroup> {
     if (currentLevel >= levels.size) {
         return listOf(
@@ -531,7 +538,7 @@ private fun ViewMode.applyGroupingLevel(
 
     for (group in level.groups) {
         val matchingTasks = tasks.filter { task ->
-            matchesGroup(task, level.field, group)
+            task.matchesGroupFilter(group.toFilter(level.field), today)
         }
 
         matchedTasks.addAll(matchingTasks.map { it.task.id })
@@ -541,7 +548,7 @@ private fun ViewMode.applyGroupingLevel(
 
             if (currentLevel + 1 < levels.size) {
                 // Apply next grouping level
-                val subgroups = applyGroupingLevel(matchingTasks, levels, currentLevel + 1)
+                val subgroups = applyGroupingLevel(matchingTasks, levels, currentLevel + 1, today)
                 result.add(
                     TaskGroup(
                         label = group.label,
@@ -566,7 +573,7 @@ private fun ViewMode.applyGroupingLevel(
     val uncategorizedTasks = tasks.filter { it.task.id !in matchedTasks }
     if (uncategorizedTasks.isNotEmpty()) {
         if (currentLevel + 1 < levels.size) {
-            val subgroups = applyGroupingLevel(uncategorizedTasks, levels, currentLevel + 1)
+            val subgroups = applyGroupingLevel(uncategorizedTasks, levels, currentLevel + 1, today)
             result.add(
                 TaskGroup(
                     label = "",
@@ -592,16 +599,14 @@ private fun ViewMode.applyGroupingLevel(
 }
 
 /**
- * Checks if a task matches a group definition based on the field type.
- */
-private fun matchesGroup(task: TaskWithTotals, field: GroupableField, group: GroupDefinition): Boolean {
-    return task.matchesGroupFilter(group.toFilter(field))
-}
-
-/**
  * Checks if a task matches a GroupFilter.
+ *
+ * [today] is the date the caller considers current — a due-date group is expressed in days from
+ * today, so this has to come from the repository's clock rather than the wall clock, or the
+ * in-memory and SQL paths answer as of different days. Passing it in also reads it once per query
+ * instead of once per task.
  */
-internal fun TaskWithTotals.matchesGroupFilter(filter: GroupFilter): Boolean {
+internal fun TaskWithTotals.matchesGroupFilter(filter: GroupFilter, today: LocalDate): Boolean {
     return when (filter) {
         is GroupFilter.Values -> {
             getFieldValue(filter.field) in filter.values
@@ -649,8 +654,6 @@ internal fun TaskWithTotals.matchesGroupFilter(filter: GroupFilter): Boolean {
                 if (filter.minDays == null && filter.maxDays == null && filter.includeNull) {
                     false
                 } else {
-                    val now = Clock.System.now()
-                    val today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
                     val taskDate = dueDate.toLocalDateTime(TimeZone.currentSystemDefault()).date
                     val daysDiff = taskDate.toEpochDays() - today.toEpochDays()
                     val minOk = filter.minDays == null || daysDiff >= filter.minDays
@@ -663,7 +666,7 @@ internal fun TaskWithTotals.matchesGroupFilter(filter: GroupFilter): Boolean {
             task.tags.any { it in filter.tags }
         }
         is GroupFilter.Not -> {
-            filter.filters.none { matchesGroupFilter(it) }
+            filter.filters.none { matchesGroupFilter(it, today) }
         }
     }
 }

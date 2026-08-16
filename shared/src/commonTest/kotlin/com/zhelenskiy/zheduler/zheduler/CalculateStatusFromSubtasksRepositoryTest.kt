@@ -726,7 +726,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
-        assertEquals("Subtasks declined with a reason:\n[Only reason]", parentStatus.reason)
+        assertEquals("Subtasks declined with a reason:\nOnly reason", parentStatus.reason)
     }
 
     @Test
@@ -740,7 +740,7 @@ abstract class CalculateStatusFromSubtasksRepositoryTest: AbstractRepositoryTest
 
         val parentStatus = repo.getTaskById(parent.id)!!.status
         assertIs<TaskStatus.Declined>(parentStatus)
-        assertEquals("Subtask declined with a reason:\n[Single reason]", parentStatus.reason)
+        assertEquals("Subtask declined with a reason:\nSingle reason", parentStatus.reason)
     }
 
     // ===== Corner case: Hierarchical parent-child updates =====

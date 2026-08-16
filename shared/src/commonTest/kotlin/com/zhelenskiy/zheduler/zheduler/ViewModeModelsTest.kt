@@ -3,6 +3,9 @@
 package com.zhelenskiy.zheduler.zheduler
 
 import kotlinx.collections.immutable.PersistentSet
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.*
@@ -41,6 +44,9 @@ class ViewModeModelsTest {
 
     private fun now(): Instant = Clock.System.now()
 
+    /** Due-date groups are relative to a date; these cases mean "today" by the wall clock. */
+    private fun today(): LocalDate = now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+
     // ==================== TaskGroup isUncategorized Tests ====================
 
     @Test
@@ -77,7 +83,7 @@ class ViewModeModelsTest {
             createTask("3")
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(1, result.size)
         assertEquals("", result[0].label)
@@ -109,7 +115,7 @@ class ViewModeModelsTest {
             createTask("4", status = TaskStatus.Open)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(3, result.size)
         assertEquals("Open", result[0].label)
@@ -145,7 +151,7 @@ class ViewModeModelsTest {
             createTask("4", status = TaskStatus.Blocked(persistentSetOf())) // Not covered
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(3, result.size)
 
@@ -188,7 +194,7 @@ class ViewModeModelsTest {
             createTask("3", status = TaskStatus.Done)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(2, result.size)
         assertNull(result.find { it.isUncategorized })
@@ -214,7 +220,7 @@ class ViewModeModelsTest {
             createTask("2", status = TaskStatus.InProgress)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(1, result.size)
         assertTrue(result[0].isUncategorized)
@@ -250,7 +256,7 @@ class ViewModeModelsTest {
             createTask("3", status = TaskStatus.InProgress, priority = Priority.HIGH) // Uncategorized at level 1
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(2, result.size) // Open group + uncategorized at level 1
 
@@ -303,7 +309,7 @@ class ViewModeModelsTest {
         val task = createTask("1", status = TaskStatus.Open, priority = Priority.HIGH)
         // Task has no connections, so it should be uncategorized at level 3
 
-        val result = viewMode.applyTo(listOf(task))
+        val result = viewMode.applyTo(listOf(task), today())
 
         val openGroup = result.find { it.label == "Open" }
         assertNotNull(openGroup)
@@ -356,7 +362,7 @@ class ViewModeModelsTest {
             createTask("3", priority = Priority(90))
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(3, result.size)
         assertEquals(1, result[0].tasks.size)
@@ -392,7 +398,7 @@ class ViewModeModelsTest {
             createTask("3", priority = Priority(80))
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val highGroup = result.find { it.label == "High (50+)" }
         assertNotNull(highGroup)
@@ -429,7 +435,7 @@ class ViewModeModelsTest {
             createTask("3", priority = Priority(80))
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val lowGroup = result.find { it.label == "Low (up to 50)" }
         assertNotNull(lowGroup)
@@ -467,7 +473,7 @@ class ViewModeModelsTest {
             createTask("3", priority = Priority(80))
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val group = result.find { it.label == "No Priority or Low" }
         assertNotNull(group)
@@ -506,7 +512,7 @@ class ViewModeModelsTest {
             createTask("5", priority = Priority(76))  // Above
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val group = result.find { it.label == "Exact Range" }
         assertNotNull(group)
@@ -559,7 +565,7 @@ class ViewModeModelsTest {
             createTask("3", dueDate = baseTime + 14.days) // Later
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(3, result.size)
 
@@ -606,7 +612,7 @@ class ViewModeModelsTest {
             createTask("3", dueDate = baseTime - 1.days) // Overdue, not matched
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val group = result.find { it.label == "No Due Date or Future" }
         assertNotNull(group)
@@ -643,7 +649,7 @@ class ViewModeModelsTest {
             createTask("4", tags = persistentSetOf("other"))
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val bugGroup = result.find { it.label == "Bug" }
         assertNotNull(bugGroup)
@@ -679,7 +685,7 @@ class ViewModeModelsTest {
             createTask("2", tags = persistentSetOf())
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val uncategorized = result.find { it.isUncategorized }
         assertNotNull(uncategorized)
@@ -707,7 +713,7 @@ class ViewModeModelsTest {
             createTask("1", tags = persistentSetOf("bug", "urgent"))
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val bugGroup = result.find { it.label == "Bug" }
         assertNotNull(bugGroup)
@@ -758,7 +764,7 @@ class ViewModeModelsTest {
             TaskWithTotals(taskWithoutConnections, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(2, result.size)
 
@@ -815,7 +821,7 @@ class ViewModeModelsTest {
             TaskWithTotals(nonRecurringTask, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val recurringGroup = result.find { it.label == "Recurring" }
         assertNotNull(recurringGroup)
@@ -850,7 +856,7 @@ class ViewModeModelsTest {
             createTask("1", status = TaskStatus.Open)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(1, result.size)
         assertEquals("Open", result[0].label)
@@ -877,7 +883,7 @@ class ViewModeModelsTest {
             createTask("1", status = TaskStatus.Open)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(2, result.size)
 
@@ -920,7 +926,7 @@ class ViewModeModelsTest {
             createTask("4", status = TaskStatus.Done, priority = Priority.LOW)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         // Should have Active group + uncategorized at level 1
         assertEquals(2, result.size)
@@ -959,7 +965,7 @@ class ViewModeModelsTest {
             )
         )
 
-        val result = viewMode.applyTo(persistentListOf())
+        val result = viewMode.applyTo(persistentListOf(), today())
 
         assertTrue(result.isEmpty())
     }
@@ -1180,7 +1186,7 @@ class ViewModeModelsTest {
             createTask("3", priority = Priority.MEDIUM)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(1, result.size)
         val sortedTasks = result[0].tasks
@@ -1213,7 +1219,7 @@ class ViewModeModelsTest {
             createTask("2", status = TaskStatus.InProgress)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val uncategorized = result.find { it.isUncategorized }
         assertNotNull(uncategorized)
@@ -1249,7 +1255,7 @@ class ViewModeModelsTest {
             createTask("1", status = TaskStatus.Open, priority = Priority.HIGH)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val topLevel = result[0]
         assertEquals(0, topLevel.level)
@@ -1277,7 +1283,7 @@ class ViewModeModelsTest {
             createTask("1", status = TaskStatus.Done)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val uncategorized = result.find { it.isUncategorized }
         assertNotNull(uncategorized)
@@ -1325,7 +1331,7 @@ class ViewModeModelsTest {
             TaskWithTotals(taskWithoutNotifications, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(2, result.size)
 
@@ -1362,7 +1368,7 @@ class ViewModeModelsTest {
             spaceId = "space-1"
         )
 
-        val result = viewMode.applyTo(listOf(TaskWithTotals(taskWithoutNotifications, null, null)))
+        val result = viewMode.applyTo(listOf(TaskWithTotals(taskWithoutNotifications, null, null)), today())
 
         val uncategorized = result.find { it.isUncategorized }
         assertNotNull(uncategorized)
@@ -1406,7 +1412,7 @@ class ViewModeModelsTest {
             TaskWithTotals(taskWithoutAutoUpdate, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(2, result.size)
 
@@ -1444,7 +1450,7 @@ class ViewModeModelsTest {
             createTask("2", priority = Priority.LOW)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val highGroup = result.find { it.label == "High" }
         assertNotNull(highGroup)
@@ -1470,7 +1476,7 @@ class ViewModeModelsTest {
             createTask("3", priority = Priority.LOW)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(1, result.size)
         val sortedTasks = result[0].tasks
@@ -1496,7 +1502,7 @@ class ViewModeModelsTest {
             createTask("3", priority = Priority.LOW)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         assertEquals(1, result.size)
         val sortedTasks = result[0].tasks
@@ -1523,7 +1529,7 @@ class ViewModeModelsTest {
             createTask("3", dueDate = baseTime + 1.days)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val sortedTasks = result[0].tasks
         assertEquals("2", sortedTasks[0].task.id) // null first
@@ -1552,7 +1558,7 @@ class ViewModeModelsTest {
             createTask("4", title = "Gamma", priority = Priority.LOW)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val sortedTasks = result[0].tasks
         // First by priority descending (HIGH before LOW)
@@ -1584,7 +1590,7 @@ class ViewModeModelsTest {
             createTask("4", title = "D", status = TaskStatus.Open, priority = Priority.LOW, dueDate = baseTime + 1.days)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val sortedTasks = result[0].tasks
         // Status ascending (Open=0, InProgress=1)
@@ -1622,7 +1628,7 @@ class ViewModeModelsTest {
             TaskWithTotals(task4, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val sortedTasks = result[0].tasks
         assertEquals("TEST-1", sortedTasks[0].task.id)
@@ -1653,7 +1659,7 @@ class ViewModeModelsTest {
             TaskWithTotals(task3, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         // All have numeric value 0 (no digits), so they should remain in order
         // or be sorted by the default 0 value
@@ -1682,7 +1688,7 @@ class ViewModeModelsTest {
             TaskWithTotals(task3, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val sortedTasks = result[0].tasks
         assertEquals("TEST-5", sortedTasks[0].task.id)
@@ -1741,7 +1747,7 @@ class ViewModeModelsTest {
             createTask("5", status = TaskStatus.Declined("reason"))
         )
 
-        val result = mode.applyTo(tasks)
+        val result = mode.applyTo(tasks, today())
 
         assertEquals(3, result.size)
 
@@ -1784,7 +1790,7 @@ class ViewModeModelsTest {
             TaskWithTotals(task4, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val sortedTasks = result[0].tasks
         assertEquals("3", sortedTasks[0].task.id) // 30 min
@@ -1815,7 +1821,7 @@ class ViewModeModelsTest {
             TaskWithTotals(task3, null, null)
         )
 
-        val result = viewMode.applyTo(tasks)
+        val result = viewMode.applyTo(tasks, today())
 
         val sortedTasks = result[0].tasks
         assertEquals("2", sortedTasks[0].task.id) // null (first)

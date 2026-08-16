@@ -122,12 +122,17 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             statusTimelines.remove(taskId)
         }
 
+        // Matching the schema's ON DELETE CASCADE. Space ids are derived from how many spaces
+        // exist, so a leftover is inherited by the next space created with the same prefix.
         spaces.remove(spaceId)
         nextIdBySpace.remove(spaceId)
         filterStateBySpaceId.remove(spaceId)
         viewModeBySpaceId.remove(spaceId)
         filterPanelOpenBySpaceId.remove(spaceId)
         savedFilters.remove(spaceId)
+        tagsBySpace.remove(spaceId)
+        customViewModes.remove(spaceId)
+        activeViewModeBySpaceId.remove(spaceId)
         notifyChanged()
 
         true
@@ -797,9 +802,10 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
         // Get all tasks matching parent filters and filter criteria
         // Note: use internal method without mutex since we already hold it
+        val today = today()
         val allTasks = getAllWithTotalsFilteredUnsafe(spaceId, filterCriteria)
         val filteredTasks = allTasks.filter { task ->
-            parentFilters.all { filter -> task.matchesGroupFilter(filter) }
+            parentFilters.all { filter -> task.matchesGroupFilter(filter, today) }
         }
 
         val result = mutableListOf<TaskGroupInfo>()
@@ -809,7 +815,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         for (group in level.groups) {
             val groupFilter = group.toFilter(level.field)
             val matchingTasks = filteredTasks.filter { task ->
-                task.matchesGroupFilter(groupFilter)
+                task.matchesGroupFilter(groupFilter, today)
             }
 
             matchedTaskIds.addAll(matchingTasks.map { it.task.id })
@@ -868,8 +874,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         filterCriteria: TaskFilterCriteria
     ): Int = mutex.withLock {
         // Note: use internal method without mutex since we already hold it
+        val today = today()
         getAllWithTotalsFilteredUnsafe(spaceId, filterCriteria).count { task ->
-            filters.all { filter -> task.matchesGroupFilter(filter) }
+            filters.all { filter -> task.matchesGroupFilter(filter, today) }
         }
     }
 
@@ -884,10 +891,11 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         filterCriteria: TaskFilterCriteria
     ): List<TaskWithTotals> {
         // Note: use internal method without mutex since we already hold it
+        val today = today()
         val allTasks = getAllWithTotalsFilteredUnsafe(spaceId, filterCriteria)
 
         val filteredTasks = allTasks.filter { task ->
-            filters.all { filter -> task.matchesGroupFilter(filter) }
+            filters.all { filter -> task.matchesGroupFilter(filter, today) }
         }
 
         return filteredTasks.sortedWith(createComparator(orderingRules))

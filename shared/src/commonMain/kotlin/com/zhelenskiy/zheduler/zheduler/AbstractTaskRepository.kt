@@ -8,6 +8,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -254,7 +255,7 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
                         .mapNotNull { status -> (status as TaskStatus.Declined).reason.takeIf { it.isNotBlank() } }
                     val message = when (messages.size) {
                         0 -> "Subtask$pluralSuffix declined without a reason"
-                        1 -> "Subtask$pluralSuffix declined with a reason:\n$messages"
+                        1 -> "Subtask$pluralSuffix declined with a reason:\n${messages.single()}"
                         else -> "Subtask$pluralSuffix declined with reasons:\n" + messages.joinToString("\n")
                     }
                     TaskStatus.Declined(message)
@@ -951,11 +952,15 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
     }
 
     /**
-     * The bounds a `Custom` estimated-time criterion asks for, in seconds; either end may be
-     * absent, and an unparseable bound is simply not a bound.
-     *
-     * The criterion is entered as compact time ("1h30m"), never as a number, so it has to go
-     * through [parseCompactTimeToPeriod] — the database repository binds these same two values.
+     * The current date by the repository's clock, which a due-date group is measured from. Read
+     * once per query and passed down, so a query cannot straddle midnight.
+     */
+    protected fun today(): LocalDate = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+
+    /**
+     * The bounds a `Custom` estimated-time criterion asks for, in seconds; either end may be absent,
+     * and an unparseable bound is simply not a bound. Entered as compact time ("1h30m"), never as a
+     * number.
      */
     protected fun customEstimatedTimeBounds(criteria: TaskFilterCriteria): Pair<Long?, Long?> =
         parseCompactTimeToPeriod(criteria.customEstimatedTimeMin)?.toApproximateSeconds() to

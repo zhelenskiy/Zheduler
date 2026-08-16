@@ -1512,11 +1512,12 @@ class RoomTaskRepository(
         filterCriteria: TaskFilterCriteria
     ): List<TaskGroupInfo> {
         // Get all tasks with totals filtered by criteria
+        val today = today()
         val allTasks = getAllWithTotalsFiltered(spaceId, filterCriteria)
 
         // Apply parent filters
         val filteredTasks = allTasks.filter { task ->
-            parentFilters.all { filter -> task.matchesGroupFilter(filter) }
+            parentFilters.all { filter -> task.matchesGroupFilter(filter, today) }
         }
 
         val result = mutableListOf<TaskGroupInfo>()
@@ -1526,7 +1527,7 @@ class RoomTaskRepository(
         for (group in level.groups) {
             val groupFilter = group.toFilter(level.field)
             val matchingTasks = filteredTasks.filter { task ->
-                task.matchesGroupFilter(groupFilter)
+                task.matchesGroupFilter(groupFilter, today)
             }
 
             matchedTaskIds.addAll(matchingTasks.map { it.task.id })

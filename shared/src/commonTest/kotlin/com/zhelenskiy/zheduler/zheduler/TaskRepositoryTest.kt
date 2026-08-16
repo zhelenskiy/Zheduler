@@ -1509,6 +1509,31 @@ abstract class TaskRepositoryTest: AbstractRepositoryTest {
     }
 
     @Test
+    fun `deleting a space forgets everything scoped to it`() = runTest {
+        val (repo, spaceId) = createRepositoryWithSpace()
+        repo.addTag(spaceId, "leftover")
+        val custom = ViewMode(id = "custom", name = "Custom", spaceId = spaceId)
+        repo.saveViewMode(custom)
+        repo.setActiveViewMode(spaceId, custom.id)
+        repo.saveSavedFilter(SavedFilter(id = "filter", name = "Filter", spaceId = spaceId, criteria = TaskFilterCriteria()))
+
+        assertTrue(repo.deleteSpace(spaceId))
+
+        // Space ids are derived from how many spaces exist, so recreating one with the same prefix
+        // lands on the id just freed: anything not cleaned up is inherited by the new space.
+        val recreated = repo.createSpace("Test", "TEST")!!
+
+        assertEquals(persistentSetOf(), repo.getAllTags(recreated.id), "tags outlived the space")
+        assertEquals(
+            emptyList(),
+            repo.getAllViewModes(recreated.id).filterNot { it.isBuiltIn },
+            "custom view modes outlived the space",
+        )
+        assertEquals("priority", repo.getActiveViewMode(recreated.id).id, "active view mode outlived the space")
+        assertEquals(emptyList(), repo.getAllSavedFilters(recreated.id), "saved filters outlived the space")
+    }
+
+    @Test
     fun `connections survive loading more tasks than fit in one IN clause`() = runTest {
         val (repo, spaceId) = createRepositoryWithSpace()
         val hub = repo.addTask(spaceId, title = "Hub")!!

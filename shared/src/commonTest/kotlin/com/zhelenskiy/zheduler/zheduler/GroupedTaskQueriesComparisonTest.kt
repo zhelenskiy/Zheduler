@@ -6,9 +6,13 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import kotlin.test.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.ExperimentalTime
 
 /**
@@ -1557,6 +1561,35 @@ class GroupedTaskQueriesComparisonTest {
                 ),
                 pageSize = 1,
             )
+        }
+    }
+
+    @Test
+    fun `compare dueDate grouping against an injected clock`() = runTest {
+        // Deliberately not "now": grouping by due date is relative to today, and both repositories
+        // have to read today from the clock they were given rather than from the wall clock.
+        val today = LocalDate(2024, 3, 14)
+        val clock = object : Clock {
+            override fun now() = today.atStartOfDayIn(TimeZone.currentSystemDefault()) + 9.hours
+        }
+
+        withTestContext(clock) {
+            setupTasks { spaceId ->
+                addTask(spaceId, title = "yesterday", dueDate = clock.now() - 1.days)
+                addTask(spaceId, title = "today", dueDate = clock.now() + 1.hours)
+                addTask(spaceId, title = "tomorrow", dueDate = clock.now() + 1.days)
+                addTask(spaceId, title = "no due date", dueDate = null)
+            }
+
+            val (_, todayOnly) = compareTasks(
+                persistentListOf(GroupFilter.DueDateRange(minDays = 0, maxDays = 0))
+            )
+            assertEquals(setOf("today"), todayOnly.map { it.task.title }.toSet())
+
+            val (_, overdue) = compareTasks(
+                persistentListOf(GroupFilter.DueDateRange(maxDays = -1))
+            )
+            assertEquals(setOf("yesterday"), overdue.map { it.task.title }.toSet())
         }
     }
 
