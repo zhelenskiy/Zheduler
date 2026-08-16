@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.db
 
+import androidx.room3.withWriteTransaction
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import com.zhelenskiy.zheduler.zheduler.paging.toPage
@@ -206,19 +207,22 @@ class RoomTaskRepository(
     }
 
     override suspend fun deleteSpace(spaceId: String): Boolean = mutex.withLock {
-        if (dao.getSpaceById(spaceId) == null) return@withLock false
+        // Detaching other spaces' tasks has to commit with the deletion itself.
+        database.withWriteTransaction {
+            if (dao.getSpaceById(spaceId) == null) return@withWriteTransaction false
 
-        val taskIdsInSpace = dao.getTasksBySpace(spaceId).map { it.id }.toSet()
+            val taskIdsInSpace = dao.getTasksBySpace(spaceId).map { it.id }.toSet()
 
-        handleCrossSpaceRelationshipsOnSpaceDeletion(
-            taskIdsInSpace,
-            getAllSpaces().flatMap { getTasksInSpace(it.id) },
-        )
+            handleCrossSpaceRelationshipsOnSpaceDeletion(
+                taskIdsInSpace,
+                getAllSpaces().flatMap { getTasksInSpace(it.id) },
+            )
 
-        dao.deleteSpace(spaceId)
-        notifyChanged()
+            dao.deleteSpace(spaceId)
+            notifyChanged()
 
-        true
+            true
+        }
     }
 
     override suspend fun getTasksInSpace(spaceId: String): List<Task> =
@@ -565,11 +569,13 @@ class RoomTaskRepository(
         recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean
     ): Task? = mutex.withLock {
-        if (dao.getSpaceById(spaceId) == null) return@withLock null
-        addTaskUnsafe(
-            spaceId, title, description, status, dueDate, priority, estimatedTime,
-            tags, connections, notifications, customId, recurrenceRules, autoUpdateStatusFromSubtasks
-        )?.also { notifyChanged() }
+        database.withWriteTransaction {
+            if (dao.getSpaceById(spaceId) == null) return@withWriteTransaction null
+            addTaskUnsafe(
+                spaceId, title, description, status, dueDate, priority, estimatedTime,
+                tags, connections, notifications, customId, recurrenceRules, autoUpdateStatusFromSubtasks
+            )?.also { notifyChanged() }
+        }
     }
 
     private suspend fun syncToDatabase(task: Task) {
@@ -592,7 +598,10 @@ class RoomTaskRepository(
     }
 
     override suspend fun updateTask(task: Task): Task? = mutex.withLock {
-        val oldTask = getByIdUnsafe(task.id) ?: return@withLock null
+        // A task's row, the connections on both sides of it, its tags and the status changes
+        // cascading from it are one edit; half of it leaves connections pointing one way only.
+        database.withWriteTransaction {
+        val oldTask = getByIdUnsafe(task.id) ?: return@withWriteTransaction null
 
         val removedConnections = oldTask.connections.removingAll(task.connections)
         removedConnections.forEach { connection ->
@@ -624,6 +633,7 @@ class RoomTaskRepository(
         notifyChanged()
 
         finalTask
+        }
     }
 
     override suspend fun recordStatusChange(
@@ -697,23 +707,27 @@ class RoomTaskRepository(
         hydrateTasksAcrossSpaces(dao.getSubtasks(taskId))
 
     override suspend fun deleteTask(id: String): Boolean = mutex.withLock {
-        val task = getByIdUnsafe(id) ?: return@withLock false
+        // Unblocking what this task blocked belongs to the deletion: half of it would leave
+        // tasks blocked by a task that no longer exists.
+        database.withWriteTransaction {
+            val task = getByIdUnsafe(id) ?: return@withWriteTransaction false
 
-        task.connections.forEach { connection ->
-            dao.deleteConnection(connection.targetTaskId, id, connection.type.symmetric.name)
+            task.connections.forEach { connection ->
+                dao.deleteConnection(connection.targetTaskId, id, connection.type.symmetric.name)
+            }
+
+            handleBlockerDeleted(id)
+
+            val parentTasks = getParentTasks(id)
+
+            dao.deleteTask(id)
+
+            // Update parent tasks' statuses after subtask deletion
+            updateParentStatuses(parentTasks)
+            notifyChanged()
+
+            true
         }
-
-        handleBlockerDeleted(id)
-
-        val parentTasks = getParentTasks(id)
-
-        dao.deleteTask(id)
-
-        // Update parent tasks' statuses after subtask deletion
-        updateParentStatuses(parentTasks)
-        notifyChanged()
-
-        true
     }
 
     override suspend fun getStatusTimeline(taskId: String): List<StatusChange> =
@@ -903,6 +917,8 @@ class RoomTaskRepository(
         }
 
         return mutex.withLock {
+            // An import is one space or none.
+            database.withWriteTransaction {
             val newPrefix = uniqueSpacePrefix(exportData.space.idPrefix) { dao.prefixExists(it) }
             val newSpaceId = "space-${dao.countSpaces()}-$newPrefix"
             val newSpace = Space(id = newSpaceId, name = exportData.space.name, idPrefix = newPrefix)
@@ -959,6 +975,7 @@ class RoomTaskRepository(
             notifyChanged()
 
             newSpace
+            }
         }
     }
 
@@ -1223,14 +1240,16 @@ class RoomTaskRepository(
         filterParams: FilterParams
     ): List<TaskGroupInfo> {
         val result = mutableListOf<TaskGroupInfo>()
+        val matchedIds = mutableSetOf<String>()
 
         // For each group definition, count matching tasks using SQL
         for (group in level.groups) {
             val groupFilter = group.toFilter(level.field)
             val combinedFilters = parentFilters.adding(groupFilter)
 
-            // Counting stops at the row level: headers never need the tasks themselves.
+            // Stops at the row level: a header needs the count, not connections or decoded JSON.
             val tasks = queryCandidateRows(spaceId, combinedFilters, filterParams)
+            tasks.mapTo(matchedIds) { it.id }
 
             if (tasks.isNotEmpty() || level.showEmptyGroups) {
                 result.add(
@@ -1245,8 +1264,6 @@ class RoomTaskRepository(
             }
         }
 
-        // Count uncategorized tasks using SQL with Not filter
-        // This avoids in-memory filtering by using the existing Not filter support
         if (level.groups.isNotEmpty()) {
             val allGroupFilters = level.groups.mapToPersistentList { it.toFilter(level.field) }
             val uncategorizedFilter = GroupFilter.Not(
@@ -1254,20 +1271,19 @@ class RoomTaskRepository(
                 filters = allGroupFilters
             )
 
-            // Get uncategorized tasks via SQL (Not filter is handled in queryCandidateRows)
-            val uncategorizedTasks = queryCandidateRows(
-                spaceId,
-                parentFilters.adding(uncategorizedFilter),
-                filterParams
-            )
+            // "Matches none of the groups" is what the loop above worked out, so take the
+            // difference; querying the Not filter re-ran the whole query once more per group.
+            val uncategorizedCount = queryCandidateRows(spaceId, parentFilters, filterParams)
+                .count { it.id !in matchedIds }
 
-            if (uncategorizedTasks.isNotEmpty()) {
+            if (uncategorizedCount > 0) {
                 result.add(
                     TaskGroupInfo(
                         label = "",
-                        taskCount = uncategorizedTasks.size,
+                        taskCount = uncategorizedCount,
                         isUncategorized = true,
                         groupDefinition = null,
+                        // The leaf query still resolves this filter when the group is opened.
                         filter = uncategorizedFilter
                     )
                 )

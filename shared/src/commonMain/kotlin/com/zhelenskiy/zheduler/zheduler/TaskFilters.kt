@@ -4,6 +4,7 @@ package com.zhelenskiy.zheduler.zheduler
 
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.serialization.Serializable
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -170,10 +171,16 @@ enum class ConnectionTypeOption {
 
 /**
  * Data class representing all filter criteria for tasks
+ *
+ * Serialized directly to storage, so the property names, their order and the encoding of instants
+ * as epoch milliseconds are a format already on disk.
  */
+@Serializable
 data class TaskFilterCriteria(
     val searchQuery: String = "",
+    @Serializable(with = PersistentSetSerializer::class)
     val textSearchFields: PersistentSet<TaskTextSearchField> = persistentSetOf(TaskTextSearchField.Id, TaskTextSearchField.Title),
+    @Serializable(with = PersistentSetSerializer::class)
     val statusFilters: PersistentSet<TaskStatus> = persistentSetOf(),
     val dueDateFilter: DueDateFilter = DueDateFilter.Any,
     val priorityFilter: PriorityFilter = PriorityFilter.Any,
@@ -181,12 +188,16 @@ data class TaskFilterCriteria(
     val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,
     val notificationsFilter: NotificationsFilter = NotificationsFilter.Any,
     val autoUpdateStatusFilter: AutoUpdateStatusFilter = AutoUpdateStatusFilter.Any,
+    @Serializable(with = PersistentSetSerializer::class)
     val connectionTypeFilters: PersistentSet<ConnectionTypeOption> = persistentSetOf(),
+    @Serializable(with = PersistentSetSerializer::class)
     val selectedTags: PersistentSet<String> = persistentSetOf(),
     val tagMatchMode: TagMatchMode = TagMatchMode.All,
     val customPriorityMin: String = "",
     val customPriorityMax: String = "",
+    @Serializable(with = InstantSerializer::class)
     val customDueDateBefore: Instant? = null,
+    @Serializable(with = InstantSerializer::class)
     val customDueDateAfter: Instant? = null,
     val customEstimatedTimeMin: String = "",
     val customEstimatedTimeMax: String = "",

@@ -97,109 +97,12 @@ fun String.toRecurrenceRuleList(): PersistentList<Pair<RecurrenceRule, Recurrenc
 /**
  * Convert TaskFilterCriteria to JSON string for storage
  */
-fun TaskFilterCriteria.toJson(): String = dbJson.encodeToString(TaskFilterCriteriaSerializable.from(this))
+fun TaskFilterCriteria.toJson(): String = dbJson.encodeToString(this)
 
 /**
  * Convert JSON string to TaskFilterCriteria
  */
-fun String.toTaskFilterCriteria(): TaskFilterCriteria = dbJson.decodeFromString<TaskFilterCriteriaSerializable>(this).toModel()
-
-/**
- * Serializable version of TaskFilterCriteria
- */
-@Serializable
-data class TaskFilterCriteriaSerializable(
-    val searchQuery: String = "",
-    @Serializable(with = PersistentSetSerializer::class)
-    val textSearchFields: PersistentSet<TaskTextSearchField> = persistentSetOf(TaskTextSearchField.Id, TaskTextSearchField.Title),
-    @Serializable(with = PersistentSetSerializer::class)
-    val statusFilters: PersistentSet<TaskStatus> = persistentSetOf(),
-    val dueDateFilter: DueDateFilter = DueDateFilter.Any,
-    val priorityFilter: PriorityFilter = PriorityFilter.Any,
-    val estimatedTimeFilter: EstimatedTimeFilter = EstimatedTimeFilter.Any,
-    val recurrenceFilter: RecurrenceFilter = RecurrenceFilter.Any,
-    val notificationsFilter: NotificationsFilter = NotificationsFilter.Any,
-    val autoUpdateStatusFilter: AutoUpdateStatusFilter = AutoUpdateStatusFilter.Any,
-    @Serializable(with = PersistentSetSerializer::class)
-    val connectionTypeFilters: PersistentSet<ConnectionTypeOption> = persistentSetOf(),
-    @Serializable(with = PersistentSetSerializer::class)
-    val selectedTags: PersistentSet<String> = persistentSetOf(),
-    val tagMatchMode: TagMatchMode = TagMatchMode.All,
-    val customPriorityMin: String = "",
-    val customPriorityMax: String = "",
-    val customDueDateBefore: Long? = null,
-    val customDueDateAfter: Long? = null,
-    val customEstimatedTimeMin: String = "",
-    val customEstimatedTimeMax: String = "",
-    val dependsOnTaskIds: String = "",
-    val isDependencyOfTaskIds: String = "",
-    val relatesToTaskIds: String = "",
-    val subtaskOfTaskIds: String = "",
-    val parentOfTaskIds: String = "",
-    val blockedByTaskIds: String = "",
-    val blockedByComment: String = "",
-    val declinedReason: String = ""
-) {
-    fun toModel() = TaskFilterCriteria(
-        searchQuery = searchQuery,
-        textSearchFields = textSearchFields,
-        statusFilters = statusFilters,
-        dueDateFilter = dueDateFilter,
-        priorityFilter = priorityFilter,
-        estimatedTimeFilter = estimatedTimeFilter,
-        recurrenceFilter = recurrenceFilter,
-        notificationsFilter = notificationsFilter,
-        autoUpdateStatusFilter = autoUpdateStatusFilter,
-        connectionTypeFilters = connectionTypeFilters,
-        selectedTags = selectedTags,
-        tagMatchMode = tagMatchMode,
-        customPriorityMin = customPriorityMin,
-        customPriorityMax = customPriorityMax,
-        customDueDateBefore = customDueDateBefore?.let { Instant.fromEpochMilliseconds(it) },
-        customDueDateAfter = customDueDateAfter?.let { Instant.fromEpochMilliseconds(it) },
-        customEstimatedTimeMin = customEstimatedTimeMin,
-        customEstimatedTimeMax = customEstimatedTimeMax,
-        dependsOnTaskIds = dependsOnTaskIds,
-        isDependencyOfTaskIds = isDependencyOfTaskIds,
-        relatesToTaskIds = relatesToTaskIds,
-        subtaskOfTaskIds = subtaskOfTaskIds,
-        parentOfTaskIds = parentOfTaskIds,
-        blockedByTaskIds = blockedByTaskIds,
-        blockedByComment = blockedByComment,
-        declinedReason = declinedReason
-    )
-
-    companion object {
-        fun from(criteria: TaskFilterCriteria) = TaskFilterCriteriaSerializable(
-            searchQuery = criteria.searchQuery,
-            textSearchFields = criteria.textSearchFields,
-            statusFilters = criteria.statusFilters,
-            dueDateFilter = criteria.dueDateFilter,
-            priorityFilter = criteria.priorityFilter,
-            estimatedTimeFilter = criteria.estimatedTimeFilter,
-            recurrenceFilter = criteria.recurrenceFilter,
-            notificationsFilter = criteria.notificationsFilter,
-            autoUpdateStatusFilter = criteria.autoUpdateStatusFilter,
-            connectionTypeFilters = criteria.connectionTypeFilters,
-            selectedTags = criteria.selectedTags,
-            tagMatchMode = criteria.tagMatchMode,
-            customPriorityMin = criteria.customPriorityMin,
-            customPriorityMax = criteria.customPriorityMax,
-            customDueDateBefore = criteria.customDueDateBefore?.toEpochMilliseconds(),
-            customDueDateAfter = criteria.customDueDateAfter?.toEpochMilliseconds(),
-            customEstimatedTimeMin = criteria.customEstimatedTimeMin,
-            customEstimatedTimeMax = criteria.customEstimatedTimeMax,
-            dependsOnTaskIds = criteria.dependsOnTaskIds,
-            isDependencyOfTaskIds = criteria.isDependencyOfTaskIds,
-            relatesToTaskIds = criteria.relatesToTaskIds,
-            subtaskOfTaskIds = criteria.subtaskOfTaskIds,
-            parentOfTaskIds = criteria.parentOfTaskIds,
-            blockedByTaskIds = criteria.blockedByTaskIds,
-            blockedByComment = criteria.blockedByComment,
-            declinedReason = criteria.declinedReason
-        )
-    }
-}
+fun String.toTaskFilterCriteria(): TaskFilterCriteria = dbJson.decodeFromString(this)
 
 /**
  * Serializable version of ViewMode config (without id, spaceId, name, isBuiltIn which are stored separately)
