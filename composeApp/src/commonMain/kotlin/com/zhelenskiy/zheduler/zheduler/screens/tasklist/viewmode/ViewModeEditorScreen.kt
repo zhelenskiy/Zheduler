@@ -32,8 +32,10 @@ import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.TagSelectionDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeAction
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.reportingFailure
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeIntent
 import org.jetbrains.compose.resources.painterResource
 import pro.respawn.flowmvi.compose.dsl.subscribe
@@ -67,21 +69,35 @@ fun ViewModeEditorScreen(
     }
     val isCopy = copyFromViewModeId != null
 
-    var viewMode by remember { mutableStateOf<ViewMode?>(null) }
-    LaunchedEffect(viewModeId, copyFromViewModeId) {
-        viewMode = when {
-            viewModeId != null -> container.getViewModeById(viewModeId)
-            copyFromViewModeId != null -> container.getViewModeById(copyFromViewModeId)?.let {
-                container.copyViewMode(it)
-            }
-            else -> null
-        }
+    // One editor for the life of this screen, kept across activity recreation, rather than one
+    // rebuilt from the stored view mode whenever the read finishes — which is what used to throw
+    // away everything arranged before a rotation.
+    val editorState = rememberSaveable(spaceId, isCopy, saver = ViewModeEditorState.saver(spaceId, isCopy)) {
+        ViewModeEditorState(spaceId = spaceId, isCopy = isCopy)
     }
-    val editorState = rememberViewModeEditorState(viewMode, spaceId, isCopy)
+    // The read happens once. A restored editor already holds the answer, and loading over it would
+    // undo the edits the restore just brought back.
+    var loadAttempted by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(viewModeId, copyFromViewModeId) {
+        if (loadAttempted) return@LaunchedEffect
+        // Awaited straight from an effect, so a database error is reported rather than thrown into
+        // the composition, where nothing would catch it.
+        val loaded = container.reportingFailure<ViewMode?>(null) {
+            when {
+                viewModeId != null -> container.getViewModeById(viewModeId)
+                copyFromViewModeId != null -> container.getViewModeById(copyFromViewModeId)?.let {
+                    container.copyViewMode(it)
+                }
+                else -> null
+            }
+        }
+        loaded?.let(editorState::startFrom)
+        loadAttempted = true
+    }
     val validationResult by rememberViewModeValidation(editorState)
     val isValid = validationResult is GroupingValidationResult.Valid
-    val isNewMode = viewMode == null
-    var showDiscardDialog by remember { mutableStateOf(false) }
+    val isNewMode = editorState.baseline == null
+    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
     if (showDiscardDialog) {
         AlertDialog(

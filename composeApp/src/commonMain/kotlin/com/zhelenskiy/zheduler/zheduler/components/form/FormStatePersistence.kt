@@ -54,7 +54,32 @@ data class PersistedFormState(
     val notifications: PersistentList<String>?,
     val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>?,
     val autoUpdateStatusFromSubtasks: Boolean?,
+    /**
+     * Which of these fields the user actually changed, or null in a record written before this
+     * was tracked.
+     *
+     * A record is applied to whatever form is on screen when it is read back, and that is not
+     * always the form it was written from: opening "copy task" builds an empty form first and
+     * rebuilds it when the copied task arrives. Applying the record whole then put the empty form
+     * back over the prefill, and the copy was gone. Only what the user touched is applied.
+     */
+    val editedFields: Set<String>? = null,
 )
+
+/** Field names for [PersistedFormState.editedFields]. Stored, so they may not be renamed freely. */
+internal object FormField {
+    const val TITLE = "title"
+    const val DESCRIPTION = "description"
+    const val PRIORITY = "priority"
+    const val ESTIMATED_TIME = "estimatedTime"
+    const val TAGS = "tags"
+    const val DUE_DATE = "dueDate"
+    const val STATUS = "status"
+    const val CONNECTIONS = "connections"
+    const val NOTIFICATIONS = "notifications"
+    const val RECURRENCE_RULES = "recurrenceRules"
+    const val AUTO_UPDATE_STATUS = "autoUpdateStatus"
+}
 
 /**
  * Stores a task form in the navigation entry's [SavedStateHandle], so that leaving the app in the
@@ -91,6 +116,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
             recurrenceRules = decode<List<Pair<RecurrenceRule, RecurrenceState>>>(KEY_RECURRENCE_RULES)
                 ?.toPersistentList(),
             autoUpdateStatusFromSubtasks = savedStateHandle[KEY_AUTO_UPDATE_STATUS],
+            editedFields = decode<Set<String>>(KEY_EDITED_FIELDS),
         )
     }
 
@@ -115,6 +141,8 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         savedStateHandle[KEY_RECURRENCE_RULES] = state.recurrenceRules
             ?.let { Json.encodeToString<List<Pair<RecurrenceRule, RecurrenceState>>>(it) }
         savedStateHandle[KEY_AUTO_UPDATE_STATUS] = state.autoUpdateStatusFromSubtasks
+        savedStateHandle[KEY_EDITED_FIELDS] =
+            state.editedFields?.let { Json.encodeToString<Set<String>>(it) }
     }
 
     fun clear() {
@@ -131,6 +159,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         savedStateHandle.remove<String>(KEY_NOTIFICATIONS)
         savedStateHandle.remove<String>(KEY_RECURRENCE_RULES)
         savedStateHandle.remove<Boolean>(KEY_AUTO_UPDATE_STATUS)
+        savedStateHandle.remove<String>(KEY_EDITED_FIELDS)
     }
 
     private companion object {
@@ -148,6 +177,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         const val KEY_NOTIFICATIONS = "form_notifications"
         const val KEY_RECURRENCE_RULES = "form_recurrence_rules"
         const val KEY_AUTO_UPDATE_STATUS = "form_auto_update_status"
+        const val KEY_EDITED_FIELDS = "form_edited_fields"
     }
 }
 
@@ -167,29 +197,56 @@ fun TaskFormState.toPersistedState() = PersistedFormState(
     autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks,
 )
 
+/** The names of the fields where this record differs from [base]; see [PersistedFormState.editedFields]. */
+internal fun PersistedFormState.fieldsDifferingFrom(base: PersistedFormState): Set<String> = buildSet {
+    if (title != base.title) add(FormField.TITLE)
+    if (description != base.description) add(FormField.DESCRIPTION)
+    if (priority != base.priority) add(FormField.PRIORITY)
+    if (estimatedTime != base.estimatedTime) add(FormField.ESTIMATED_TIME)
+    if (tags != base.tags) add(FormField.TAGS)
+    if (dueDate != base.dueDate) add(FormField.DUE_DATE)
+    if (status != base.status) add(FormField.STATUS)
+    if (connections != base.connections) add(FormField.CONNECTIONS)
+    if (notifications != base.notifications) add(FormField.NOTIFICATIONS)
+    if (recurrenceRules != base.recurrenceRules) add(FormField.RECURRENCE_RULES)
+    if (autoUpdateStatusFromSubtasks != base.autoUpdateStatusFromSubtasks) add(FormField.AUTO_UPDATE_STATUS)
+}
+
 /**
- * Overwrites every field this state covers.
+ * Puts back what the user changed, and only that.
  *
- * A stored record always describes a whole form — nothing is written until the form has been
- * restored — so it is applied as it stands, blanks included. Skipping the blanks resurrected a due
- * date or a set of tags the user had removed.
+ * A changed field is applied as it stands, blanks included: a due date or a tag set the user
+ * cleared is an edit like any other, and skipping the blanks used to resurrect it. What they never
+ * touched is left as the form has it, which is how a form rebuilt from data that arrived late —
+ * the task being copied, say — keeps its prefill instead of being flattened by a record written
+ * before that data existed.
+ *
+ * A record from a build that did not track this ([PersistedFormState.editedFields] null) is
+ * applied whole, as it used to be.
  */
 fun PersistedFormState.applyTo(formState: TaskFormState) {
-    formState.title = title.orEmpty()
-    formState.description = description.orEmpty()
-    formState.priority = priority.orEmpty()
-    formState.estimatedTime = estimatedTime.orEmpty()
-    formState.tags = tags
-    formState.dueDate = dueDate
-    // Except a value that would not decode: that is a record this build cannot read, not an edit
-    // the user made, and overwriting a live form with it would lose more than it restored.
-    status?.let { formState.status = it }
-    connections?.let { formState.connections = it }
-    autoUpdateStatusFromSubtasks?.let { formState.autoUpdateStatusFromSubtasks = it }
-    if (notifications != null || recurrenceRules != null) {
+    val edited = editedFields
+    fun changed(field: String) = edited == null || field in edited
+
+    if (changed(FormField.TITLE)) formState.title = title.orEmpty()
+    if (changed(FormField.DESCRIPTION)) formState.description = description.orEmpty()
+    if (changed(FormField.PRIORITY)) formState.priority = priority.orEmpty()
+    if (changed(FormField.ESTIMATED_TIME)) formState.estimatedTime = estimatedTime.orEmpty()
+    if (changed(FormField.TAGS)) formState.tags = tags
+    if (changed(FormField.DUE_DATE)) formState.dueDate = dueDate
+    // A value that would not decode is a record this build cannot read, not an edit the user made,
+    // and overwriting a live form with it would lose more than it restored.
+    if (changed(FormField.STATUS)) status?.let { formState.status = it }
+    if (changed(FormField.CONNECTIONS)) connections?.let { formState.connections = it }
+    if (changed(FormField.AUTO_UPDATE_STATUS)) {
+        autoUpdateStatusFromSubtasks?.let { formState.autoUpdateStatusFromSubtasks = it }
+    }
+    val restoredNotifications = notifications.takeIf { changed(FormField.NOTIFICATIONS) }
+    val restoredRules = recurrenceRules.takeIf { changed(FormField.RECURRENCE_RULES) }
+    if (restoredNotifications != null || restoredRules != null) {
         formState.restoreEntries(
-            notifications = notifications ?: formState.notifications,
-            recurrenceRules = recurrenceRules ?: formState.recurrenceRules,
+            notifications = restoredNotifications ?: formState.notifications,
+            recurrenceRules = restoredRules ?: formState.recurrenceRules,
         )
     }
 }
@@ -230,6 +287,11 @@ fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
         if (!edited && current == builtWith) return@LaunchedEffect
         edited = true
         // The base travels with the record: what the form started from, not what it holds now.
-        persistence.write(current.copy(connectionsBase = builtWith.connections))
+        persistence.write(
+            current.copy(
+                connectionsBase = builtWith.connections,
+                editedFields = current.fieldsDifferingFrom(builtWith),
+            )
+        )
     }
 }

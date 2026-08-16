@@ -1,6 +1,9 @@
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
 
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import kotlinx.serialization.json.Json
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toPersistentSet
@@ -13,9 +16,11 @@ import kotlin.uuid.Uuid
  */
 @Stable
 class ViewModeEditorState(
-    private val initialViewMode: ViewMode? = null,
+    initialViewMode: ViewMode? = null,
     private val spaceId: String,
-    private val isCopy: Boolean = false
+    private val isCopy: Boolean = false,
+    /** The id a restored editor had already settled on; see [idToSave]. */
+    restoredId: String? = null,
 ) {
     var name by mutableStateOf(initialViewMode?.name ?: "")
     var groupingLevels = mutableStateListOf<GroupingLevelState>().apply {
@@ -29,7 +34,17 @@ class ViewModeEditorState(
         }
     }
 
-    private val originalId: String? = initialViewMode?.id
+    /**
+     * The view mode this editor started from, and judges its changes against.
+     *
+     * Settled after construction, because the screen composes before the read finishes. Held
+     * separately from the content so that a restored editor still knows what "unsaved" means.
+     */
+    var baseline: ViewMode? = initialViewMode
+        private set
+
+    /** Minted once per editor, and carried across a restore so a rotation cannot fork the id. */
+    private val mintedId: String = restoredId ?: generateId()
 
     /**
      * The id this editor will save under, settled once.
@@ -37,7 +52,25 @@ class ViewModeEditorState(
      * Minting it inside [toViewMode] gave a different id to every call, so a second tap on Save
      * before the screen had gone created a second view mode rather than rewriting the first.
      */
-    private val idToSave: String = originalId ?: generateId()
+    private val idToSave: String get() = baseline?.id ?: mintedId
+
+    /**
+     * Loads [viewMode] as both the content and the baseline: this is what is being edited, and
+     * what leaving without saving would discard.
+     */
+    fun startFrom(viewMode: ViewMode) {
+        baseline = viewMode
+        applyContentOf(viewMode)
+    }
+
+    /** Replaces everything on screen with [viewMode]'s content, leaving the baseline alone. */
+    private fun applyContentOf(viewMode: ViewMode) {
+        name = viewMode.name
+        groupingLevels.clear()
+        viewMode.groupingLevels.forEach { groupingLevels.add(GroupingLevelState(it)) }
+        defaultOrderingRules.clear()
+        viewMode.defaultOrderingRules.forEach { defaultOrderingRules.add(OrderingRuleState(it)) }
+    }
 
     fun toViewMode(): ViewMode = ViewMode(
         id = idToSave,
@@ -68,6 +101,7 @@ class ViewModeEditorState(
         // Copied mode is always considered to have changes (it's a new unsaved mode)
         if (isCopy) return true
 
+        val initialViewMode = baseline
         if (initialViewMode == null) {
             // A new mode. Ordering counts as work too: editing only the default order and then
             // pressing back discarded it without the confirmation every other edit gets.
@@ -111,6 +145,35 @@ class ViewModeEditorState(
             val item = defaultOrderingRules.removeAt(fromIndex)
             defaultOrderingRules.add(toIndex, item)
         }
+    }
+
+    companion object {
+        /**
+         * Carries an editor across activity recreation: what is being edited, and what it started
+         * from, so leaving still asks about unsaved changes.
+         *
+         * A rotation used to rebuild the editor from the stored view mode, discarding every
+         * grouping level, group and ordering rule the user had arranged, with none of the
+         * confirmation the back arrow gives. What does not survive is a bound the user has
+         * half-typed: the snapshot goes through [ViewMode], where "10 to" or "abc" is already a
+         * null. That is a stray character against the whole edit.
+         */
+        fun saver(spaceId: String, isCopy: Boolean): Saver<ViewModeEditorState, Any> = listSaver(
+            save = { state ->
+                listOf(
+                    Json.encodeToString(state.toViewMode()),
+                    state.baseline?.let { Json.encodeToString(it) },
+                )
+            },
+            restore = { saved ->
+                runCatching {
+                    val edited = Json.decodeFromString<ViewMode>(saved[0] as String)
+                    val baseline = (saved[1] as String?)?.let { Json.decodeFromString<ViewMode>(it) }
+                    ViewModeEditorState(baseline, spaceId, isCopy, restoredId = edited.id)
+                        .apply { applyContentOf(edited) }
+                }.getOrNull()
+            },
+        )
     }
 }
 

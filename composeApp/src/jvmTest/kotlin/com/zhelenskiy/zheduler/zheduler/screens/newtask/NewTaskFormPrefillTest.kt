@@ -83,6 +83,37 @@ class NewTaskFormPrefillTest {
 
     @OptIn(ExperimentalTestApi::class)
     @Test
+    fun typingBeforeTheCopyArrivesKeepsBoth() = runComposeUiTest {
+        val handle = SavedStateHandle()
+        var toCopy by mutableStateOf<Task?>(null)
+        lateinit var formState: TaskFormState
+
+        setContent {
+            formState = rememberFormStateFromData(toCopy, persistentSetOf())
+            formState.persistedIn(FormStatePersistence(handle))
+        }
+        waitForIdle()
+
+        // Impatience: a title typed into the empty form while the task being copied is still
+        // being read. The record written for it used to be applied whole over the prefilled
+        // rebuild, so the copy arrived and vanished in the same frame.
+        formState.title = "Weekly report, revised"
+        waitForIdle()
+
+        toCopy = Task(
+            id = "TASK-1",
+            title = "Weekly report",
+            description = "Numbers for the week",
+            spaceId = "space-1",
+        )
+        waitForIdle()
+
+        assertEquals("Weekly report, revised", formState.title, "what the user typed wins")
+        assertEquals("Numbers for the week", formState.description, "the rest of the copy survives")
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
     fun typedInputIsRestoredAfterProcessDeath() = runComposeUiTest {
         val handle = SavedStateHandle()
 
