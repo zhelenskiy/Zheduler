@@ -415,10 +415,14 @@ fun SpaceListScreen(
             container.store.intent(SpaceListIntent.DeleteTagFromSpace(spaceId, tag))
         },
         onExportSpace = { spaceId, prettyPrint ->
-            container.store.intent(SpaceListIntent.ExportSpaceToJson(spaceId, prettyPrint))
+            container.nextRequestId().also { requestId ->
+                container.store.intent(SpaceListIntent.ExportSpaceToJson(requestId, spaceId, prettyPrint))
+            }
         },
         onImportSpace = { jsonString ->
-            container.store.intent(SpaceListIntent.ImportSpaceFromJson(jsonString))
+            container.nextRequestId().also { requestId ->
+                container.store.intent(SpaceListIntent.ImportSpaceFromJson(requestId, jsonString))
+            }
         },
         onClearAllData = {
             container.store.intent(SpaceListIntent.ClearAllData)
@@ -438,8 +442,8 @@ private fun SpaceListDialogs(
     onLoadTagsForSpace: (spaceId: String) -> Unit,
     onAddTagToSpace: (spaceId: String, tag: String) -> Unit,
     onDeleteTagFromSpace: (spaceId: String, tag: String) -> Unit,
-    onExportSpace: (spaceId: String, prettyPrint: Boolean) -> Unit,
-    onImportSpace: (jsonString: String) -> Unit,
+    onExportSpace: (spaceId: String, prettyPrint: Boolean) -> Long,
+    onImportSpace: (jsonString: String) -> Long,
     onClearAllData: () -> Unit
 ) {
     if (dialogState.showNewSpace) {
@@ -558,15 +562,22 @@ private fun ExportSpaceDialog(
     space: Space,
     exportResult: ExportResult?,
     onDismiss: () -> Unit,
-    onExportSpace: (spaceId: String, prettyPrint: Boolean) -> Unit,
+    onExportSpace: (spaceId: String, prettyPrint: Boolean) -> Long,
     snackbarHostState: SnackbarHostState,
     parentScope: CoroutineScope
 ) {
     var prettyPrint by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
 
-    // Track which action to perform when export result arrives
+    // What to do with the export once it arrives, and which request it is waiting for.
     var pendingAction by remember { mutableStateOf<ExportAction?>(null) }
+    var pendingRequestId by remember { mutableStateOf<Long?>(null) }
+
+    /** Asks for a fresh export and records what to do with it. */
+    fun requestExport(action: ExportAction) {
+        pendingAction = action
+        pendingRequestId = onExportSpace(space.id, prettyPrint)
+    }
 
     // Track the selected file for save action
     var pendingFile by remember { mutableStateOf<PlatformFile?>(null) }
@@ -574,8 +585,9 @@ private fun ExportSpaceDialog(
     val fileSaverLauncher = rememberFileSaverLauncher { pendingFile = it }
 
     // Handle when export completes via state
-    LaunchedEffect(exportResult, pendingAction, pendingFile) {
-        if (exportResult == null || exportResult.spaceId != space.id) return@LaunchedEffect
+    LaunchedEffect(exportResult, pendingAction, pendingRequestId, pendingFile) {
+        // Anything but the answer to the request just made is the previous export still in state.
+        if (exportResult == null || exportResult.requestId != pendingRequestId) return@LaunchedEffect
         val json = exportResult.json
         val action = pendingAction ?: return@LaunchedEffect
 
@@ -624,6 +636,7 @@ private fun ExportSpaceDialog(
             }
         }
         pendingAction = null
+        pendingRequestId = null
         pendingFile = null
     }
 
@@ -658,8 +671,7 @@ private fun ExportSpaceDialog(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            pendingAction = ExportAction.Copy
-                            onExportSpace(space.id, prettyPrint)
+                            requestExport(ExportAction.Copy)
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -672,8 +684,7 @@ private fun ExportSpaceDialog(
                     if (fileSaverLauncher != null) {
                         OutlinedButton(
                             onClick = {
-                                pendingAction = ExportAction.Save
-                                onExportSpace(space.id, prettyPrint)
+                                requestExport(ExportAction.Save)
                                 fileSaverLauncher.launch(
                                     suggestedName = fileName,
                                     defaultExtension = "json"
@@ -689,8 +700,7 @@ private fun ExportSpaceDialog(
                     if (supportsDownloading) {
                         OutlinedButton(
                             onClick = {
-                                pendingAction = ExportAction.Download
-                                onExportSpace(space.id, prettyPrint)
+                                requestExport(ExportAction.Download)
                             },
                             modifier = Modifier.weight(1f)
                         ) {
@@ -715,17 +725,18 @@ private fun ExportSpaceDialog(
 private fun ImportSpaceDialog(
     importResult: ImportResult?,
     onDismiss: () -> Unit,
-    onImportSpace: (String) -> Unit,
+    onImportSpace: (String) -> Long,
     snackbarHostState: SnackbarHostState,
     parentScope: CoroutineScope
 ) {
     val coroutineScope = rememberCoroutineScope()
     var jsonText by remember { mutableStateOf("") }
-    var awaitingResult by remember { mutableStateOf(false) }
+    var pendingRequestId by remember { mutableStateOf<Long?>(null) }
 
     // Handle import result from state
-    LaunchedEffect(importResult, awaitingResult) {
-        if (!awaitingResult || importResult == null) return@LaunchedEffect
+    LaunchedEffect(importResult, pendingRequestId) {
+        // Anything but the answer to the request just made is the previous import still in state.
+        if (importResult == null || importResult.requestId != pendingRequestId) return@LaunchedEffect
         val space = importResult.space
         val message = if (space != null) {
             "Space \"${space.name}\" imported successfully"
@@ -736,7 +747,7 @@ private fun ImportSpaceDialog(
         parentScope.launch {
             snackbarHostState.showSnackbar(message)
         }
-        awaitingResult = false
+        pendingRequestId = null
     }
 
     val filePickerLauncher = rememberFilePickerLauncher(
@@ -746,8 +757,7 @@ private fun ImportSpaceDialog(
             coroutineScope.launch {
                 try {
                     val jsonData = it.readString()
-                    awaitingResult = true
-                    onImportSpace(jsonData)
+                    pendingRequestId = onImportSpace(jsonData)
                 } catch (e: Exception) {
                     snackbarHostState.showSnackbar("Error reading file: ${e.message}")
                 }
@@ -797,8 +807,7 @@ private fun ImportSpaceDialog(
                         }
                         return@TextButton
                     }
-                    awaitingResult = true
-                    onImportSpace(jsonText.trim())
+                    pendingRequestId = onImportSpace(jsonText.trim())
                 },
                 enabled = jsonText.isNotBlank()
             ) {

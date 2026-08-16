@@ -28,8 +28,17 @@ enum class SpaceSearchOption {
     }
 }
 
-data class ExportResult(val spaceId: String, val json: String?, val prettyPrint: Boolean)
-data class ImportResult(val space: Space?)
+/**
+ * The answer to one export request.
+ *
+ * Carries the id of the request it answers, because the result of the previous export is still in
+ * state when the next one is asked for: without matching them up, pressing Copy a second time
+ * copies the JSON from the first press.
+ */
+data class ExportResult(val requestId: Long, val spaceId: String, val json: String?, val prettyPrint: Boolean)
+
+/** The answer to one import request; see [ExportResult] for why it is identified. */
+data class ImportResult(val requestId: Long, val space: Space?)
 
 data class SpaceListState(
     val hasSpaces: Boolean? = null,
@@ -58,8 +67,15 @@ sealed interface SpaceListIntent : MVIIntent {
     data class AddSpace(val name: String, val idPrefix: String) : SpaceListIntent
     data class UpdateSpace(val spaceId: String, val newName: String) : SpaceListIntent
     data class DeleteSpace(val spaceId: String) : SpaceListIntent
-    data class ExportSpaceToJson(val spaceId: String, val prettyPrint: Boolean) : SpaceListIntent
-    data class ImportSpaceFromJson(val jsonString: String) : SpaceListIntent
+    data class ExportSpaceToJson(
+        val requestId: Long,
+        val spaceId: String,
+        val prettyPrint: Boolean,
+    ) : SpaceListIntent
+    data class ImportSpaceFromJson(
+        val requestId: Long,
+        val jsonString: String,
+    ) : SpaceListIntent
     data class LoadTagsForSpace(val spaceId: String) : SpaceListIntent
     data class AddTagToSpace(val spaceId: String, val tag: String) : SpaceListIntent
     data class DeleteTagFromSpace(val spaceId: String, val tag: String) : SpaceListIntent
@@ -99,8 +115,10 @@ class SpaceListContainer(
                 is SpaceListIntent.AddSpace -> addSpace(intent.name, intent.idPrefix)
                 is SpaceListIntent.UpdateSpace -> updateSpace(intent.spaceId, intent.newName)
                 is SpaceListIntent.DeleteSpace -> deleteSpace(intent.spaceId)
-                is SpaceListIntent.ExportSpaceToJson -> exportSpaceToJson(intent.spaceId, intent.prettyPrint)
-                is SpaceListIntent.ImportSpaceFromJson -> importSpaceFromJson(intent.jsonString)
+                is SpaceListIntent.ExportSpaceToJson ->
+                    exportSpaceToJson(intent.requestId, intent.spaceId, intent.prettyPrint)
+                is SpaceListIntent.ImportSpaceFromJson ->
+                    importSpaceFromJson(intent.requestId, intent.jsonString)
                 is SpaceListIntent.LoadTagsForSpace -> loadTagsForSpace(intent.spaceId)
                 is SpaceListIntent.AddTagToSpace -> addTagToSpace(intent.spaceId, intent.tag)
                 is SpaceListIntent.DeleteTagFromSpace -> deleteTagFromSpace(intent.spaceId, intent.tag)
@@ -180,18 +198,27 @@ class SpaceListContainer(
         action(SpaceListAction.SpaceDeleted(result))
     }
 
-    private suspend fun SpaceListPipelineContext.exportSpaceToJson(spaceId: String, prettyPrint: Boolean) {
+    private var lastRequestId = 0L
+
+    /** Identifies one export or import request, so its answer can be told from the last one's. */
+    fun nextRequestId(): Long = ++lastRequestId
+
+    private suspend fun SpaceListPipelineContext.exportSpaceToJson(
+        requestId: Long,
+        spaceId: String,
+        prettyPrint: Boolean,
+    ) {
         val json = repository.exportSpaceToJson(spaceId, prettyPrint)
-        updateState { copy(lastExportResult = ExportResult(spaceId, json, prettyPrint)) }
+        updateState { copy(lastExportResult = ExportResult(requestId, spaceId, json, prettyPrint)) }
         action(SpaceListAction.SpaceExported(json))
     }
 
-    private suspend fun SpaceListPipelineContext.importSpaceFromJson(jsonString: String) {
+    private suspend fun SpaceListPipelineContext.importSpaceFromJson(requestId: Long, jsonString: String) {
         val space = repository.importSpaceFromJson(jsonString)
         if (space != null) {
             loadSpaces()
         }
-        updateState { copy(lastImportResult = ImportResult(space)) }
+        updateState { copy(lastImportResult = ImportResult(requestId, space)) }
         action(SpaceListAction.SpaceImported(space))
     }
 

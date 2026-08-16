@@ -93,6 +93,7 @@ class RoomTaskRepository(
     @Volatile
     private var dataVersion = 0L
     private var cachedVersion = 0L
+    private var cachedDay: LocalDate? = null
 
     override fun onDataChanged() {
         dataVersion++
@@ -107,13 +108,25 @@ class RoomTaskRepository(
      */
     private inline fun <T> T.alsoNotifyIf(changed: (T) -> Boolean): T = also { if (changed(it)) notifyChanged() }
 
-    /** Drop memoised rankings if anything has changed since they were computed. Call under [mutex]. */
+    /**
+     * Drop memoised rankings if anything has changed since they were computed. Call under [mutex].
+     *
+     * The day counts as a change. "Due today", "this week" and "this month" are resolved against
+     * the calendar day the ranking was built on, and an app left open over midnight would
+     * otherwise keep answering with yesterday's groups until something was edited.
+     *
+     * Within a day the bounds are held fixed on purpose, so every page of one scroll comes from a
+     * single ranking. Overdue is the one filter that genuinely moves by the second; it is pinned
+     * to the instant the ranking was built rather than re-read per page.
+     */
     private fun evictStaleCaches() {
         val current = dataVersion
-        if (cachedVersion != current) {
+        val day = today()
+        if (cachedVersion != current || cachedDay != day) {
             orderedCache.clear()
             countCache.clear()
             cachedVersion = current
+            cachedDay = day
         }
     }
 

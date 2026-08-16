@@ -543,7 +543,10 @@ private fun FixedDaysOfWeekConfiguration(
             onTriggerSelected(
                 AtFixedPoints(
                     pattern = DaysOfWeek(days = selectedDays, timeOfDay = timeOfDay),
-                    startFrom = Clock.System.now(),
+                    // An existing rule keeps the point it counts from. This effect runs as soon as
+                    // the dialog opens, so taking the current time here re-anchored the schedule of
+                    // every recurring task whose rules were so much as looked at.
+                    startFrom = oldTimeTrigger?.startFrom ?: Clock.System.now(),
                     timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
                 )
             )
@@ -614,7 +617,7 @@ private fun FixedDayOfMonthConfiguration(
             onTriggerSelected(
                 AtFixedPoints(
                     pattern = DayOfMonth(dayOfMonth = dayOfMonth, timeOfDay = timeOfDay),
-                    startFrom = Clock.System.now(),
+                    startFrom = oldTimeTrigger?.startFrom ?: Clock.System.now(),
                     timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
                 )
             )
@@ -671,7 +674,7 @@ private fun NthDayOfWeekConfiguration(
                     dayOfWeek = selectedDayOfWeek,
                     timeOfDay = timeOfDay,
                 ),
-                startFrom = Clock.System.now(),
+                startFrom = oldTimeTrigger?.startFrom ?: Clock.System.now(),
                 timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
             )
         )
@@ -740,7 +743,7 @@ private fun YearlyOnDateConfiguration(
                         dayOfMonth = yearlyDayOfMonth,
                         timeOfDay = timeOfDay,
                     ),
-                    startFrom = Clock.System.now(),
+                    startFrom = oldTimeTrigger?.startFrom ?: Clock.System.now(),
                     timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
                 )
             )
@@ -813,7 +816,7 @@ private fun YearlyOnNthDayOfWeekConfiguration(
                     months = selectedMonths,
                     timeOfDay = timeOfDay,
                 ),
-                startFrom = Clock.System.now(),
+                startFrom = oldTimeTrigger?.startFrom ?: Clock.System.now(),
                 timezone = getRecurrenceTimeZone(useSystemTimezone, selectedTimezone)
             )
         )

@@ -35,7 +35,7 @@ fun DatePickerDialog(
     var selectedTimezoneId by remember { mutableStateOf(TimeZone.currentSystemDefault().id) }
 
     val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = currentDate?.toEpochMilliseconds() ?: now.toEpochMilliseconds()
+        initialSelectedDateMillis = datePickerMillisFor(currentDate ?: now, systemTz)
     )
 
     val timePickerState = rememberTimePickerState(
@@ -79,10 +79,7 @@ private fun DateSelectionStep(
         confirmButton = {
             TextButton(
                 onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        val utcMillis = Instant.fromEpochMilliseconds(millis)
-                        onNext(utcMillis.toLocalDateTime(TimeZone.UTC).date)
-                    }
+                    datePickerState.selectedDateMillis?.let { onNext(datePickerDateOf(it)) }
                 }
             ) {
                 Text("Next")
@@ -180,6 +177,21 @@ private fun TimePickerContent(
         )
     }
 }
+
+/**
+ * The day [instant] falls on in [zone], in the form a [DatePickerState] holds it.
+ *
+ * The picker works in UTC days throughout: what it is given and what it hands back are both
+ * midnight UTC. Passing the instant itself instead selected the day it fell on in UTC, which is
+ * the day before or after the local one whenever the two disagree — so opening the picker on a
+ * task due just after local midnight offered the previous day, already selected.
+ */
+internal fun datePickerMillisFor(instant: Instant, zone: TimeZone): Long =
+    instant.toLocalDateTime(zone).date.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
+
+/** The day a [DatePickerState] is holding; the inverse of [datePickerMillisFor]. */
+internal fun datePickerDateOf(millis: Long): LocalDate =
+    Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.UTC).date
 
 private fun combineDateAndTime(
     date: LocalDate,

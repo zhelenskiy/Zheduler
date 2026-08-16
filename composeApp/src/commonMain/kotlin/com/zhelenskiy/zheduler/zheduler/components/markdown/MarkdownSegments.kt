@@ -49,12 +49,69 @@ internal fun MarkdownSegment.Table.toMarkdown(): String {
 /**
  * Cell text as a person should see it. The parser keeps `\|` as written, because prose
  * renderers want the escape; a grid of text fields wants the pipe.
+ *
+ * Only the run of backslashes leading into a pipe is unescaped. A cell is rendered as inline
+ * Markdown, so every other backslash is the document's own: unescaping `\*` here would turn the
+ * literal asterisk its author wrote into emphasis on the way back out.
  */
-internal fun unescapeTableCell(cell: String): String = cell.replace("\\|", "|")
+internal fun unescapeTableCell(cell: String): String = buildString {
+    var i = 0
+    while (i < cell.length) {
+        if (cell[i] != '\\') {
+            append(cell[i])
+            i++
+            continue
+        }
+        val run = cell.backslashRunAt(i)
+        if (cell.getOrNull(i + run) == '|') {
+            repeat(run / 2) { append('\\') }
+            append('|')
+            i += run + 1
+        } else {
+            repeat(run) { append('\\') }
+            i += run
+        }
+    }
+}
 
-/** Inverse of [unescapeTableCell]; also flattens newlines, which a table row cannot hold. */
-internal fun escapeTableCell(cell: String): String =
-    cell.replace("|", "\\|").replace("\n", " ").trim()
+/**
+ * Inverse of [unescapeTableCell]; also flattens newlines, which a table row cannot hold.
+ *
+ * Backslashes already in front of a pipe are doubled along with escaping the pipe itself. Escaping
+ * the pipe alone let one the user had typed swallow the escape, so the pipe went back to splitting
+ * the row: a body row silently lost its last cell, and a header row stopped the table parsing as a
+ * table at all.
+ *
+ * Surrounding spaces are kept. The parser trims them when the document is read back, but a
+ * controlled text field handed its own value back trimmed cannot have a space typed into it.
+ */
+internal fun escapeTableCell(cell: String): String = buildString {
+    val flat = cell.replace('\n', ' ')
+    var i = 0
+    while (i < flat.length) {
+        if (flat[i] != '\\' && flat[i] != '|') {
+            append(flat[i])
+            i++
+            continue
+        }
+        val run = flat.backslashRunAt(i)
+        if (flat.getOrNull(i + run) == '|') {
+            repeat(run * 2 + 1) { append('\\') }
+            append('|')
+            i += run + 1
+        } else {
+            repeat(run) { append('\\') }
+            i += run
+        }
+    }
+}
+
+/** How many backslashes start at [index]. */
+private fun String.backslashRunAt(index: Int): Int {
+    var run = 0
+    while (getOrNull(index + run) == '\\') run++
+    return run
+}
 
 /**
  * Splits [markdown] into renderable segments. Never fails: anything unrecognized stays
