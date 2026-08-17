@@ -65,7 +65,6 @@ class RecurrenceDialogRestoreTest {
         onScreen = true
         waitForIdle()
 
-        // Both halves: the kind of schedule chosen, and the interval typed into it.
         onNodeWithText("Interval (e.g., 1w 2d 3h)").assertExists()
         onNodeWithText("3d").assertExists()
     }

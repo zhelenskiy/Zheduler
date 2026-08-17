@@ -68,15 +68,9 @@ class RoomTaskRepository(
     // ============ Paged query memoisation ============
     //
     // Ordering can reference totals derived from the dependency graph, so [getTasksForGroupPage]
-    // has to rank the whole matching set before it can cut a window. Recomputing that per page
-    // makes every page cost O(space size) — page 60 costs what page 1 does — and scrolling then
-    // re-scans the space once per page. Remembering the ranking makes each subsequent page cost
-    // only the hydration of its own window.
-    //
-    // Entries hold ids rather than rows so the memory is proportional to the number of tasks, not
-    // to their contents, and they live only until the next mutation: one query per group per data
-    // version. As a side effect pages of one scroll now come from a single consistent ranking,
-    // where before each page re-ranked against a freshly read `now`.
+    // ranks the whole matching set before cutting a window; recomputing that per page made every
+    // page cost O(space size). Entries hold ids, not rows, and live only until the next mutation:
+    // one query per group per data version, and one consistent ranking for a whole scroll.
 
     private data class CandidateKey(
         val spaceId: String,
@@ -355,7 +349,6 @@ class RoomTaskRepository(
         offset: Int,
         limit: Int
     ): Page<Task> {
-        // Nothing typed: the window is a plain slice, and the total comes for free.
         if (searchQuery.isBlank()) {
             val rows = dao.searchTasksForConnectionPaged(
                 spaceId = spaceId,
@@ -742,10 +735,9 @@ class RoomTaskRepository(
 
         syncToDatabase(finalTask)
 
-        // Every tag the task carries, not only the ones new to the task. A tag deleted from the
-        // space's vocabulary stays on the tasks that had it, so saving such a task puts it back in
-        // the vocabulary — which is what the in-memory repository does, and what moving a task to
-        // another space needs. The insert ignores duplicates.
+        // Every tag the task carries, not only the ones new to it: a tag deleted from the space's
+        // vocabulary stays on its tasks, and saving one puts it back — as the in-memory repository
+        // does, and as moving a task between spaces needs. The insert ignores duplicates.
         finalTask.tags.forEach { dao.insertTagForSpace(finalTask.spaceId, it) }
 
         // Update task_tags junction table
@@ -1059,13 +1051,10 @@ class RoomTaskRepository(
             statusTimelines = spaceTimelines,
             nextId = nextId,
             tags = spaceTags,
-            // Only the space's own: the built-in modes exist everywhere and are not the user's.
-            //
-            // A row this build cannot read fails the export, rather than being left out of it.
-            // Elsewhere such a row costs the user that one view mode — it is missing from the list
-            // and the app carries on — but a file is supposed to be everything, and one written
-            // quietly incomplete is worse than one that was refused: it is restored later, once
-            // the original is gone, and only then is the loss discovered.
+            // Only the space's own: the built-in modes exist everywhere. A row this build cannot
+            // read fails the export rather than being dropped from it — elsewhere an unreadable
+            // row costs one view mode, but a file written quietly incomplete is restored once the
+            // original is gone, and only then is the loss discovered.
             viewModes = dao.getAllCustomViewModes(spaceId).map { row ->
                 row.configJson.toViewMode(spaceId, row.id, row.name)
             },
@@ -1372,10 +1361,9 @@ class RoomTaskRepository(
             PriorityFilter.Medium -> 50L to 75L
             PriorityFilter.Low -> 1L to 50L
             // Custom bounds are inclusive; one past the top is the same range over whole numbers.
-            // Read as Int, as the shared predicate reads them: a priority is an Int, so a bound too
-            // large to be one is no bound at all. Reading them as Long here made a number above
-            // Int.MAX_VALUE a real bound on this side and no bound on the other, so the grouped
-            // list and the flat list answered the same filter differently.
+            // As Int, like the shared predicate: a priority is an Int, so a bound too large to be
+            // one is no bound. Read as Long, a number above Int.MAX_VALUE bound this side only, and
+            // the grouped and flat lists answered the same filter differently.
             PriorityFilter.Custom -> (filterCriteria.customPriorityMin.toIntOrNull()?.toLong() ?: -OPEN_BOUND) to
                     (filterCriteria.customPriorityMax.toIntOrNull()?.let { it + 1L } ?: OPEN_BOUND)
         }
@@ -1403,10 +1391,8 @@ class RoomTaskRepository(
                 PriorityFilter.NoPriority -> 4L
                 PriorityFilter.Custom -> 5L
             },
-            // As Int, like the shared predicate and like the range above: a bound too large to be
-            // a priority is no bound. These feed the clause the group headers and their counts are
-            // built from, so reading them differently here made the headers disagree with the
-            // tasks under them.
+            // As Int, like the range above. These feed the clause the group headers and their
+            // counts come from, so reading them otherwise made headers disagree with their tasks.
             customPriorityMin = filterCriteria.customPriorityMin.toIntOrNull()?.toLong(),
             customPriorityMax = filterCriteria.customPriorityMax.toIntOrNull()?.toLong(),
             dueDateFilterType = when (filterCriteria.dueDateFilter) {

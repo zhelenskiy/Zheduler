@@ -82,10 +82,9 @@ fun TaskEditScreen(
     // replacing the set wholesale reverted the connections the user had just added or removed,
     // silently, on the way back from creating one.
     //
-    // Where the difference is measured from is the whole of it. A restored form holds edits made
-    // against the connections the task had when the user left, so that is the mark — reading it
-    // off the freshly loaded task instead made the link just created look like no change at all,
-    // and saving then deleted it.
+    // A restored form holds edits made against the connections the task had when the user left,
+    // so that is the mark: measuring from the freshly loaded task made a link just created look
+    // like no change, and saving then deleted it.
     var syncedConnections by remember(currentTask.id) {
         mutableStateOf(container.formPersistence.read()?.connectionsBase ?: currentTask.connections)
     }
@@ -99,7 +98,6 @@ fun TaskEditScreen(
     }
 
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
-    // What the description editor is holding but has not reported yet; see PendingEdits.
     val pendingEdits = remember { PendingEdits() }
 
     fun saveChanges() {

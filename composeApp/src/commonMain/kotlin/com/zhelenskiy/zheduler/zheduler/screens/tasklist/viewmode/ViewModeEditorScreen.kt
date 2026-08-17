@@ -68,7 +68,6 @@ fun ViewModeEditorScreen(
 ) {
     val state by container.store.subscribe { action ->
         when (action) {
-            // Only once it is actually saved: see ViewModeAction.ViewModeSaved.
             is ViewModeAction.ViewModeSaved -> onSave()
         }
     }
@@ -1255,7 +1254,6 @@ private fun OrderingRuleRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle, and the same move without one
             reorder()
             Icon(
                 Icons.Default.DragHandle,

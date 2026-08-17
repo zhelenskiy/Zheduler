@@ -211,10 +211,9 @@ fun SingleRecurrenceRuleDialog(
     onDismiss: () -> Unit,
     onRecurrenceSelected: (RecurrenceRule?) -> Unit
 ) {
-    // All four are saved rather than remembered. Nothing here reaches the task until Save, so an
-    // activity recreation — a rotation, a theme change — used to close the dialog and take the
-    // whole rule being configured with it, silently. The editors below start from whatever
-    // `selectedTimeTrigger` holds, so restoring it restores them too.
+    // Saved, not remembered: nothing here reaches the task until Save, so a recreation used to
+    // take the whole rule with it. The editors below start from `selectedTimeTrigger`, so
+    // restoring it restores them too.
     var selectedTimeTrigger by rememberSaveable(stateSaver = TimeTriggerResultSaver) {
         mutableStateOf(currentRule?.timeRecurrenceTrigger?.let(::Success) ?: NoData)
     }

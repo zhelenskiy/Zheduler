@@ -53,10 +53,8 @@ fun TaskDescriptionField(
     val editorSettings = LocalEditorSettings.current
     // Held here as well as persisted, so a task that has no id yet can still be switched.
     var chosenHere by remember(taskId) { mutableStateOf<DescriptionEditorKind?>(null) }
-    // Read every time, not snapshotted once. The settings arrive from disk asynchronously, and the
-    // first form composed after launch is built before they land: taking the value once left a
-    // task the user had explicitly switched to Markdown open in the rich editor for the whole
-    // visit, whatever the file said.
+    // Read every time, not snapshotted once: the settings arrive from disk after the first form
+    // is composed, so taking the value once ignored the choice stored for this task.
     val chosen = chosenHere ?: editorSettings.descriptionEditorFor(taskId)
     val kind = if (isRichTaskDescriptionEditorAvailable) {
         chosen

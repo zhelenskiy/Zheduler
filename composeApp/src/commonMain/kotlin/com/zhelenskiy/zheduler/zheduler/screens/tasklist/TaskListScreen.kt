@@ -1077,7 +1077,6 @@ internal fun TaskFilterState.toCriteriaAfterTyping(): TaskFilterCriteria {
         delay(SearchSettleMillis)
         settled = typed
     }
-    // Read outside the effect so every other filter still applies the moment it changes.
     return toCriteria().copy(searchQuery = settled)
 }
 

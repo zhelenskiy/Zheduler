@@ -46,11 +46,8 @@ fun AutomaticChangeIndicator(
         ConnectedTaskChip(
             task = loadedTasks[taskId],
             taskId = taskId,
-            // Opened whether or not the task could be loaded. A history entry outlives the task it
-            // names — that is rather the point of a history — and a chip that answers a tap with
-            // nothing at all reads as a broken app. The detail screen says "This task no longer
-            // exists", which is the truth and is what the blocker chips and the references in a
-            // description already do.
+            // Opened whether or not the task loaded: a history entry outlives the task it names,
+            // and the detail screen says so. A tap that does nothing reads as a broken app.
             onClick = { onTaskClick(taskId) }
         )
     }

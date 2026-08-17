@@ -286,7 +286,6 @@ fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
         // contents is recorded too rather than leaving an older record standing.
         if (!edited && current == builtWith) return@LaunchedEffect
         edited = true
-        // The base travels with the record: what the form started from, not what it holds now.
         persistence.write(
             current.copy(
                 connectionsBase = builtWith.connections,

@@ -111,10 +111,9 @@ private val persistedEditorSettings: EditorSettingsState by lazy {
     // all, and throwing here killed the process the first time a description was shown.
     scope.launch {
         val stored = runCatching { store.get()?.descriptionEditorByTask }.getOrNull()
-        // Applied on the main thread, where every choice the user makes is also applied. The read
-        // runs off it, but the state it lands in is touched from composition event handlers, and
-        // the guard that keeps a choice made mid-read from being spoken over is a plain set: from
-        // another thread there is nothing to say the addition is even visible yet.
+        // Applied on the main thread, where the user's own choices are applied: the guard that
+        // keeps a choice made mid-read from being overwritten is a plain set, which promises
+        // nothing across threads.
         withContext(Dispatchers.Main) { state.restore(stored.orEmpty()) }
     }
     state

@@ -52,16 +52,11 @@ fun SaveFilterDialog(
     onDismiss: () -> Unit
 ) {
     val isEditMode = existingFilter != null
-    // Saved, not remembered: the dialog itself reopens after an activity recreation, and used to
-    // come back with the name field blank. The criteria panel below still resets to what the
-    // dialog was opened with — that at least stays on screen, where the name simply vanished.
-    // The saved-state key names the filter being edited, not just this spot in the dialog. Saved
-    // state belongs to a position in the composition, and this dialog is the same position for
-    // every filter, so state saved while editing one was handed to the next filter opened after a
-    // recreation — and saving renamed that one instead. The id in the key means a restored value
-    // is only ever found by the filter it was written for. (Passing the id as an input would not
-    // do: inputs re-run init within a composition, but a restored value is taken up on the slot's
-    // first composition whatever they say.)
+    // Saved, not remembered: the dialog reopens after a recreation and used to come back with
+    // the name blank. Keyed on the filter, because saved state belongs to a position in the
+    // composition and this dialog is the same position for every filter — state saved editing
+    // one was handed to the next opened, and saving renamed that one instead. An input would
+    // not do: a restored value is taken up on the slot's first composition whatever they say.
     val slot = existingFilter?.id ?: "new"
     var name by rememberSaveable(key = "saveFilter:name:$slot") {
         mutableStateOf(existingFilter?.name ?: "")

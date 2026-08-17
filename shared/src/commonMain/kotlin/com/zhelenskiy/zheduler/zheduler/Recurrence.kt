@@ -878,9 +878,8 @@ object RecurrenceCalculator {
 
         // Keep looking month by month. Most months have no fifth Tuesday, so checking only the
         // next one and giving up threw for any FIFTH pattern whose following month lacks it --
-        // from inside the recurrence sweep, where nothing catches it. The horizon is the one
-        // MONTHS_SEARCHED_FOR_FIXED_POINTS sets, and findNextNthDayOfWeekInMonths searches the
-        // same — it used to be two years, which is what missed those patterns.
+        // from inside the recurrence sweep, where nothing catches it. The horizon is
+        // MONTHS_SEARCHED_FOR_FIXED_POINTS, which findNextNthDayOfWeekInMonths now matches.
         repeat(MONTHS_SEARCHED_FOR_FIXED_POINTS) {
             currentMonth = currentMonth.plus(1, DateTimeUnit.MONTH)
             val candidate = findNthDayOfWeekInMonth(
@@ -1036,10 +1035,9 @@ object RecurrenceCalculator {
     fun shouldTrigger(
         rule: RecurrenceRule, event: RecurrenceTriggerEvent, recurrenceState: RecurrenceState
     ): Boolean = when {
-        // By kind, not by value. The picker offers one chip per kind and stores a bare instance
-        // for it — `Blocked(no blockers)`, `Declined(no reason)` — while a real task carries the
-        // blockers it waits on and the reason it was declined. Full-value equality meant those two
-        // chips selected a status no task could ever be in, so their rules could never fire.
+        // By kind, not by value: the picker stores a bare instance per chip — `Blocked(no
+        // blockers)`, `Declined(no reason)` — which no real task ever equals, so matching on the
+        // whole value left those two chips unable to fire at all.
         rule.statusChangeTrigger is StatusChange &&
                 rule.statusChangeTrigger.requiredStatuses.none { it::class == event.currentStatus::class } ->
             false

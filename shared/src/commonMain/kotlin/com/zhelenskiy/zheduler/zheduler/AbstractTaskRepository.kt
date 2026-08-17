@@ -845,11 +845,9 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
         oldStatus: TaskStatus,
         newStatus: TaskStatus
     ) {
-        // Any change to the status, not only a change of kind. Blocked-to-Blocked with a
-        // different blocker set is a real change: a parent deriving its status from this task kept
-        // the blockers this task no longer has, and when one of those completed the parent was
-        // forced to InProgress while its subtask was still blocked on something else — with the
-        // auto-update lock leaving no way to correct it.
+        // Any change, not only a change of kind: Blocked-to-Blocked with different blockers left
+        // a deriving parent holding blockers its subtask no longer had, and completing one of
+        // those forced the parent to InProgress while the subtask was still blocked.
         if (oldStatus != newStatus) {
             updateParentTasksStatus(taskId)
             unblockTasksBlockedBy(taskId)

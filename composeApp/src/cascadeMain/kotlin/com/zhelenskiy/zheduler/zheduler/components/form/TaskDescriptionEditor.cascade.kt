@@ -220,17 +220,11 @@ actual fun TaskDescriptionEditor(
     }
 
     LaunchedEffect(Unit) {
-        // What is watched is a list of references, not the document itself. `snapshotFlow`
-        // recomputes its block on every change it observes, so encoding the whole document inside
-        // it encoded the whole document on every keystroke — the pause below only ever delayed
-        // using the result, never the work of producing it, and typing in a long description got
-        // slower the longer it grew.
-        //
-        // Editing replaces the object it touches: a block, a block's text, a block's spans. So
-        // comparing the references finds any edit at the cost of one comparison per block, and the
-        // document is encoded once the typing stops. Should some edit ever mutate in place and go
-        // unseen here, the unconditional flushes below — on Save, and on the editor going away —
-        // still carry it to the form.
+        // References, not the document: `snapshotFlow` re-runs its block on every change it
+        // observes, so encoding in there encoded the whole document per keystroke — the pause
+        // below delayed only the use of the result. Editing replaces the object it touches, so
+        // comparing references costs one comparison per block. An edit that mutated in place
+        // would go unseen here, and reach the form through the flushes below.
         snapshotFlow {
             stateHolder.state.blocks.map { block ->
                 listOf(
@@ -255,10 +249,8 @@ actual fun TaskDescriptionEditor(
     val flushPendingEdits by rememberUpdatedState {
         applyEncoded(stateHolder.toMarkdownWithReport(textStates, spanStates, profile))
     }
-    // Going away is not the only time they are needed. Save reads the form and writes the task
-    // there and then, while this editor is still on screen and still holding the last few
-    // keystrokes; the flush below happens afterwards, into a form nobody will read again. So the
-    // form is given a way to ask first.
+    // Save reads the form while this editor is still on screen holding the last keystrokes, and
+    // the flush below happens afterwards, into a form nobody reads again — so the form can ask.
     val pendingEdits = LocalPendingEdits.current
     DisposableEffect(pendingEdits) {
         val unregister = pendingEdits.register { flushPendingEdits() }

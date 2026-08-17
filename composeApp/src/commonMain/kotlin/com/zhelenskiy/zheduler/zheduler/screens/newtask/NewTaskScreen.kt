@@ -67,7 +67,6 @@ fun NewTaskScreen(
     val formState = rememberFormStateFromData(state.taskToCopy, initialConnections)
     formState.persistedIn(container.formPersistence)
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
-    // What the description editor is holding but has not reported yet; see PendingEdits.
     val pendingEdits = remember { PendingEdits() }
 
     fun handleBackPress() {
@@ -81,7 +80,6 @@ fun NewTaskScreen(
         }
     }
 
-    // Same as the toolbar arrow: a system back gesture asks before throwing the draft away.
     BackHandler(enabled = !showDiscardChangesDialog) { handleBackPress() }
 
     if (showDiscardChangesDialog) {

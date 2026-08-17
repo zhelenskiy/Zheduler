@@ -227,17 +227,12 @@ class TaskListContainer(
         filterCriteria: TaskFilterCriteria,
         viewMode: ViewMode,
     ): Flow<PagingData<TaskWithTotals>> {
-        // The view mode counts as much as the criteria: its groups are different groups, so the
-        // ones cached for the mode before it are as obsolete as those for another filter — and
-        // left in place they went on running, holding the rows they had loaded.
-        //
-        // Compared whole rather than by id, because editing a mode keeps its id while changing
-        // every group under it: the entries for the old arrangement stayed in the map, kept their
-        // place in the scope, and were re-queried on every change to the data from then on.
+        // The view mode counts as much as the criteria: its groups are different groups, and the
+        // ones cached before it went on running, holding the rows they had loaded. Compared whole
+        // rather than by id, because editing a mode keeps its id while changing every group in it.
         if (filterCriteria != groupPagesCriteria || viewMode != groupPagesViewMode) {
             groupPages.clear()
             groupFactories.clear()
-            // And stop what was cached for the criteria before, rather than only forgetting it.
             groupPagesScope.cancel()
             groupPagesScope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
             groupPagesCriteria = filterCriteria

@@ -340,9 +340,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         if (!spaces.containsKey(spaceId)) return@withLock null
         allOrNothing {
         val taskId = customId ?: generateNextIdUnsafe(spaceId)
-        // The same refusals the database makes with its primary key and its foreign keys, so a
-        // save that fails there does not quietly succeed here. Taking an id that already belongs
-        // to a task overwrote that task — in any space — and threw away its history with it.
+        // The refusals the database makes with its keys, so a save that fails there does not
+        // succeed here. Reusing an id overwrote that task — in any space — history and all.
         require(taskId !in tasks) { "A task with id $taskId already exists" }
         requireTargetsExist(connections)
 
@@ -359,7 +358,6 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             title = title,
             description = description,
             status = status,
-            // Rounded as the database rounds it, so both repositories store the same instant.
             dueDate = storableDueDate(dueDate),
             priority = priority,
             estimatedTime = estimatedTime,
@@ -749,10 +747,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
 
         return mutex.withLock {
-            // The same refusal the database makes: a file naming one id twice is rejected before
-            // anything is written. The id mapping has one entry per id, so both copies would be
-            // imported under the same new id — which the primary key refuses over there, while
-            // here one quietly overwrote the other and the space came back a task short.
+            // As the database refuses it: the id mapping has one entry per id, so both copies
+            // would arrive under the same new id — a primary key violation there, and here one
+            // quietly overwriting the other.
             require(exportData.tasks.distinctBy { it.id }.size == exportData.tasks.size) {
                 "The file names the same task id more than once"
             }
@@ -787,10 +784,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                     spaceId = newSpaceId,
                     connections = remappedConnections,
                     status = remappedStatus,
-                    // Rounded as every other write path rounds it. The database import goes
-                    // through addTask and so does this already; writing the file's instant
-                    // straight in left this repository holding a precision its own writes can no
-                    // longer produce, and the database a different one for the same file.
+                    // As every other write path rounds it: the database import goes through
+                    // addTask, so writing the file's instant straight in diverged from it.
                     dueDate = storableDueDate(task.dueDate),
                 )
                 tasks[newTaskId] = newTask
@@ -804,10 +799,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                         newStatus = remapBlockedStatus(change.newStatus, oldToNewTaskId),
                     )
                 }
-                // A task always has a history, even if the file it came from gave it none: the
-                // database repository writes a creation entry for exactly that case, and this is
-                // the oracle it is measured against. Files the app writes always carry one, so
-                // this only arises for a hand-written or third-party export.
+                // A task always has a history, even from a file that gave it none — the database
+                // repository writes a creation entry for that case, and this is its oracle.
                 statusTimelines[newTaskId] = timeline.ifEmpty {
                     listOf(
                         StatusChange(
@@ -819,11 +812,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
                 }
             }
 
-            // One known difference from the database repository, left as it is: that one adds the
-            // imported connections one at a time and so refuses any that closes a cycle, while
-            // this one takes the file's graph as given. No export the app writes can contain a
-            // cycle — every edge is checked when it is made, and the id remapping is injective —
-            // so this can only be reached with a hand-edited file, and neither answer is unsafe.
+            // A known difference, left as it is: the database import adds connections one at a
+            // time and so refuses a cycle, while this takes the file's graph as given. No export
+            // the app writes can contain one, and neither answer is unsafe for a hand-edited file.
             tagsBySpace.getOrPut(newSpace.id) { mutableSetOf() }.addAll(exportData.tags)
 
             val (viewModes, filters) = importedSettings(exportData, newSpaceId, oldToNewTaskId)

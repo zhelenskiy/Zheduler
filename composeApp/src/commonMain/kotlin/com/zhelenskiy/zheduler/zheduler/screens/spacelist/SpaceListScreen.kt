@@ -634,11 +634,9 @@ private fun ExportSpaceDialog(
     var prettyPrint by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
 
-    // What to do with the export once it arrives, and which request it is waiting for. Saved, not
-    // merely remembered: the export itself is held by the app-scoped container and survives an
-    // activity recreation, and this is what still ties it to the file the user is saving into.
-    // By name: what a platform can put in its saved state is a short list of primitive types, and
-    // an enum constant is not on it everywhere.
+    // What to do with the export, and which request it belongs to. Saved, because the export is
+    // app-scoped and survives a recreation; by name, because an enum constant is not among the
+    // types every platform can put in its saved state.
     var pendingActionName by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingRequestId by rememberSaveable { mutableStateOf<Long?>(null) }
     val pendingAction = pendingActionName?.let(ExportAction::valueOf)
@@ -803,10 +801,8 @@ private fun ImportSpaceDialog(
     parentScope: CoroutineScope
 ) {
     val coroutineScope = rememberCoroutineScope()
-    // Both saved rather than remembered. A rotation used to take the pasted JSON with it, and —
-    // worse — the id of the import already running: the result then matched nothing, the dialog
-    // sat there as though nothing had happened, and importing again made a second copy of a space
-    // that had in fact arrived the first time.
+    // Saved, not remembered: a rotation took the pasted JSON with it and — worse — the id of the
+    // import already running, so the result matched nothing and importing again made a second copy.
     var jsonText by rememberSaveable { mutableStateOf("") }
     var pendingRequestId by rememberSaveable { mutableStateOf<Long?>(null) }
 

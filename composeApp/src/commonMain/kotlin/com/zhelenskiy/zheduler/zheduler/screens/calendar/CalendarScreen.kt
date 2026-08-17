@@ -557,10 +557,8 @@ private fun SelectedDateEvents(
                         )
                     }
                 }
-                // Read through the latest value, not the one this effect was set up with: keyed
-                // on Unit, it holds whatever `events` was the first time the cards appeared, so on
-                // the way out it wrote back a day the user had already left — and that day's cards
-                // showed for a frame the next time the list faded in.
+                // The latest value, not the one this effect was set up with: keyed on Unit it held
+                // the first `events`, and wrote back a day the user had already left.
                 val currentEvents by rememberUpdatedState(events)
                 DisposableEffect(Unit) {
                     onDispose { eventsLast = currentEvents }

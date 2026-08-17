@@ -125,17 +125,12 @@ fun rememberThemeState(): ThemeState {
     // Load settings on startup
     LaunchedEffect(Unit) {
         if (!themeState.settingsLoaded) {
-            // A settings file that will not read is worth no more than the defaults. The `?: `
-            // below covers a file that is not there; a file that is there but unreadable — hand
-            // edited, half written, or holding a value some later build understood — threw out of
-            // here before the first frame, which on Android is a process that dies on every launch
-            // with nothing the user can do about it. A theme is not worth that.
+            // An unreadable settings file is worth no more than the defaults. Throwing here is
+            // before the first frame, which on Android is a process that dies at every launch.
             val settings = runCatching { themeSettingsStore.updates.first() }
-                // Cancellation is not a failure: the read never happened. Treating it as one
-                // stamped the defaults into the process-wide cache below, which exists precisely
-                // to stop the file being read again — so an activity recreated while the read was
-                // in flight came back with the theme reset, and the next tweak wrote that over the
-                // settings on disk. An activity recreation during startup is not a rare thing.
+                // Cancellation is not a failure: the read never happened. Treated as one, it
+                // stamped defaults into the cache below that stops the file being read again —
+                // so a recreation mid-read reset the theme and the next tweak wrote that to disk.
                 .onFailure { failure -> if (failure is CancellationException) throw failure }
                 .getOrNull()
                 ?: ThemeSettings()
@@ -299,21 +294,15 @@ private fun AppContent(
         taskBeingOpened = taskId
         navigationScope.launch {
             try {
-                // A lookup that fails must not take the app with it: this runs in the
-                // composition's own scope, where nothing catches an exception and Android ends
-                // the process. Opening the task in the space being read from is what happened
-                // before there was a lookup at all, so it is a fair thing to fall back to.
+                // A failed lookup must not take the app with it: this runs in the composition's
+                // own scope, where nothing catches an exception. Opening the task in the current
+                // space is what happened before there was a lookup at all.
                 val spaceId = runCatching { appGraph.taskRepository.getSpaceIdForTask(taskId) }
                     .getOrNull() ?: fallbackSpaceId
-                // Deliberately not launchSingleTop: it matches on the destination alone, not on
-                // its arguments, so following a reference from one task to another replaced the
-                // first task's entry instead of stacking on it — and Back skipped everything the
-                // reader had walked through.
-                //
-                // The screen that asked has to still be the one on top. The in-flight guard above
-                // only covers the lookup; the tap handler stays live for the whole enter
-                // transition after it, which is long enough for a second click to stack the same
-                // task twice. See popOnce, which reads the same signal for the same reason.
+                // Not launchSingleTop: it matches the destination alone, not its arguments, so
+                // task-to-task replaced the first entry and Back skipped what the reader walked
+                // through. The lifecycle check stops a second tap during the enter transition,
+                // which the in-flight guard above does not cover. See popOnce.
                 if (from.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                     navController.navigate(TaskDetailRoute(spaceId, taskId))
                 }

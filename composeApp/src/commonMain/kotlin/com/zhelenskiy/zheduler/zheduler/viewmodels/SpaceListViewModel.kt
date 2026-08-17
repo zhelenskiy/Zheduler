@@ -229,10 +229,8 @@ class SpaceListContainer(
         spaceId: String,
         prettyPrint: Boolean,
     ) {
-        // As with import: a refusal has to reach the dialog waiting for it. A space holding a row
-        // this build cannot read fails the export rather than quietly leaving that row out of the
-        // file, and the throw would otherwise go to the snackbar behind the open dialog while the
-        // dialog itself waited for a result that never came.
+        // As with import: a refusal has to reach the dialog waiting for it, not the snackbar
+        // behind it. An unreadable row fails the export rather than being dropped from the file.
         val attempt = runCatching { repository.exportSpaceToJson(spaceId, prettyPrint) }
             .onFailure { failure -> if (failure is CancellationException) throw failure }
         val json = attempt.getOrNull()
@@ -244,12 +242,10 @@ class SpaceListContainer(
     }
 
     private suspend fun SpaceListPipelineContext.importSpaceFromJson(requestId: Long, jsonString: String) {
-        // A file can be refused two ways: politely, with null for something that will not decode,
-        // and rudely, by throwing — a file naming one task id twice reaches the database, whose
-        // primary key rejects it and rolls the import back. Both are the same thing to the user,
-        // and only the first was being reported: the throw went to the failure snackbar behind the
-        // dialog, while the dialog itself waited for a result that never came, looking as though
-        // the button had done nothing at all.
+        // A file is refused two ways: politely with null, and rudely by throwing — one naming a
+        // task id twice reaches the database, whose primary key rolls the import back. Only the
+        // first was reported; the throw went to the snackbar behind the dialog, which waited on a
+        // result that never came.
         val space = runCatching { repository.importSpaceFromJson(jsonString) }
             .onFailure { failure -> if (failure is CancellationException) throw failure }
             .getOrNull()

@@ -52,10 +52,9 @@ internal val AdoptLegacySchema = object : Migration(1, 2) {
             "CREATE TABLE IF NOT EXISTS `saved_filters` (`id` TEXT NOT NULL, `spaceId` TEXT NOT NULL, `name` TEXT NOT NULL, `criteriaJson` TEXT NOT NULL, `viewModeId` TEXT, PRIMARY KEY(`spaceId`, `id`), FOREIGN KEY(`spaceId`) REFERENCES `spaces`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
             "CREATE INDEX IF NOT EXISTS `idx_saved_filters_spaceId` ON `saved_filters` (`spaceId`)",
         )
-        // And the indexes on `tasks` itself, which arrived in the same piecemeal way: a database
-        // from before they were added has the table but not these, and Room checks a table's
-        // indexes as closely as its columns — so filling in the missing tables alone still left
-        // the oldest databases refused. The three the step below drops are deliberately not here.
+        // And the indexes on `tasks`, which arrived just as piecemeal. Room checks a table's
+        // indexes as closely as its columns, so filling in the tables alone still left the oldest
+        // databases refused. The three the step below drops are deliberately absent.
         val missingTaskIndexes = listOf(
             "CREATE INDEX IF NOT EXISTS `idx_tasks_autoUpdateStatusFromSubtasks` ON `tasks` (`spaceId`, `autoUpdateStatusFromSubtasks`)",
             "CREATE INDEX IF NOT EXISTS `idx_tasks_dueDate` ON `tasks` (`spaceId`, `dueDate`)",
