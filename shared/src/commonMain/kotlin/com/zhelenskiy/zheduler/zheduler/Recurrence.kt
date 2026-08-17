@@ -878,8 +878,9 @@ object RecurrenceCalculator {
 
         // Keep looking month by month. Most months have no fifth Tuesday, so checking only the
         // next one and giving up threw for any FIFTH pattern whose following month lacks it --
-        // from inside the recurrence sweep, where nothing catches it. Two years is the same
-        // horizon findNextNthDayOfWeekInMonths searches.
+        // from inside the recurrence sweep, where nothing catches it. The horizon is the one
+        // MONTHS_SEARCHED_FOR_FIXED_POINTS sets, and findNextNthDayOfWeekInMonths searches the
+        // same — it used to be two years, which is what missed those patterns.
         repeat(MONTHS_SEARCHED_FOR_FIXED_POINTS) {
             currentMonth = currentMonth.plus(1, DateTimeUnit.MONTH)
             val candidate = findNthDayOfWeekInMonth(
@@ -942,7 +943,7 @@ object RecurrenceCalculator {
         var year = fromDateTime.year
         var month = fromDateTime.month
         
-        // Search up to two years ahead
+        // As far ahead as MONTHS_SEARCHED_FOR_FIXED_POINTS allows, for the reason given there
         for (i in 0 until MONTHS_SEARCHED_FOR_FIXED_POINTS) {
             val recMonth = RecurrenceMonth.fromKotlinxMonth(month)
             if (recMonth in pattern.months) {

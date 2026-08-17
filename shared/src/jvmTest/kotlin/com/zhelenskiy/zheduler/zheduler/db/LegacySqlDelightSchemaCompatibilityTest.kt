@@ -102,6 +102,62 @@ class LegacySqlDelightSchemaCompatibilityTest {
         }
     }
 
+    /**
+     * The same, for a database from *before* the last few tables existed.
+     *
+     * SQLDelight never numbered its schema here: it said version 1 throughout, while tables were
+     * added to it release by release. A database created by one of those earlier builds still says
+     * version 1 and lacks whatever came later — and Room checks the whole schema after migrating,
+     * so it refused the file, rolled back, and failed the same way on every launch afterwards.
+     */
+    @Test
+    fun `room opens a database from before the later tables existed`() {
+        val dbFile = File(Files.createTempDirectory("older-sqldelight").toFile(), "zheduler.db")
+
+        // Everything the earlier build had: no saved filters, no view modes of any kind, no tags.
+        val omitted = listOf("saved_filters", "custom_view_modes", "active_view_modes", "task_tags")
+        withConnection(dbFile) { connection ->
+            LEGACY_SQLDELIGHT_DDL
+                .filterNot { statement -> omitted.any { statement.contains("CREATE TABLE $it ") } }
+                .filterNot { statement -> omitted.any { statement.contains(" ON $it(") } }
+                .forEach(connection::execSQL)
+            connection.execSQL("PRAGMA user_version = 1")
+            connection.execSQL("INSERT INTO spaces(id, name, idPrefix) VALUES ('space-0-OLD', 'Older', 'OLD')")
+            connection.execSQL("INSERT INTO space_next_ids(spaceId, nextId) VALUES ('space-0-OLD', 2)")
+            connection.execSQL(
+                """
+                INSERT INTO tasks(id, title, description, status, dueDate, priority, estimatedTimeJson,
+                                  tagsJson, notificationsJson, spaceId, recurrenceRulesJson,
+                                  autoUpdateStatusFromSubtasks, isRecurring, isBlocked)
+                VALUES ('OLD-1', 'Older task', '', '{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"}',
+                        NULL, NULL, NULL, '[]', '[]', 'space-0-OLD', '[]', 0, 0, 0)
+                """
+            )
+        }
+
+        val database = Room.databaseBuilder<ZhedulerDatabase>(name = dbFile.absolutePath)
+            .setDriver(BundledSQLiteDriver())
+            .withZhedulerMigrations()
+            .build()
+
+        try {
+            runBlocking {
+                val repository = RoomTaskRepository(database)
+
+                val space = repository.getAllSpaces().single()
+                assertEquals("Older", space.name)
+                assertEquals("Older task", repository.getTaskById("OLD-1")?.title)
+
+                // The tables that were missing work, rather than merely existing.
+                assertTrue(repository.addTag(space.id, "new"), "tags should be usable")
+                assertEquals(listOf("new"), repository.filterTags(space.id, "", emptySet()))
+                assertEquals(emptyList(), repository.getAllSavedFilters(space.id))
+            }
+        } finally {
+            database.close()
+        }
+    }
+
     private fun createLegacyDatabase(dbFile: File) = withConnection(dbFile) { connection ->
         LEGACY_SQLDELIGHT_DDL.forEach(connection::execSQL)
         // SQLDelight stamps the schema version, which is what sends Room down the "adopt an

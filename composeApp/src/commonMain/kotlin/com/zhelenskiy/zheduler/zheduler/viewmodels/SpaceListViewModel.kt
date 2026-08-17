@@ -216,7 +216,13 @@ class SpaceListContainer(
         spaceId: String,
         prettyPrint: Boolean,
     ) {
-        val json = repository.exportSpaceToJson(spaceId, prettyPrint)
+        // As with import: a refusal has to reach the dialog waiting for it. A space holding a row
+        // this build cannot read fails the export rather than quietly leaving that row out of the
+        // file, and the throw would otherwise go to the snackbar behind the open dialog while the
+        // dialog itself waited for a result that never came.
+        val json = runCatching { repository.exportSpaceToJson(spaceId, prettyPrint) }
+            .onFailure { failure -> if (failure is CancellationException) throw failure }
+            .getOrNull()
         updateState { copy(lastExportResult = ExportResult(requestId, spaceId, json, prettyPrint)) }
         action(SpaceListAction.SpaceExported(json))
     }

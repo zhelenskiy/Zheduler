@@ -136,7 +136,7 @@ interface TaskRepository {
     ): List<Task> = filterTasksForSelectionPage(spaceId, excludeTaskId, searchQuery, 0, UNLIMITED).items
 
     /**
-     * One window of [filterTasksForSelection], ordered by task ID.
+     * One window of [filterTasksForSelection], in creation order — which is what keeps paging stable.
      *
      * @param offset Number of matching tasks to skip
      * @param limit Maximum number of tasks to return

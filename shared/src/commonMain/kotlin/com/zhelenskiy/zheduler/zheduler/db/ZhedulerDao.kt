@@ -47,32 +47,6 @@ interface ZhedulerDao {
     @Query("SELECT idPrefix FROM spaces")
     suspend fun getAllPrefixes(): List<String>
 
-    @Query(
-        """
-        SELECT * FROM spaces
-        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
-           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
-        ORDER BY rowid
-        LIMIT :limit OFFSET :offset
-        """
-    )
-    suspend fun filterSpacesPaged(
-        searchInName: Long,
-        query: String,
-        searchInPrefix: Long,
-        limit: Int,
-        offset: Int,
-    ): List<Spaces>
-
-    @Query(
-        """
-        SELECT COUNT(*) FROM spaces
-        WHERE (:searchInName = 1 AND LOWER(name) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
-           OR (:searchInPrefix = 1 AND LOWER(idPrefix) LIKE '%' || LOWER(:query) || '%' ESCAPE '\')
-        """
-    )
-    suspend fun countFilteredSpaces(searchInName: Long, query: String, searchInPrefix: Long): Int
-
     // ============ Task queries ============
 
     @Query("SELECT EXISTS(SELECT 1 FROM tasks WHERE spaceId = :spaceId)")
@@ -343,40 +317,15 @@ interface ZhedulerDao {
 
     // ============ Tag queries (space-scoped) ============
 
+    /**
+     * A space's whole tag vocabulary.
+     *
+     * The pickers read this and match in Kotlin. There used to be paged `LIKE` queries here to
+     * search and exclude in SQL, and they are gone: SQLite's `LOWER` folds only A–Z, so they found
+     * nothing in any alphabet but English. A space's vocabulary is small enough to read whole.
+     */
     @Query("SELECT name FROM tags WHERE spaceId = :spaceId")
     suspend fun getAllTagsForSpace(spaceId: String): List<String>
-
-    /**
-     * One window of [filterTagsForSpace]. Tags the caller already picked are excluded in SQL so the
-     * window size is exact — filtering them out afterwards would leave short pages.
-     */
-    @Query(
-        """
-        SELECT name FROM tags
-        WHERE spaceId = :spaceId
-          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
-          AND name NOT IN (:excludeTags)
-        ORDER BY name ASC
-        LIMIT :limit OFFSET :offset
-        """
-    )
-    suspend fun filterTagsForSpacePaged(
-        spaceId: String,
-        searchQuery: String,
-        excludeTags: Collection<String>,
-        limit: Int,
-        offset: Int,
-    ): List<String>
-
-    @Query(
-        """
-        SELECT COUNT(*) FROM tags
-        WHERE spaceId = :spaceId
-          AND (:searchQuery = '' OR LOWER(name) LIKE '%' || LOWER(:searchQuery) || '%' ESCAPE '\')
-          AND name NOT IN (:excludeTags)
-        """
-    )
-    suspend fun countFilteredTagsForSpace(spaceId: String, searchQuery: String, excludeTags: Collection<String>): Int
 
     @Query("INSERT OR IGNORE INTO tags(spaceId, name) VALUES (:spaceId, :name)")
     suspend fun insertTagForSpace(spaceId: String, name: String)

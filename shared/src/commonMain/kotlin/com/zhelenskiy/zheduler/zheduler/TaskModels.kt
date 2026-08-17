@@ -275,16 +275,26 @@ data class Task(
 }
 
 /**
- * Computed properties for total priority and due date based on dependencies
+ * A task with what the work waiting on it makes of its due date and priority.
+ *
+ * The totals look *downstream*, not up: they gather this task together with everything that
+ * reaches it — the tasks that depend on it, and the tasks blocked by it, transitively. A task of
+ * no importance in itself that three urgent tasks are waiting on is urgent, and one that nothing
+ * waits on is only as pressing as it says it is. (The word "dependencies" elsewhere in this
+ * codebase means the opposite direction — what a task depends on — and does not come into this.)
  */
 data class TaskWithTotals(
     val task: Task,
-    val totalDueDate: Instant?, // Closest due date from self and dependencies
-    val totalPriority: Priority? // Highest priority from self and dependencies
+    /** The earliest due date of this task and everything waiting on it. */
+    val totalDueDate: Instant?,
+    /** The highest priority of this task and everything waiting on it. */
+    val totalPriority: Priority?,
 ) {
     /**
-     * Check if this task is missed based on total due date (considers dependencies).
-     * A task is missed if its total due date is in the past and the task is not Done or Declined.
+     * Whether this task is late, counting what waits on it.
+     *
+     * True once [totalDueDate] is in the past, unless the task is Done or Declined — so a task
+     * with no deadline of its own is late when something waiting on it is.
      */
     fun isMissed(currentTime: Instant): Boolean {
         val due = totalDueDate ?: return false

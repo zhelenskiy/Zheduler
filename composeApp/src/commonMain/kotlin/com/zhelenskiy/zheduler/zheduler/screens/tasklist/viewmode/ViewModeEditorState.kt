@@ -250,7 +250,7 @@ class GroupingLevelState(
             }
         }
         // Duplicate values and non-exhaustive coverage are allowed
-        // Tasks matching multiple groups will appear in the first matching group
+        // Tasks matching multiple groups will appear in all of them
         // Tasks not matching any group will appear in the uncategorized group
 
         return errors

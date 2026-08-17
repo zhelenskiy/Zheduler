@@ -1053,12 +1053,29 @@ private const val SearchSettleMillis = 250L
 @Composable
 internal fun TaskFilterState.toCriteriaAfterTyping(): TaskFilterCriteria {
     val typed = searchQuery
-    val settled by produceState(typed, typed) {
-        if (value != typed) {
-            delay(SearchSettleMillis)
-            value = typed
+    var settled by remember { mutableStateOf(typed) }
+    // The value this change came from, which is not the same as the one being queried: while the
+    // user types, the queried value lags several characters behind.
+    val previous = remember { mutableStateOf(typed) }
+    LaunchedEffect(typed) {
+        val cameFrom = previous.value
+        previous.value = typed
+        if (typed == settled) return@LaunchedEffect
+        // Only actual typing waits. A query that arrives whole — the filter being restored when
+        // the screen opens, a saved filter being applied, a paste, or the box being cleared with
+        // its button — is not someone mid-word, and waiting there only shows the wrong list for a
+        // moment and costs a second query to correct it.
+        if (!isTypingFrom(cameFrom, typed)) {
+            settled = typed
+            return@LaunchedEffect
         }
+        delay(SearchSettleMillis)
+        settled = typed
     }
     // Read outside the effect so every other filter still applies the moment it changes.
     return toCriteria().copy(searchQuery = settled)
 }
+
+/** Whether [now] looks like [before] with one more character typed, or one taken back. */
+private fun isTypingFrom(before: String, now: String): Boolean =
+    now.length - before.length in -1..1 && (now.startsWith(before) || before.startsWith(now))

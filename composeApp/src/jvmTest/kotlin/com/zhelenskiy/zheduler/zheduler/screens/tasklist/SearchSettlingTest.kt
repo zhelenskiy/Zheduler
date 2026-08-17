@@ -48,6 +48,40 @@ class SearchSettlingTest {
     }
 
     @Test
+    fun aQueryThatArrivesWholeIsNotWaitedFor() = runComposeUiTest {
+        val state = TaskFilterState()
+        var latest by mutableStateOf(TaskFilterCriteria())
+
+        setContent { latest = state.toCriteriaAfterTyping() }
+        waitForIdle()
+
+        // What the stored filter does when the screen opens, or a saved filter when applied.
+        state.searchQuery = "quarterly report"
+        waitForIdle()
+
+        assertEquals("quarterly report", latest.searchQuery, "a restored filter should not wait")
+    }
+
+    @Test
+    fun clearingTheBoxTakesEffectAtOnce() = runComposeUiTest {
+        val state = TaskFilterState()
+        var latest by mutableStateOf(TaskFilterCriteria())
+
+        setContent { latest = state.toCriteriaAfterTyping() }
+        waitForIdle()
+        state.searchQuery = "report"
+        waitForIdle()
+        mainClock.advanceTimeBy(1_000)
+        waitForIdle()
+
+        // The X button empties the box in one go, and the full list should come back at once.
+        state.searchQuery = ""
+        waitForIdle()
+
+        assertEquals("", latest.searchQuery)
+    }
+
+    @Test
     fun everyOtherFilterTakesEffectAtOnce() = runComposeUiTest {
         val state = TaskFilterState()
         var latest by mutableStateOf(TaskFilterCriteria())

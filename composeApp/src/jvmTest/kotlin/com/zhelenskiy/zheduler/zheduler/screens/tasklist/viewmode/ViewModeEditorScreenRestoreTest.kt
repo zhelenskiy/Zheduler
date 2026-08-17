@@ -20,6 +20,14 @@ import com.zhelenskiy.zheduler.zheduler.ViewMode
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import kotlinx.coroutines.runBlocking
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
+import com.zhelenskiy.zheduler.zheduler.GroupDefinition
+import com.zhelenskiy.zheduler.zheduler.GroupableField
+import com.zhelenskiy.zheduler.zheduler.GroupingLevel
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Clock
@@ -54,6 +62,59 @@ class ViewModeEditorScreenRestoreTest {
         val stored: ViewMode = runBlocking {
             delegate.saveViewMode(ViewMode(id = "vm-1", name = "Stored", spaceId = spaceId))
         }
+
+        /** A mode with two levels, for the reordering test. */
+        val twoLevels: ViewMode = runBlocking {
+            delegate.saveViewMode(
+                ViewMode(
+                    id = "vm-2",
+                    name = "Two levels",
+                    spaceId = spaceId,
+                    groupingLevels = persistentListOf(
+                        GroupingLevel(
+                            field = GroupableField.Status,
+                            groups = persistentListOf(GroupDefinition(label = "Open", values = persistentSetOf("Open"))),
+                        ),
+                        GroupingLevel(
+                            field = GroupableField.Tags,
+                            groups = persistentListOf(GroupDefinition(label = "Work", values = persistentSetOf("work"))),
+                        ),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun aLevelCanBeMovedWithoutDragging() = runComposeUiTest {
+        val fixture = Fixture()
+
+        setContent {
+            ViewModeEditorScreen(
+                container = ViewModeContainer(fixture.repository, fixture.spaceId),
+                viewModeId = fixture.twoLevels.id,
+                copyFromViewModeId = null,
+                spaceId = fixture.spaceId,
+                onSave = {},
+                onCancel = {},
+                themeMode = ThemeMode.Light,
+                onThemeModeChange = {},
+                useDynamicColors = false,
+                onDynamicColorsChange = {},
+                colorSettings = ColorSettings(),
+                onColorSettingsChange = {},
+            )
+        }
+        waitUntil(timeoutMillis = 10_000) {
+            onAllNodesWithText("Level 1: Status").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // The control the drag handle sits beside, for anyone without a pointer.
+        onNodeWithContentDescription("Move level 2 up").performClick()
+        waitForIdle()
+
+        onNodeWithText("Level 1: Tags").assertExists()
+        onNodeWithText("Level 2: Status").assertExists()
     }
 
     @Test

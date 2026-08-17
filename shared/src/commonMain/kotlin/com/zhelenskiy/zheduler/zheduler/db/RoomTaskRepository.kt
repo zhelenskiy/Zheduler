@@ -1060,11 +1060,18 @@ class RoomTaskRepository(
             nextId = nextId,
             tags = spaceTags,
             // Only the space's own: the built-in modes exist everywhere and are not the user's.
-            // One that cannot be decoded is left out rather than failing the whole export.
-            viewModes = dao.getAllCustomViewModes(spaceId).mapNotNull { row ->
-                runCatching { row.configJson.toViewMode(spaceId, row.id, row.name) }.getOrNull()
+            //
+            // A row this build cannot read fails the export, rather than being left out of it.
+            // Elsewhere such a row costs the user that one view mode — it is missing from the list
+            // and the app carries on — but a file is supposed to be everything, and one written
+            // quietly incomplete is worse than one that was refused: it is restored later, once
+            // the original is gone, and only then is the loss discovered.
+            viewModes = dao.getAllCustomViewModes(spaceId).map { row ->
+                row.configJson.toViewMode(spaceId, row.id, row.name)
             },
-            savedFilters = dao.getAllSavedFilters(spaceId).mapNotNull { it.toSavedFilterModel() },
+            savedFilters = dao.getAllSavedFilters(spaceId).map { row ->
+                requireNotNull(row.toSavedFilterModel()) { "Saved filter ${row.id} cannot be read" }
+            },
         )
 
         val json = if (prettyPrint) jsonPretty else jsonCompact
