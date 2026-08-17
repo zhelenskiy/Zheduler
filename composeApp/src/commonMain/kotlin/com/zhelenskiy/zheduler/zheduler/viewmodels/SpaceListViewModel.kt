@@ -36,7 +36,20 @@ enum class SpaceSearchOption {
  * state when the next one is asked for: without matching them up, pressing Copy a second time
  * copies the JSON from the first press.
  */
-data class ExportResult(val requestId: Long, val spaceId: String, val json: String?, val prettyPrint: Boolean)
+data class ExportResult(
+    val requestId: Long,
+    val spaceId: String,
+    val json: String?,
+    val prettyPrint: Boolean,
+    /**
+     * Why there is no [json], when the reason is worth repeating.
+     *
+     * An export fails on a row this build cannot read, and that row is hidden from every list in
+     * the app — so "failed" on its own leaves the user with nothing to act on and no way to find
+     * what is in the way.
+     */
+    val failure: String? = null,
+)
 
 /** The answer to one import request; see [ExportResult] for why it is identified. */
 data class ImportResult(val requestId: Long, val space: Space?)
@@ -220,10 +233,13 @@ class SpaceListContainer(
         // this build cannot read fails the export rather than quietly leaving that row out of the
         // file, and the throw would otherwise go to the snackbar behind the open dialog while the
         // dialog itself waited for a result that never came.
-        val json = runCatching { repository.exportSpaceToJson(spaceId, prettyPrint) }
+        val attempt = runCatching { repository.exportSpaceToJson(spaceId, prettyPrint) }
             .onFailure { failure -> if (failure is CancellationException) throw failure }
-            .getOrNull()
-        updateState { copy(lastExportResult = ExportResult(requestId, spaceId, json, prettyPrint)) }
+        val json = attempt.getOrNull()
+        val failure = attempt.exceptionOrNull()?.message
+        updateState {
+            copy(lastExportResult = ExportResult(requestId, spaceId, json, prettyPrint, failure))
+        }
         action(SpaceListAction.SpaceExported(json))
     }
 

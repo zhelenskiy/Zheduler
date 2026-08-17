@@ -44,6 +44,7 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDia
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.settings.LocalEditorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ExportResult
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ImportResult
@@ -492,12 +493,17 @@ private fun SpaceListDialogs(
         )
     }
 
+    val editorSettings = LocalEditorSettings.current
+
     dialogState.spaceToDelete?.let { space ->
         DeleteConfirmationDialog(
             title = "Delete Space",
             message = "Are you sure you want to delete space \"${space.name}\"? All tasks in this space will be permanently deleted.",
             onConfirm = {
                 onDeleteSpace(space.id)
+                // Its task ids go back into circulation with the prefix, and a new space claiming
+                // the prefix would otherwise inherit the editors chosen for the old space's tasks.
+                editorSettings.forget { taskId -> taskId.startsWith("${space.idPrefix}-") }
                 dialogState.spaceToDelete = null
             },
             onDismiss = { dialogState.spaceToDelete = null }
@@ -604,6 +610,16 @@ private class DialogState(
     }
 }
 
+/**
+ * What to tell the user when an export produced nothing.
+ *
+ * The reason matters here more than in most failures: an export fails on a row this build cannot
+ * read, and such a row is hidden from every list in the app, so "failed to export" on its own
+ * leaves nothing to act on and no way to find what is in the way.
+ */
+private fun exportFailureMessage(result: ExportResult?): String =
+    result?.failure?.let { "Failed to export space: $it" } ?: "Failed to export space"
+
 private enum class ExportAction { Copy, Save, Download }
 
 @Composable
@@ -655,7 +671,7 @@ private fun ExportSpaceDialog(
                     if (json != null) {
                         snackbarHostState.showSnackbar("Copied to clipboard")
                     } else {
-                        snackbarHostState.showSnackbar("Failed to export space")
+                        snackbarHostState.showSnackbar(exportFailureMessage(exportResult))
                     }
                 }
             }
@@ -670,7 +686,7 @@ private fun ExportSpaceDialog(
                 onDismiss()
                 parentScope.launch {
                     if (json == null) {
-                        snackbarHostState.showSnackbar("Failed to export space")
+                        snackbarHostState.showSnackbar(exportFailureMessage(exportResult))
                     }
                 }
             }
@@ -684,7 +700,7 @@ private fun ExportSpaceDialog(
                         "Error saving file: ${e.message}"
                     }
                 } else {
-                    "Failed to export space"
+                    exportFailureMessage(exportResult)
                 }
                 onDismiss()
                 parentScope.launch {

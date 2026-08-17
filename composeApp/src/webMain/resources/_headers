@@ -1,0 +1,19 @@
+# Response headers for the deployed web app, in the format Netlify and Cloudflare Pages read.
+# Hosts that ignore this file need the same headers configured their own way — see the web
+# deployment section of the README.
+
+/*
+  # SQLite reaches the Origin Private File System through a SharedArrayBuffer, which a browser
+  # only grants to a cross-origin isolated page. Without these two the worker cannot open the
+  # database at all and the app runs with nowhere to keep anything.
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+# The entry point and its bundles keep the same names from one release to the next, so a browser
+# holding yesterday's copy would otherwise pair it with today's WebAssembly.
+/index.html
+  Cache-Control: no-cache
+/composeApp.js
+  Cache-Control: no-cache
+/*.wasm
+  Cache-Control: no-cache

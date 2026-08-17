@@ -4,6 +4,8 @@ import androidx.room3.Room
 import com.zhelenskiy.zheduler.zheduler.EstimatedTimeFilter
 import com.zhelenskiy.zheduler.zheduler.RecurrencePeriod
 import com.zhelenskiy.zheduler.zheduler.TaskFilterCriteria
+import com.zhelenskiy.zheduler.zheduler.TaskStatus
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.persistentListOf
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
@@ -114,12 +116,17 @@ class LegacySqlDelightSchemaCompatibilityTest {
     fun `room opens a database from before the later tables existed`() {
         val dbFile = File(Files.createTempDirectory("older-sqldelight").toFile(), "zheduler.db")
 
-        // Everything the earlier build had: no saved filters, no view modes of any kind, no tags.
+        // Everything the earlier build had — and, as importantly, nothing it did not. The tables
+        // for saved filters, view modes and task tags all came later; so did every index on
+        // `tasks`, which arrived in one go partway through. A fixture that kept the indexes while
+        // dropping the tables describes a database that never existed, and it was hiding the very
+        // gap this test is for: Room checks a table's indexes as closely as its columns.
         val omitted = listOf("saved_filters", "custom_view_modes", "active_view_modes", "task_tags")
         withConnection(dbFile) { connection ->
             LEGACY_SQLDELIGHT_DDL
                 .filterNot { statement -> omitted.any { statement.contains("CREATE TABLE $it ") } }
                 .filterNot { statement -> omitted.any { statement.contains(" ON $it(") } }
+                .filterNot { statement -> statement.contains("CREATE INDEX idx_tasks_") }
                 .forEach(connection::execSQL)
             connection.execSQL("PRAGMA user_version = 1")
             connection.execSQL("INSERT INTO spaces(id, name, idPrefix) VALUES ('space-0-OLD', 'Older', 'OLD')")
@@ -152,6 +159,17 @@ class LegacySqlDelightSchemaCompatibilityTest {
                 assertTrue(repository.addTag(space.id, "new"), "tags should be usable")
                 assertEquals(listOf("new"), repository.filterTags(space.id, "", emptySet()))
                 assertEquals(emptyList(), repository.getAllSavedFilters(space.id))
+
+                // A query that leans on one of the indexes this database never had.
+                assertEquals(
+                    listOf("OLD-1"),
+                    repository.getTasksForGroup(
+                        spaceId = space.id,
+                        filters = persistentListOf(),
+                        orderingRules = persistentListOf(),
+                        filterCriteria = TaskFilterCriteria(statusFilters = persistentSetOf(TaskStatus.Open)),
+                    ).map { it.task.id },
+                )
             }
         } finally {
             database.close()

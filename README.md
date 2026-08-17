@@ -91,6 +91,29 @@ in your IDE's toolbar or run it directly from the terminal:
       .\gradlew.bat :composeApp:jsBrowserDevelopmentRun
       ```
 
+#### Deploying the web app
+
+The web build keeps its data in the browser's Origin Private File System, which SQLite reaches
+through a `SharedArrayBuffer`. Browsers only hand one to a **cross-origin isolated** page, so
+whatever serves the files has to send:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Without them the app loads and runs with no database at all — nothing is kept between reloads,
+and the only sign is a message from the worker in the browser console. The dev server sets them
+already ([`composeApp/webpack.config.d/opfs-headers.js`](./composeApp/webpack.config.d/opfs-headers.js));
+they matter for the deployed copy. [`composeApp/src/webMain/resources/_headers`](./composeApp/src/webMain/resources/_headers)
+carries them for hosts that read that file (Netlify, Cloudflare Pages) and is copied into the
+distribution; anywhere else — GitHub Pages among them, which cannot set response headers at all —
+needs its own configuration, or a service worker that installs the isolation.
+
+The same file marks the entry point and its bundles uncacheable, because their names do not change
+between releases: a browser holding an old `composeApp.js` would otherwise pair it with the new
+WebAssembly and fail in ways that look like nothing in particular.
+
 ### Build and Run iOS Application
 
 To build and run the development version of the iOS app, use the run configuration from the run widget

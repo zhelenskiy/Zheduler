@@ -41,6 +41,23 @@ class EditorSettingsState(
     /** Tasks the user has decided about since start, which storage must not speak over. */
     private val decidedSinceStart = mutableSetOf<String>()
 
+    /**
+     * Forgets the choices made for tasks whose ids [belongsToDeleted] recognises.
+     *
+     * Task ids are handed out per space as `PREFIX-1`, `PREFIX-2`, and they come back: delete a
+     * task, or a whole space, and the next ones created take the same names. A choice left behind
+     * then belongs to a task that no longer exists, and is inherited by whichever unrelated task
+     * is given its id — opening in an editor its owner never asked for. Kept out of the repository
+     * on purpose: this is a preference about a screen, not part of the task.
+     */
+    fun forget(belongsToDeleted: (taskId: String) -> Boolean) {
+        val remaining = descriptionEditorByTask.filterKeys { !belongsToDeleted(it) }
+        decidedSinceStart.removeAll { belongsToDeleted(it) }
+        if (remaining == descriptionEditorByTask) return
+        descriptionEditorByTask = remaining
+        onPersist(remaining)
+    }
+
     /** Remembers [kind] for [taskId]. A task with no id yet has nothing to remember it by. */
     fun setDescriptionEditorFor(taskId: String?, kind: DescriptionEditorKind) {
         if (taskId == null) return

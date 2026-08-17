@@ -172,8 +172,18 @@ private class FenceStart(
     private val length: Int,
     val language: String?,
 ) {
+    /**
+     * Whether [line] ends this block.
+     *
+     * Indented no further than the three spaces an opening fence is allowed, because a deeper one
+     * is content: showing fence syntax inside a code sample is done by indenting it, and treating
+     * that as the closer cut the block in two — the rest of the sample became prose, and the real
+     * closing fence opened a block that swallowed everything after it.
+     */
     fun closes(line: String): Boolean {
-        val trimmed = line.trimStart(' ')
+        val indent = line.takeWhile { it == ' ' }.length
+        if (indent > 3) return false
+        val trimmed = line.substring(indent)
         val run = trimmed.takeWhile { it == marker }.length
         return run >= length && trimmed.drop(run).isBlank()
     }

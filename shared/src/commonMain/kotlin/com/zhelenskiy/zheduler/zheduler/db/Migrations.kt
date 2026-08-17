@@ -52,7 +52,23 @@ internal val AdoptLegacySchema = object : Migration(1, 2) {
             "CREATE TABLE IF NOT EXISTS `saved_filters` (`id` TEXT NOT NULL, `spaceId` TEXT NOT NULL, `name` TEXT NOT NULL, `criteriaJson` TEXT NOT NULL, `viewModeId` TEXT, PRIMARY KEY(`spaceId`, `id`), FOREIGN KEY(`spaceId`) REFERENCES `spaces`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
             "CREATE INDEX IF NOT EXISTS `idx_saved_filters_spaceId` ON `saved_filters` (`spaceId`)",
         )
-        missing.forEach { statement -> connection.execSQL(statement) }
+        // And the indexes on `tasks` itself, which arrived in the same piecemeal way: a database
+        // from before they were added has the table but not these, and Room checks a table's
+        // indexes as closely as its columns — so filling in the missing tables alone still left
+        // the oldest databases refused. The three the step below drops are deliberately not here.
+        val missingTaskIndexes = listOf(
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_autoUpdateStatusFromSubtasks` ON `tasks` (`spaceId`, `autoUpdateStatusFromSubtasks`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_dueDate` ON `tasks` (`spaceId`, `dueDate`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_isBlocked` ON `tasks` (`isBlocked`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_isRecurring` ON `tasks` (`spaceId`, `isRecurring`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_priority` ON `tasks` (`spaceId`, `priority`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_recurring_dueDate` ON `tasks` (`isRecurring`, `dueDate`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_spaceId` ON `tasks` (`spaceId`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_status` ON `tasks` (`spaceId`, `status`)",
+            "CREATE INDEX IF NOT EXISTS `idx_tasks_title_search` ON `tasks` (`title`)",
+        )
+
+        (missing + missingTaskIndexes).forEach { statement -> connection.execSQL(statement) }
 
         connection.execSQL("DROP INDEX IF EXISTS idx_tasks_id_search")
         connection.execSQL("DROP INDEX IF EXISTS idx_tasks_estimatedTimeJson")

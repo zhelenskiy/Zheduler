@@ -82,6 +82,32 @@ class SearchSettlingTest {
     }
 
     @Test
+    fun composingACharacterInPlaceStillWaits() = runComposeUiTest {
+        val state = TaskFilterState()
+        val queried = mutableListOf<TaskFilterCriteria>()
+
+        setContent {
+            val criteria = state.toCriteriaAfterTyping()
+            if (queried.lastOrNull() != criteria) queried += criteria
+        }
+        waitForIdle()
+
+        // Composing 한: each keystroke rewrites the syllable in place rather than appending, and
+        // the same shape appears whenever two keystrokes land in one frame.
+        listOf("ㅎ", "하", "한").forEach { step ->
+            state.searchQuery = step
+            waitForIdle()
+        }
+
+        assertEquals(listOf(""), queried.map { it.searchQuery }, "each keystroke queried the space")
+
+        mainClock.advanceTimeBy(1_000)
+        waitForIdle()
+
+        assertEquals(listOf("", "한"), queried.map { it.searchQuery })
+    }
+
+    @Test
     fun everyOtherFilterTakesEffectAtOnce() = runComposeUiTest {
         val state = TaskFilterState()
         var latest by mutableStateOf(TaskFilterCriteria())

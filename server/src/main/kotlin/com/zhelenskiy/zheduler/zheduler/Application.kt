@@ -7,7 +7,10 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
 fun main() {
-    embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0", module = Application::module)
+    // Loopback while this is a stub with no authentication of any kind. Whoever gives it a real
+    // endpoint can widen it deliberately, rather than discovering it was already listening to the
+    // network.
+    embeddedServer(Netty, port = SERVER_PORT, host = "127.0.0.1", module = Application::module)
         .start(wait = true)
 }
 

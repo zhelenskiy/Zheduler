@@ -53,6 +53,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.dataOrNull
 import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.settings.LocalEditorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.reportingFailure
@@ -353,7 +354,7 @@ internal fun DynamicTaskList(
     shouldAnimate: Boolean,
     onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
     onCountTasks: suspend (PersistentList<GroupFilter>, TaskFilterCriteria) -> Int,
-    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria, String) -> Flow<PagingData<TaskWithTotals>>,
+    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria, ViewMode) -> Flow<PagingData<TaskWithTotals>>,
     onMatchingCountChange: (Int) -> Unit,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
@@ -487,7 +488,7 @@ internal fun DynamicTaskList(
                     leaf.filters,
                     leaf.orderingRules.ifEmpty { viewMode.defaultOrderingRules },
                     filterCriteria,
-                    viewMode.id,
+                    viewMode,
                 )
             }
             leafItems[leaf.groupKey] = pages.collectAsLazyPagingItems()
@@ -762,7 +763,7 @@ private fun TaskListContent(
     shouldAnimate: Boolean,
     onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
     onCountTasks: suspend (PersistentList<GroupFilter>, TaskFilterCriteria) -> Int,
-    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria, String) -> Flow<PagingData<TaskWithTotals>>,
+    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria, ViewMode) -> Flow<PagingData<TaskWithTotals>>,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
@@ -834,6 +835,7 @@ fun TaskListScreen(
     val hasAnyTasks = state.hasAnyTasks
     val currentSpace = state.currentSpace
     val allTags = state.allTags ?: emptySet()
+    val editorSettings = LocalEditorSettings.current
     var taskToDelete by remember { mutableStateOf<TaskWithTotals?>(null) }
     var showSaveFilterDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -965,6 +967,9 @@ fun TaskListScreen(
             message = "Are you sure you want to delete \"${task.task.title}\"?",
             onConfirm = {
                 container.store.intent(TaskListIntent.DeleteTask(task.task.id))
+                // The id will be handed out again; the editor chosen for this task must not go
+                // with it to whichever task gets it next.
+                editorSettings.forget { it == task.task.id }
                 taskToDelete = null
                 onRefresh()
             },
@@ -1061,11 +1066,11 @@ internal fun TaskFilterState.toCriteriaAfterTyping(): TaskFilterCriteria {
         val cameFrom = previous.value
         previous.value = typed
         if (typed == settled) return@LaunchedEffect
-        // Only actual typing waits. A query that arrives whole — the filter being restored when
-        // the screen opens, a saved filter being applied, a paste, or the box being cleared with
-        // its button — is not someone mid-word, and waiting there only shows the wrong list for a
-        // moment and costs a second query to correct it.
-        if (!isTypingFrom(cameFrom, typed)) {
+        // A query that arrives whole — the filter being restored when the screen opens, a saved
+        // filter applied, or the box emptied by its clear button — is not someone mid-word, and
+        // waiting there only shows the wrong list for a moment and costs a second query to
+        // correct it.
+        if (arrivedWhole(cameFrom, typed)) {
             settled = typed
             return@LaunchedEffect
         }
@@ -1076,6 +1081,15 @@ internal fun TaskFilterState.toCriteriaAfterTyping(): TaskFilterCriteria {
     return toCriteria().copy(searchQuery = settled)
 }
 
-/** Whether [now] looks like [before] with one more character typed, or one taken back. */
-private fun isTypingFrom(before: String, now: String): Boolean =
-    now.length - before.length in -1..1 && (now.startsWith(before) || before.startsWith(now))
+/**
+ * Whether [now] appeared at once rather than being typed: a query filled into an empty box, or the
+ * box emptied in one go.
+ *
+ * Deliberately narrow. The obvious rule — anything that is not a one-character edit of what was
+ * there — reads composition as arrival: typing 한 goes ㅎ, 하, 한, each replacing the last in
+ * place, and Japanese conversion rewrites a whole segment at once. Those are the middle of a word,
+ * and treating them as finished queries the space on every keystroke, which is what waiting for a
+ * pause exists to avoid. Two keystrokes landing in one frame look the same way.
+ */
+private fun arrivedWhole(before: String, now: String): Boolean =
+    (before.isEmpty() && now.length > 1) || now.isEmpty()

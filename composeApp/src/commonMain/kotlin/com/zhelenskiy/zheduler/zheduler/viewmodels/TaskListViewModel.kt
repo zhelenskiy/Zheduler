@@ -183,7 +183,7 @@ class TaskListContainer(
     private val groupPages = mutableMapOf<GroupPagingKey, Flow<PagingData<TaskWithTotals>>>()
     private val groupFactories = mutableListOf<InvalidatingPagingSourceFactory<Int, TaskWithTotals>>()
     private var groupPagesCriteria: TaskFilterCriteria? = null
-    private var groupPagesViewModeId: String? = null
+    private var groupPagesViewMode: ViewMode? = null
 
     /**
      * The scope the current criteria's cached pages live in, replaced whenever they change.
@@ -225,19 +225,23 @@ class TaskListContainer(
         filters: PersistentList<GroupFilter>,
         orderingRules: PersistentList<OrderingRule>,
         filterCriteria: TaskFilterCriteria,
-        viewModeId: String,
+        viewMode: ViewMode,
     ): Flow<PagingData<TaskWithTotals>> {
         // The view mode counts as much as the criteria: its groups are different groups, so the
         // ones cached for the mode before it are as obsolete as those for another filter — and
         // left in place they went on running, holding the rows they had loaded.
-        if (filterCriteria != groupPagesCriteria || viewModeId != groupPagesViewModeId) {
+        //
+        // Compared whole rather than by id, because editing a mode keeps its id while changing
+        // every group under it: the entries for the old arrangement stayed in the map, kept their
+        // place in the scope, and were re-queried on every change to the data from then on.
+        if (filterCriteria != groupPagesCriteria || viewMode != groupPagesViewMode) {
             groupPages.clear()
             groupFactories.clear()
             // And stop what was cached for the criteria before, rather than only forgetting it.
             groupPagesScope.cancel()
             groupPagesScope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
             groupPagesCriteria = filterCriteria
-            groupPagesViewModeId = viewModeId
+            groupPagesViewMode = viewMode
         }
         return groupPages.getOrPut(GroupPagingKey(filters, orderingRules)) {
             val factory = InvalidatingPagingSourceFactory {

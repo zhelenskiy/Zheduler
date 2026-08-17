@@ -43,11 +43,15 @@ fun AutomaticChangeIndicator(
     )
 
     relatedTaskIds.forEach { taskId ->
-        val relatedTask = loadedTasks[taskId]
         ConnectedTaskChip(
-            task = relatedTask,
+            task = loadedTasks[taskId],
             taskId = taskId,
-            onClick = { relatedTask?.let { onTaskClick(it.id) } }
+            // Opened whether or not the task could be loaded. A history entry outlives the task it
+            // names — that is rather the point of a history — and a chip that answers a tap with
+            // nothing at all reads as a broken app. The detail screen says "This task no longer
+            // exists", which is the truth and is what the blocker chips and the references in a
+            // description already do.
+            onClick = { onTaskClick(taskId) }
         )
     }
 }

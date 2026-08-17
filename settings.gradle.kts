@@ -25,7 +25,12 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
-        maven("https://jitpack.io")
+        // Narrowed to the one library that needs it. JitPack builds arbitrary repositories on
+        // demand, so an unfiltered entry will happily answer for any coordinate the repositories
+        // above do not have — a typo, or a group someone else has taken.
+        maven("https://jitpack.io") {
+            mavenContent { includeGroupAndSubgroups("io.github.linreal") }
+        }
     }
 }
 
