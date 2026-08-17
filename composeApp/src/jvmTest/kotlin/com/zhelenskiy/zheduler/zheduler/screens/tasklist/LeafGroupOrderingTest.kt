@@ -83,7 +83,7 @@ class LeafGroupOrderingTest {
                             )
                         },
                         onCountTasks = { _, _ -> 1 },
-                        onGetTaskPages = { _, rules, _ ->
+                        onGetTaskPages = { _, rules, _, _ ->
                             requested = rules
                             emptyPages()
                         },

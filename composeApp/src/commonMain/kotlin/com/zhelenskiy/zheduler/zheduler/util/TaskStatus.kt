@@ -1,7 +1,6 @@
 package com.zhelenskiy.zheduler.zheduler.util
 
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,7 +40,7 @@ private fun BlockedStatusDetails(
             ConnectedTaskChip(
                 task = blockerTask,
                 taskId = blockerId,
-                modifier = blockerTaskModifier.defaultMinSize(minHeight = 24.dp),
+                modifier = blockerTaskModifier,
                 onClick = if (onTaskClick != null) {
                     { onTaskClick(blockerId) }
                 } else null,

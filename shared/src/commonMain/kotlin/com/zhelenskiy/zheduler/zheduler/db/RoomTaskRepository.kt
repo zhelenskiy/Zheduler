@@ -99,6 +99,17 @@ class RoomTaskRepository(
     private val countCache = mutableMapOf<CandidateKey, Int>()
 
     /**
+     * The whole space's totals, as of the current data version.
+     *
+     * Totals are a property of the space's dependency graph, not of the query asking for them, so
+     * every group of every view was building the same graph over again: reading every row of the
+     * space, every blocked task, and running the same component pass — three times over for a
+     * three-group view, and again for each character typed into the search box. Held per space and
+     * dropped with the other memoised work whenever anything changes.
+     */
+    private val totalsCache = mutableMapOf<String, Map<String, TaskTotals>>()
+
+    /**
      * Bumped on every mutation. Read and compared under [mutex] so the caches themselves are only
      * ever touched by one coroutine; a lost increment under a racing write is harmless, since all
      * that matters is that the value differs from the one the caches were filled at.
@@ -138,6 +149,7 @@ class RoomTaskRepository(
         if (cachedVersion != current || cachedDay != day) {
             orderedCache.clear()
             countCache.clear()
+            totalsCache.clear()
             cachedVersion = current
             cachedDay = day
         }
@@ -2149,19 +2161,26 @@ class RoomTaskRepository(
         spaceId: String,
         rows: List<Tasks>
     ): Map<String, TaskTotals> {
-        val dependentType = ConnectionType.IsDependencyOf.name
-
-        val dependentsBySource = dao.getConnectionsBySpaceAndType(spaceId, dependentType)
-            .groupBy({ it.sourceTaskId }, { it.targetTaskId })
-        val nodes = dao.getTasksBySpace(spaceId).map { it.toTotalsNode(dependentsBySource[it.id].orEmpty()) }
-
-        val blockedDependentsBySource = dao.getConnectionsForBlockedTasks(dependentType)
-            .groupBy({ it.sourceTaskId }, { it.targetTaskId })
-        val blockedNodes = dao.getBlockedTasks().map { it.toTotalsNode(blockedDependentsBySource[it.id].orEmpty()) }
-
-        val totals = calculateTotals(nodes, blockedNodes)
-        return if (rows.size == nodes.size) totals else rows.associate { it.id to (totals[it.id] ?: TaskTotals(null, null)) }
+        val totals = spaceTotals(spaceId)
+        return if (rows.isEmpty()) emptyMap()
+        else rows.associate { it.id to (totals[it.id] ?: TaskTotals(null, null)) }
     }
+
+    /** [calculateCandidateTotals]'s graph, computed once per space per data version. */
+    private suspend fun spaceTotals(spaceId: String): Map<String, TaskTotals> =
+        totalsCache.getOrPut(spaceId) {
+            val dependentType = ConnectionType.IsDependencyOf.name
+
+            val dependentsBySource = dao.getConnectionsBySpaceAndType(spaceId, dependentType)
+                .groupBy({ it.sourceTaskId }, { it.targetTaskId })
+            val nodes = dao.getTasksBySpace(spaceId).map { it.toTotalsNode(dependentsBySource[it.id].orEmpty()) }
+
+            val blockedDependentsBySource = dao.getConnectionsForBlockedTasks(dependentType)
+                .groupBy({ it.sourceTaskId }, { it.targetTaskId })
+            val blockedNodes = dao.getBlockedTasks().map { it.toTotalsNode(blockedDependentsBySource[it.id].orEmpty()) }
+
+            calculateTotals(nodes, blockedNodes)
+        }
 
     /** [getOrderableValue] for a row that has not been loaded into a [Task] yet. */
     private fun orderableValue(row: Tasks, totals: TaskTotals, field: OrderableField): Comparable<*>? = when (field) {

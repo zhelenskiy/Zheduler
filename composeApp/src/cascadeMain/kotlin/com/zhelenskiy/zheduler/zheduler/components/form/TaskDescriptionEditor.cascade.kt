@@ -220,12 +220,31 @@ actual fun TaskDescriptionEditor(
     }
 
     LaunchedEffect(Unit) {
-        snapshotFlow { stateHolder.toMarkdownWithReport(textStates, spanStates, profile) }
-            .collectLatest { result ->
+        // What is watched is a list of references, not the document itself. `snapshotFlow`
+        // recomputes its block on every change it observes, so encoding the whole document inside
+        // it encoded the whole document on every keystroke — the pause below only ever delayed
+        // using the result, never the work of producing it, and typing in a long description got
+        // slower the longer it grew.
+        //
+        // Editing replaces the object it touches: a block, a block's text, a block's spans. So
+        // comparing the references finds any edit at the cost of one comparison per block, and the
+        // document is encoded once the typing stops. Should some edit ever mutate in place and go
+        // unseen here, the unconditional flushes below — on Save, and on the editor going away —
+        // still carry it to the form.
+        snapshotFlow {
+            stateHolder.state.blocks.map { block ->
+                listOf(
+                    Identity(block),
+                    Identity(textStates.get(block.id)?.text),
+                    Identity(spanStates.get(block.id)?.value),
+                )
+            }
+        }
+            .collectLatest { _ ->
                 // Cancelled and restarted by the next edit, so this only fires once the
                 // user pauses.
                 delay(SyncDebounceMillis)
-                applyEncoded(result)
+                applyEncoded(stateHolder.toMarkdownWithReport(textStates, spanStates, profile))
             }
     }
 
@@ -504,4 +523,17 @@ private class MarkdownSync {
         lastPushed = next
         return next
     }
+}
+
+/**
+ * Compares by reference, so a fingerprint of what the editor holds costs one comparison per part.
+ *
+ * The parts are values whose contents are expensive to compare — a block, its text, its spans —
+ * and which are replaced rather than modified when they change.
+ */
+private class Identity(private val value: Any?) {
+    override fun equals(other: Any?): Boolean = other is Identity && other.value === value
+
+    /** Constant on purpose: these are only ever compared, never hashed. */
+    override fun hashCode(): Int = 0
 }

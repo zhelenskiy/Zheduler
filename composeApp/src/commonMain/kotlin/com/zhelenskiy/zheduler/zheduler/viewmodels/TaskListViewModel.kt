@@ -183,6 +183,7 @@ class TaskListContainer(
     private val groupPages = mutableMapOf<GroupPagingKey, Flow<PagingData<TaskWithTotals>>>()
     private val groupFactories = mutableListOf<InvalidatingPagingSourceFactory<Int, TaskWithTotals>>()
     private var groupPagesCriteria: TaskFilterCriteria? = null
+    private var groupPagesViewModeId: String? = null
 
     /**
      * The scope the current criteria's cached pages live in, replaced whenever they change.
@@ -223,15 +224,20 @@ class TaskListContainer(
     fun tasksForGroupPages(
         filters: PersistentList<GroupFilter>,
         orderingRules: PersistentList<OrderingRule>,
-        filterCriteria: TaskFilterCriteria
+        filterCriteria: TaskFilterCriteria,
+        viewModeId: String,
     ): Flow<PagingData<TaskWithTotals>> {
-        if (filterCriteria != groupPagesCriteria) {
+        // The view mode counts as much as the criteria: its groups are different groups, so the
+        // ones cached for the mode before it are as obsolete as those for another filter — and
+        // left in place they went on running, holding the rows they had loaded.
+        if (filterCriteria != groupPagesCriteria || viewModeId != groupPagesViewModeId) {
             groupPages.clear()
             groupFactories.clear()
             // And stop what was cached for the criteria before, rather than only forgetting it.
             groupPagesScope.cancel()
             groupPagesScope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
             groupPagesCriteria = filterCriteria
+            groupPagesViewModeId = viewModeId
         }
         return groupPages.getOrPut(GroupPagingKey(filters, orderingRules)) {
             val factory = InvalidatingPagingSourceFactory {

@@ -28,8 +28,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
@@ -87,11 +89,13 @@ private fun DynamicColorsMenuItem(
             onClick = {
                 onDynamicColorsChange(!useDynamicColors)
             },
-            modifier = Modifier.toggleable(
-                value = useDynamicColors,
-                role = Role.Checkbox,
-                onValueChange = onDynamicColorsChange,
-            ),
+            // Said in the semantics rather than by wrapping the row in a second clickable: the
+            // menu item is already one, and stacking another gave the row two focus stops that
+            // announce the same thing and do the same thing.
+            modifier = Modifier.semantics {
+                role = Role.Checkbox
+                toggleableState = ToggleableState(useDynamicColors)
+            },
             leadingIcon = {
                 Checkbox(
                     checked = useDynamicColors,

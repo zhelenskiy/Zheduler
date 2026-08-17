@@ -7,6 +7,7 @@ import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
@@ -46,13 +47,22 @@ value class Priority(val value: Int) : Comparable<Priority> {
 }
 
 /**
- * Task status representing the current state of a task
+ * Task status representing the current state of a task.
+ *
+ * Each variant's stored name is spelled out rather than left to default to its fully-qualified
+ * class name. The name is on disk — in every task row, every timeline entry, every saved filter
+ * and every export — and the SQL that groups tasks by status matches it as text, so a rename or a
+ * move of any of these classes would leave the stored rows naming something that no longer exists:
+ * decoding would fail, and the grouping would quietly stop matching without failing at all. Pinned
+ * here to what is already written, these classes can be renamed and moved freely.
  */
 @Serializable
 sealed class TaskStatus : Presentable {
+    @SerialName("com.zhelenskiy.zheduler.zheduler.TaskStatus.Open")
     @Serializable
     data object Open : TaskStatus()
 
+    @SerialName("com.zhelenskiy.zheduler.zheduler.TaskStatus.Blocked")
     @Serializable
     data class Blocked(
         @Serializable(with = PersistentSetSerializer::class)
@@ -60,12 +70,15 @@ sealed class TaskStatus : Presentable {
         val comment: String = "",
     ) : TaskStatus()
 
+    @SerialName("com.zhelenskiy.zheduler.zheduler.TaskStatus.InProgress")
     @Serializable
     data object InProgress : TaskStatus()
 
+    @SerialName("com.zhelenskiy.zheduler.zheduler.TaskStatus.Done")
     @Serializable
     data object Done : TaskStatus()
 
+    @SerialName("com.zhelenskiy.zheduler.zheduler.TaskStatus.Declined")
     @Serializable
     data class Declined(val reason: String) : TaskStatus()
 
@@ -168,11 +181,13 @@ data class TaskNotification(
 sealed class AutomaticChangeReason {
     abstract val text: String
 
+    @SerialName("com.zhelenskiy.zheduler.zheduler.AutomaticChangeReason.Unblocked")
     @Serializable
     data object Unblocked : AutomaticChangeReason() {
         override val text: String = "Unblocked"
     }
 
+    @SerialName("com.zhelenskiy.zheduler.zheduler.AutomaticChangeReason.UpdatedFromSubtasks")
     @Serializable
     data class UpdatedFromSubtasks(
         @Serializable(with = PersistentListSerializer::class)
@@ -181,6 +196,7 @@ sealed class AutomaticChangeReason {
         override val text: String = if (relatedTaskIds.size == 1) "by subtask" else "by subtasks"
     }
 
+    @SerialName("com.zhelenskiy.zheduler.zheduler.AutomaticChangeReason.Recurrence")
     @Serializable
     data object Recurrence : AutomaticChangeReason() {
         override val text: String = "recurrence"

@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
@@ -56,6 +57,7 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.reportingFailure
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListIntent
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlinx.collections.immutable.PersistentList
@@ -351,7 +353,7 @@ internal fun DynamicTaskList(
     shouldAnimate: Boolean,
     onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
     onCountTasks: suspend (PersistentList<GroupFilter>, TaskFilterCriteria) -> Int,
-    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> Flow<PagingData<TaskWithTotals>>,
+    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria, String) -> Flow<PagingData<TaskWithTotals>>,
     onMatchingCountChange: (Int) -> Unit,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
@@ -485,6 +487,7 @@ internal fun DynamicTaskList(
                     leaf.filters,
                     leaf.orderingRules.ifEmpty { viewMode.defaultOrderingRules },
                     filterCriteria,
+                    viewMode.id,
                 )
             }
             leafItems[leaf.groupKey] = pages.collectAsLazyPagingItems()
@@ -668,7 +671,14 @@ private fun LazyListScope.TaskGroupItems(
                 ) {
                     IconButton(
                         onClick = toggle,
-                        modifier = Modifier.size(24.dp).clearAndSetSemantics {}
+                        // Cleared of semantics and of focus both: the row above it is the thing to
+                        // press and the thing to hear, and an enabled button keeps its own focus
+                        // stop whatever its semantics say — so a keyboard user was landing twice
+                        // on every header, once on something that announces nothing at all.
+                        modifier = Modifier
+                            .size(24.dp)
+                            .focusProperties { canFocus = false }
+                            .clearAndSetSemantics {}
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -752,7 +762,7 @@ private fun TaskListContent(
     shouldAnimate: Boolean,
     onGetTaskGroups: suspend (ViewMode, Int, PersistentList<GroupFilter>, TaskFilterCriteria) -> List<TaskGroupInfo>,
     onCountTasks: suspend (PersistentList<GroupFilter>, TaskFilterCriteria) -> Int,
-    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria) -> Flow<PagingData<TaskWithTotals>>,
+    onGetTaskPages: (PersistentList<GroupFilter>, PersistentList<OrderingRule>, TaskFilterCriteria, String) -> Flow<PagingData<TaskWithTotals>>,
     onTaskClick: (String) -> Unit,
     onDelete: (TaskWithTotals) -> Unit,
     onCopy: (String) -> Unit,
@@ -784,7 +794,7 @@ private fun TaskListContent(
 
             DynamicTaskList(
                 viewMode = viewMode,
-                filterCriteria = filterState.toCriteria(),
+                filterCriteria = filterState.toCriteriaAfterTyping(),
                 dataVersion = dataVersion,
                 shouldAnimate = shouldAnimate,
                 onGetTaskGroups = onGetTaskGroups,
@@ -1025,4 +1035,30 @@ internal fun groupKeysFor(parentKey: String, groups: List<TaskGroupInfo>): List<
         val own = if (occurrence == 0) escaped else "$escaped#$occurrence"
         if (parentKey.isEmpty()) own else "$parentKey.$own"
     }
+}
+
+/** How long typing has to pause before the list is queried again. */
+private const val SearchSettleMillis = 250L
+
+/**
+ * The filter criteria to query with: everything as it stands, but the search box as it was a moment
+ * ago.
+ *
+ * A query reaches the list by counting each group and ranking its candidates, and with a search
+ * term in play those cannot be answered from the indexes — the rows have to be read and matched.
+ * Doing that on every character meant a space of any size froze while its owner typed a word.
+ * Everything else here is a discrete choice and takes effect at once; only the typing waits for a
+ * pause.
+ */
+@Composable
+internal fun TaskFilterState.toCriteriaAfterTyping(): TaskFilterCriteria {
+    val typed = searchQuery
+    val settled by produceState(typed, typed) {
+        if (value != typed) {
+            delay(SearchSettleMillis)
+            value = typed
+        }
+    }
+    // Read outside the effect so every other filter still applies the moment it changes.
+    return toCriteria().copy(searchQuery = settled)
 }

@@ -8,6 +8,7 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.datetime.*
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -143,12 +144,14 @@ sealed class RecurrenceTimeZone {
     /**
      * Use the system's default timezone
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTimeZone.SystemDefault")
     @Serializable
     data object SystemDefault : RecurrenceTimeZone()
     
     /**
      * Use a specific timezone
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTimeZone.Specific")
     @Serializable
     data class Specific(val zoneId: String) : RecurrenceTimeZone() {
         // No require on the id resolving. This constructor runs on decode, and the set of known
@@ -274,6 +277,7 @@ sealed class RecurrenceTerminationCondition {
     /**
      * Terminates after a specific number of occurrences
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences")
     @Serializable
     data class AfterOccurrences(val count: Int) : RecurrenceTerminationCondition() {
         init {
@@ -284,6 +288,7 @@ sealed class RecurrenceTerminationCondition {
     /**
      * Terminates after a specific date/time
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.OnDate")
     @Serializable
     data class OnDate(
         @Serializable(with = InstantSerializer::class)
@@ -450,6 +455,7 @@ sealed class FixedPointPattern : Presentable {
     /**
      * Specific days of the week (e.g., every Tuesday and Thursday)
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.FixedPointPattern.DaysOfWeek")
     @Serializable
     data class DaysOfWeek(
         @Serializable(with = PersistentSetSerializer::class)
@@ -480,6 +486,7 @@ sealed class FixedPointPattern : Presentable {
      * Specific day of the month (e.g., every 15th)
      * If the day doesn't exist in a month (e.g., 31st in February), uses last day of month
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.FixedPointPattern.DayOfMonth")
     @Serializable
     data class DayOfMonth(
         val dayOfMonth: Int,
@@ -509,6 +516,7 @@ sealed class FixedPointPattern : Presentable {
     /**
      * Nth day of week in a month (e.g., first Monday, last Friday)
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.FixedPointPattern.NthDayOfWeekInMonth")
     @Serializable
     data class NthDayOfWeekInMonth(
         val ordinal: WeekOrdinal,
@@ -532,6 +540,7 @@ sealed class FixedPointPattern : Presentable {
     /**
      * Specific months and day (e.g., every January 1st, every March 15th)
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.FixedPointPattern.YearlyOnDate")
     @Serializable
     data class YearlyOnDate(
         @Serializable(with = PersistentSetSerializer::class)
@@ -562,6 +571,7 @@ sealed class FixedPointPattern : Presentable {
     /**
      * Nth day of week in specific months (e.g., first Monday of January and July)
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.FixedPointPattern.NthDayOfWeekInMonths")
     @Serializable
     data class NthDayOfWeekInMonths(
         val ordinal: WeekOrdinal,
@@ -604,6 +614,7 @@ sealed class RecurrenceTrigger {
      * Repeats at fixed intervals from the first occurrence
      * Example: Every 2 weeks starting from Jan 1
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AfterTimeout")
     @Serializable
     data class AfterTimeout(
         val period: RecurrencePeriod?,
@@ -616,6 +627,7 @@ sealed class RecurrenceTrigger {
      * Repeats at fixed calendar points
      * Example: Every Tuesday and Thursday, Every 1st of month
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.AtFixedPoints")
     @Serializable
     data class AtFixedPoints(
         val pattern: FixedPointPattern,
@@ -627,6 +639,7 @@ sealed class RecurrenceTrigger {
     /**
      * Triggered when task reaches one of the specified statuses
      */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange")
     @Serializable
     data class StatusChange(
         @Serializable(with = PersistentSetSerializer::class)
