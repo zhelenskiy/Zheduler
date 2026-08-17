@@ -38,6 +38,11 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
@@ -414,7 +419,7 @@ private fun CalendarGrid(
 }
 
 @Composable
-private fun CalendarDayCell(
+internal fun CalendarDayCell(
     dayNumber: Int,
     changeCount: Int,
     isSelected: Boolean,
@@ -433,6 +438,21 @@ private fun CalendarDayCell(
         else -> MaterialTheme.colorScheme.surface
     }
 
+    // Everything this cell says apart from the number is said in colour: selected by its fill,
+    // today by its ring, and how much happened by up to three dots. Spelled out here as well, or a
+    // reader hears a bare list of numbers — which is the whole of what this screen is for.
+    val description = buildString {
+        append(dayNumber)
+        if (isToday) append(", today")
+        append(
+            when (changeCount) {
+                0 -> ", nothing happened"
+                1 -> ", 1 change"
+                else -> ", $changeCount changes"
+            }
+        )
+    }
+
     Box(
         modifier = modifier
             .aspectRatio(1f)
@@ -446,6 +466,11 @@ private fun CalendarDayCell(
                     Modifier
                 }
             )
+            .semantics(mergeDescendants = true) {
+                contentDescription = description
+                selected = isSelected
+                role = Role.Button
+            }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

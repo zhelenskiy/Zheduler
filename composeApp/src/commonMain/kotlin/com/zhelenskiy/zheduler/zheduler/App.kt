@@ -130,9 +130,17 @@ fun rememberThemeState(): ThemeState {
             // edited, half written, or holding a value some later build understood — threw out of
             // here before the first frame, which on Android is a process that dies on every launch
             // with nothing the user can do about it. A theme is not worth that.
-            val settings = runCatching { themeSettingsStore.updates.first() }.getOrNull()
-            loadedThemeSettings = settings ?: ThemeSettings()
-            themeState.adopt(settings ?: ThemeSettings())
+            val settings = runCatching { themeSettingsStore.updates.first() }
+                // Cancellation is not a failure: the read never happened. Treating it as one
+                // stamped the defaults into the process-wide cache below, which exists precisely
+                // to stop the file being read again — so an activity recreated while the read was
+                // in flight came back with the theme reset, and the next tweak wrote that over the
+                // settings on disk. An activity recreation during startup is not a rare thing.
+                .onFailure { failure -> if (failure is CancellationException) throw failure }
+                .getOrNull()
+                ?: ThemeSettings()
+            loadedThemeSettings = settings
+            themeState.adopt(settings)
         }
     }
 

@@ -28,6 +28,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -54,9 +58,12 @@ private fun ThemeModeMenuItem(
     currentMode: ThemeMode,
     onSelect: () -> Unit
 ) {
+    // Which theme is in use was shown by a tick and nothing else, so a reader heard "Light",
+    // "Dark" and "System" as three identical items with no way to tell which one was on.
     DropdownMenuItem(
         text = { Text(label) },
         onClick = onSelect,
+        modifier = Modifier.semantics { selected = currentMode == mode },
         leadingIcon = {
             if (currentMode == mode) {
                 Icon(Icons.Default.Check, contentDescription = null)
@@ -72,11 +79,19 @@ private fun DynamicColorsMenuItem(
 ) {
     if (supportsDynamicColors) {
         HorizontalDivider()
+        // The checkbox here is a picture of the state, not a control — it takes no clicks of its
+        // own — so the row has to carry the state itself, or it reads as a plain menu item and the
+        // user cannot tell whether dynamic colours are on.
         DropdownMenuItem(
             text = { Text("Dynamic colors") },
             onClick = {
                 onDynamicColorsChange(!useDynamicColors)
             },
+            modifier = Modifier.toggleable(
+                value = useDynamicColors,
+                role = Role.Checkbox,
+                onValueChange = onDynamicColorsChange,
+            ),
             leadingIcon = {
                 Checkbox(
                     checked = useDynamicColors,

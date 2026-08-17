@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Which editor each task's description is edited and rendered with.
@@ -93,7 +94,11 @@ private val persistedEditorSettings: EditorSettingsState by lazy {
     // all, and throwing here killed the process the first time a description was shown.
     scope.launch {
         val stored = runCatching { store.get()?.descriptionEditorByTask }.getOrNull()
-        state.restore(stored.orEmpty())
+        // Applied on the main thread, where every choice the user makes is also applied. The read
+        // runs off it, but the state it lands in is touched from composition event handlers, and
+        // the guard that keeps a choice made mid-read from being spoken over is a plain set: from
+        // another thread there is nothing to say the addition is even visible yet.
+        withContext(Dispatchers.Main) { state.restore(stored.orEmpty()) }
     }
     state
 }

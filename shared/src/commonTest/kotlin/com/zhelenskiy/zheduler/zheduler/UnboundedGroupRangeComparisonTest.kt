@@ -1,6 +1,7 @@
 package com.zhelenskiy.zheduler.zheduler
 
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -59,6 +60,43 @@ class UnboundedGroupRangeComparisonTest {
 
         assertEquals(listOf("has a priority"), titles[0])
         assertEquals(titles[0], titles[1])
+    }
+
+    @Test
+    fun `a group header counts what the group shows`() = runTest {
+        // The header count comes from a different query than the tasks beneath it, and that one
+        // read the same bound another way: every group read as empty while its tasks were there.
+        val criteria = TaskFilterCriteria(
+            priorityFilter = PriorityFilter.Custom,
+            customPriorityMin = "3000000000",
+        )
+        val viewMode = ViewMode(
+            id = "vm",
+            name = "By status",
+            spaceId = "unused",
+            groupingLevels = persistentListOf(
+                GroupingLevel(
+                    field = GroupableField.Status,
+                    groups = persistentListOf(GroupDefinition(label = "Open", values = persistentSetOf("Open"))),
+                )
+            ),
+        )
+
+        for (repository in listOf(InMemoryTaskRepository(Clock.System), createDatabaseRepository(Clock.System))) {
+            val space = repository.createSpace("Test", "TEST")!!
+            repository.addTask(space.id, title = "has a priority", priority = Priority(30))
+
+            val header = repository.getTaskGroups(space.id, viewMode, 0, persistentListOf(), criteria).single()
+            val tasks = repository.getTasksForGroup(
+                space.id,
+                persistentListOf(header.filter!!),
+                persistentListOf(),
+                criteria,
+            )
+
+            assertEquals(tasks.size, header.taskCount, "$repository: the header and the group disagree")
+            assertEquals(1, header.taskCount, "$repository")
+        }
     }
 
     @Test

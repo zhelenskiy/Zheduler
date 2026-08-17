@@ -116,6 +116,8 @@ fun DueDateBadge(dueDate: Instant, isTotal: Boolean) {
         color = color,
         icon = Icons.Default.Schedule,
         text = if (isTotal) "$dateText*" else dateText,
-        contentDescription = "Due date"
+        // Overdue was the same badge in a different colour, which is nothing at all to a reader,
+        // and little to anyone who does not distinguish those two colours.
+        contentDescription = if (isOverdue) "Overdue" else "Due date"
     )
 }

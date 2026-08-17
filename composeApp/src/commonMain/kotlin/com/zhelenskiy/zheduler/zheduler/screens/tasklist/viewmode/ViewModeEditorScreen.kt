@@ -37,6 +37,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.zhelenskiy.zheduler.zheduler.components.common.BackHandler
+import com.zhelenskiy.zheduler.zheduler.components.common.ReorderControls
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeAction
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.reportingFailure
@@ -377,6 +378,15 @@ private fun GroupingLevelsSection(
                                 onEdit = { editorMode = LevelEditorMode.Edit(index) },
                                 onRemove = { state.removeGroupingLevel(index) },
                                 dragModifier = Modifier.draggableHandle(),
+                                reorder = {
+                                    ReorderControls(
+                                        what = "level ${index + 1}",
+                                        canMoveUp = index > 0,
+                                        canMoveDown = index < state.groupingLevels.lastIndex,
+                                        onMoveUp = { state.moveGroupingLevel(index, index - 1) },
+                                        onMoveDown = { state.moveGroupingLevel(index, index + 1) },
+                                    )
+                                },
                                 modifier = Modifier
                                     .animateItem()
                                     .padding(vertical = 4.dp)
@@ -450,6 +460,7 @@ private fun GroupingLevelSummaryCard(
     onEdit: () -> Unit,
     onRemove: () -> Unit,
     dragModifier: Modifier = Modifier,
+    reorder: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -471,6 +482,7 @@ private fun GroupingLevelSummaryCard(
                         contentDescription = "Drag to reorder",
                         modifier = dragModifier
                     )
+                    reorder()
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
@@ -569,6 +581,15 @@ private fun GroupingLevelEditorDialog(
                             onFilterTags = onFilterTags,
                             onRemove = { level.removeGroup(groupIndex) },
                             dragModifier = Modifier.draggableHandle(),
+                            reorder = {
+                                ReorderControls(
+                                    what = "group ${groupIndex + 1}",
+                                    canMoveUp = groupIndex > 0,
+                                    canMoveDown = groupIndex < level.groups.lastIndex,
+                                    onMoveUp = { level.moveGroup(groupIndex, groupIndex - 1) },
+                                    onMoveDown = { level.moveGroup(groupIndex, groupIndex + 1) },
+                                )
+                            },
                             modifier = Modifier
                                 .animateItem()
                                 .shadow(elevation)
@@ -732,6 +753,7 @@ private fun GroupDefinitionCard(
     onFilterTags: (String, Set<String>) -> Unit,
     onRemove: () -> Unit,
     dragModifier: Modifier = Modifier,
+    reorder: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -746,6 +768,7 @@ private fun GroupDefinitionCard(
             GroupDefinitionCardHeader(
                 group = group,
                 onRemove = onRemove,
+                reorder = reorder,
                 dragModifier = dragModifier
             )
 
@@ -771,7 +794,8 @@ private fun GroupDefinitionCard(
 private fun GroupDefinitionCardHeader(
     group: GroupDefinitionState,
     onRemove: () -> Unit,
-    dragModifier: Modifier
+    dragModifier: Modifier,
+    reorder: @Composable () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -783,6 +807,7 @@ private fun GroupDefinitionCardHeader(
             contentDescription = "Drag to reorder",
             modifier = dragModifier
         )
+        reorder()
         OutlinedTextField(
             value = group.label,
             onValueChange = { group.label = it },
@@ -1132,6 +1157,15 @@ private fun GroupOrderingRulesSection(group: GroupDefinitionState) {
                             rule = group.orderingRules[index],
                             onRemove = { group.removeOrderingRule(index) },
                             dragModifier = Modifier.draggableHandle(),
+                            reorder = {
+                                ReorderControls(
+                                    what = "rule ${index + 1}",
+                                    canMoveUp = index > 0,
+                                    canMoveDown = index < group.orderingRules.lastIndex,
+                                    onMoveUp = { group.moveOrderingRule(index, index - 1) },
+                                    onMoveDown = { group.moveOrderingRule(index, index + 1) },
+                                )
+                            },
                             modifier = Modifier.shadow(elevation, shape = MaterialTheme.shapes.small)
                         )
                     }
@@ -1183,6 +1217,15 @@ private fun DefaultOrderingRulesSection(state: ViewModeEditorState) {
                             onRemove = { state.removeOrderingRule(index) },
                             canRemove = state.defaultOrderingRules.size > 1,
                             dragModifier = Modifier.draggableHandle(),
+                            reorder = {
+                                ReorderControls(
+                                    what = "rule ${index + 1}",
+                                    canMoveUp = index > 0,
+                                    canMoveDown = index < state.defaultOrderingRules.lastIndex,
+                                    onMoveUp = { state.moveOrderingRule(index, index - 1) },
+                                    onMoveDown = { state.moveOrderingRule(index, index + 1) },
+                                )
+                            },
                             modifier = Modifier.shadow(elevation, shape = MaterialTheme.shapes.small)
                         )
                     }
@@ -1198,6 +1241,7 @@ private fun OrderingRuleRow(
     onRemove: () -> Unit,
     canRemove: Boolean = true,
     dragModifier: Modifier = Modifier,
+    reorder: @Composable () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1211,7 +1255,8 @@ private fun OrderingRuleRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle
+            // Drag handle, and the same move without one
+            reorder()
             Icon(
                 Icons.Default.DragHandle,
                 contentDescription = "Drag to reorder",

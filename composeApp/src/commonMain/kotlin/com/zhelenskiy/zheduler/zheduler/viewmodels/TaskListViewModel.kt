@@ -13,6 +13,9 @@ import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId as 
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -181,6 +184,16 @@ class TaskListContainer(
     private val groupFactories = mutableListOf<InvalidatingPagingSourceFactory<Int, TaskWithTotals>>()
     private var groupPagesCriteria: TaskFilterCriteria? = null
 
+    /**
+     * The scope the current criteria's cached pages live in, replaced whenever they change.
+     *
+     * `cachedIn` keeps a flow alive for as long as its scope is, so dropping the map left every
+     * previous set still running and still holding the rows it had loaded. On the screen where the
+     * user types into a search box, that is a set stranded per keystroke per open group, for as
+     * long as the screen is up.
+     */
+    private var groupPagesScope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
+
     private val _dataVersion = MutableStateFlow(0L)
 
     /**
@@ -215,6 +228,9 @@ class TaskListContainer(
         if (filterCriteria != groupPagesCriteria) {
             groupPages.clear()
             groupFactories.clear()
+            // And stop what was cached for the criteria before, rather than only forgetting it.
+            groupPagesScope.cancel()
+            groupPagesScope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
             groupPagesCriteria = filterCriteria
         }
         return groupPages.getOrPut(GroupPagingKey(filters, orderingRules)) {
@@ -223,7 +239,7 @@ class TaskListContainer(
             }
             groupFactories += factory
             // See PagedQuery: the factory is invoked through a lambda so this compiles on every target.
-            Pager(PagingDefaults.taskList, pagingSourceFactory = { factory() }).flow.cachedIn(scope)
+            Pager(PagingDefaults.taskList, pagingSourceFactory = { factory() }).flow.cachedIn(groupPagesScope)
         }
     }
 

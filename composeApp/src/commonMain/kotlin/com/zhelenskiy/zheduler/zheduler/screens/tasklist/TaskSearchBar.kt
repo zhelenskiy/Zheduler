@@ -28,6 +28,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
@@ -211,11 +215,16 @@ fun FilterChip(
         }
     }
 
+    // These say what is filtering the list; they are not controls, and the deadened ripple says
+    // as much to someone who can see them. To everyone else they were a row of buttons that
+    // announce themselves as pressable, take keyboard focus, and then do nothing.
     SuggestionChip(
         onClick = { },
         label = { Text(text = text, style = MaterialTheme.typography.labelSmall) },
         interactionSource = noOpInteractionSource,
         modifier = modifier
+            .focusProperties { canFocus = false }
+            .clearAndSetSemantics { this.text = AnnotatedString(text) }
     )
 }
 

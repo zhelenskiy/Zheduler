@@ -29,7 +29,10 @@ import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -639,10 +642,23 @@ private fun LazyListScope.TaskGroupItems(
                 }
 
                 val displayLabel = if (groupInfo.isUncategorized) "Uncategorized" else groupInfo.label
+                val toggle = {
+                    if (groupInfo.isUncategorized) {
+                        onToggleUncategorized(groupKey)
+                    } else {
+                        onToggleCollapse(groupKey)
+                    }
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(if (shouldAnimateInner) Modifier.animateItem() else Modifier)
+                        // The whole header opens the group, not just the arrow: that arrow is a
+                        // 24dp target, half the size a finger is meant to be given, and it is the
+                        // only way into a group. Merged into one thing to press, and named, so a
+                        // reader hears which group rather than a column of "Expand".
+                        .clickable(onClickLabel = if (isCollapsed) "Expand group" else "Collapse group", onClick = toggle)
+                        .semantics(mergeDescendants = true) {}
                         .padding(
                             top = if (level == 0) 2.dp else 0.dp,
                             bottom = if (level == 0) 2.dp else 0.dp,
@@ -651,18 +667,12 @@ private fun LazyListScope.TaskGroupItems(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = {
-                            if (groupInfo.isUncategorized) {
-                                onToggleUncategorized(groupKey)
-                            } else {
-                                onToggleCollapse(groupKey)
-                            }
-                        },
-                        modifier = Modifier.size(24.dp)
+                        onClick = toggle,
+                        modifier = Modifier.size(24.dp).clearAndSetSemantics {}
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = if (isCollapsed) "Expand" else "Collapse",
+                            contentDescription = null,
                             tint = if (groupInfo.isUncategorized)
                                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             else
@@ -996,16 +1006,22 @@ private suspend fun applySavedFilter(
  * positions as keys, one task changing status shifted every group below it onto its neighbour's
  * key: a collapsed group sprang open, and the one that took its place snapped shut.
  *
- * Sibling groups may share a label; the later ones are numbered. A dot in a label is escaped,
- * since a dot is what separates a child's key from its parent's.
+ * Sibling groups may share a label; the later ones are numbered. Everything that means something
+ * in a key is escaped first — the dot that separates a child's key from its parent's, the hash
+ * that numbers a repeat, and the backslash that escapes them — so a label cannot spell a key some
+ * other group would answer to. Two groups on one key is not a wrong label but a crash: these are
+ * the list's item keys, and a repeat is refused outright.
  */
 internal fun groupKeysFor(parentKey: String, groups: List<TaskGroupInfo>): List<String> {
     val seen = mutableMapOf<String, Int>()
     return groups.map { group ->
         val name = if (group.isUncategorized) "~uncategorized" else group.label
-        val occurrence = seen.getOrElse(name) { 0 }
-        seen[name] = occurrence + 1
-        val escaped = name.replace("\\", "\\\\").replace(".", "\\.")
+        val escaped = name
+            .replace("\\", "\\\\")
+            .replace(".", "\\.")
+            .replace("#", "\\#")
+        val occurrence = seen.getOrElse(escaped) { 0 }
+        seen[escaped] = occurrence + 1
         val own = if (occurrence == 0) escaped else "$escaped#$occurrence"
         if (parentKey.isEmpty()) own else "$parentKey.$own"
     }

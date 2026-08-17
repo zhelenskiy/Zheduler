@@ -52,6 +52,15 @@ class GroupKeyStabilityTest {
     }
 
     @Test
+    fun aLabelCannotSpellTheKeyOfARepeatedSibling() {
+        // "X" twice numbers the second "X#1" — which is also what a group actually labelled "X#1"
+        // would be called. Two groups on one key is a crash: these are the list's item keys.
+        val keys = groupKeysFor("", listOf(group("X"), group("X"), group("X#1")))
+
+        assertEquals(keys.size, keys.toSet().size, "two groups answering to one key: $keys")
+    }
+
+    @Test
     fun childKeysHangOffTheirParent() {
         val parent = groupKeysFor("", listOf(group("Open"))).single()
         val children = groupKeysFor(parent, listOf(group("High"), group("Low")))

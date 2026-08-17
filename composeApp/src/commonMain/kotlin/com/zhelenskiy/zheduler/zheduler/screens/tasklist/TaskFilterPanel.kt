@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -250,7 +251,7 @@ private fun StatusFilterOptions(filterState: TaskFilterState, spaceIdPrefix: Str
                 selected = filterState.statusFilters.isEmpty(),
                 onClick = { filterState.statusFilters = persistentSetOf() },
                 label = { Text("Any", style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.height(28.dp)
+                modifier = Modifier.defaultMinSize(minHeight = 28.dp)
             )
 
             allStatusDefaultValues.forEach { status ->
@@ -267,7 +268,7 @@ private fun StatusFilterOptions(filterState: TaskFilterState, spaceIdPrefix: Str
                         }
                     },
                     label = { Text(status.displayName, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.height(28.dp)
+                    modifier = Modifier.defaultMinSize(minHeight = 28.dp)
                 )
             }
         }
@@ -341,7 +342,7 @@ private fun AutoUpdateStatusFilterRow(filterState: TaskFilterState) {
                 selected = filterState.autoUpdateStatusFilter == filter,
                 onClick = { filterState.autoUpdateStatusFilter = filter },
                 label = { Text(filter.displayName, style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.height(28.dp)
+                modifier = Modifier.defaultMinSize(minHeight = 28.dp)
             )
         }
     }
@@ -362,7 +363,7 @@ private fun DueDateFilterOptions(filterState: TaskFilterState) {
                     selected = filterState.dueDateFilter == filter,
                     onClick = { filterState.dueDateFilter = filter },
                     label = { Text(filter.displayName, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.height(28.dp)
+                    modifier = Modifier.defaultMinSize(minHeight = 28.dp)
                 )
             }
         }
@@ -454,7 +455,7 @@ private fun PriorityFilterOptions(filterState: TaskFilterState) {
                     selected = filterState.priorityFilter == filter,
                     onClick = { filterState.priorityFilter = filter },
                     label = { Text(filter.displayName, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.height(28.dp)
+                    modifier = Modifier.defaultMinSize(minHeight = 28.dp)
                 )
             }
         }
@@ -502,7 +503,7 @@ private fun EstimatedTimeFilterOptions(filterState: TaskFilterState) {
                     selected = filterState.estimatedTimeFilter == filter,
                     onClick = { filterState.estimatedTimeFilter = filter },
                     label = { Text(filter.displayName, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.height(28.dp)
+                    modifier = Modifier.defaultMinSize(minHeight = 28.dp)
                 )
             }
         }
@@ -551,7 +552,7 @@ private fun RecurrenceFilterOptions(filterState: TaskFilterState) {
                 selected = filterState.recurrenceFilter == filter,
                 onClick = { filterState.recurrenceFilter = filter },
                 label = { Text(filter.displayName, style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.height(28.dp)
+                modifier = Modifier.defaultMinSize(minHeight = 28.dp)
             )
         }
     }
@@ -571,7 +572,7 @@ private fun NotificationsFilterOptions(filterState: TaskFilterState) {
                 selected = filterState.notificationsFilter == filter,
                 onClick = { filterState.notificationsFilter = filter },
                 label = { Text(filter.displayName, style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.height(28.dp)
+                modifier = Modifier.defaultMinSize(minHeight = 28.dp)
             )
         }
     }
@@ -598,7 +599,7 @@ private fun ConnectionsFilterOptions(filterState: TaskFilterState, spaceIdPrefix
                         }
                     },
                     label = { Text(typeOption.displayName, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.height(28.dp)
+                    modifier = Modifier.defaultMinSize(minHeight = 28.dp)
                 )
             }
         }
@@ -695,7 +696,7 @@ private fun TagMatchModeRow(filterState: TaskFilterState) {
                 selected = filterState.tagMatchMode == mode,
                 onClick = { filterState.tagMatchMode = mode },
                 label = { Text(mode.displayName, style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.height(24.dp)
+                modifier = Modifier.defaultMinSize(minHeight = 24.dp)
             )
         }
     }
@@ -746,7 +747,7 @@ private fun TagChipsRow(filteredTags: List<String>, filterState: TaskFilterState
                 leadingIcon = {
                     Icon(Icons.Default.LocalOffer, contentDescription = null, modifier = Modifier.size(14.dp))
                 },
-                modifier = Modifier.height(28.dp)
+                modifier = Modifier.defaultMinSize(minHeight = 28.dp)
             )
         }
     }

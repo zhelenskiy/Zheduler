@@ -55,10 +55,13 @@ fun TaskCard(
             // Action buttons on the right
             Row {
                 IconButton(onClick = onCopy) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                    // "Duplicate", because that is what it does: it opens a new-task form filled
+                    // in from this one. Nothing reaches the clipboard, which is what someone who
+                    // only hears the label would expect of "Copy".
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate task")
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                    Icon(Icons.Default.Delete, contentDescription = "Delete task")
                 }
             }
         }

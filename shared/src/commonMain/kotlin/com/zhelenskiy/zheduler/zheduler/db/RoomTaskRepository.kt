@@ -1384,8 +1384,12 @@ class RoomTaskRepository(
                 PriorityFilter.NoPriority -> 4L
                 PriorityFilter.Custom -> 5L
             },
-            customPriorityMin = filterCriteria.customPriorityMin.toLongOrNull(),
-            customPriorityMax = filterCriteria.customPriorityMax.toLongOrNull(),
+            // As Int, like the shared predicate and like the range above: a bound too large to be
+            // a priority is no bound. These feed the clause the group headers and their counts are
+            // built from, so reading them differently here made the headers disagree with the
+            // tasks under them.
+            customPriorityMin = filterCriteria.customPriorityMin.toIntOrNull()?.toLong(),
+            customPriorityMax = filterCriteria.customPriorityMax.toIntOrNull()?.toLong(),
             dueDateFilterType = when (filterCriteria.dueDateFilter) {
                 DueDateFilter.Any -> 0L
                 DueDateFilter.Overdue -> 1L
