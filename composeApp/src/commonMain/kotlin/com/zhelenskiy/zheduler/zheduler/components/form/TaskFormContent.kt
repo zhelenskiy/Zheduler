@@ -339,10 +339,8 @@ private fun RecurrenceSection(
             onDismiss = { editingRuleIndex = null },
             onRecurrenceSelected = { rule ->
                 if (rule != null) {
-                    val currentState = formState.recurrenceRules.getOrNull(index)?.second ?: RecurrenceState()
-                    val nextOccurrence = RecurrenceCalculator.calculateNextOccurrence(rule, currentState)
-                    val newEntry = rule to currentState.copy(nextOccurrenceDate = nextOccurrence)
-                    formState.setRecurrenceRule(index, newEntry)
+                    val previous = formState.recurrenceRules.getOrNull(index)
+                    formState.setRecurrenceRule(index, RecurrenceService.stateForEditedRule(previous, rule))
                 }
                 editingRuleIndex = null
             }

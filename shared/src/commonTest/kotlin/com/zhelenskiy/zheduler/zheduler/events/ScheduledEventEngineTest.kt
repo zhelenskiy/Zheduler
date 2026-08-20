@@ -1,0 +1,1062 @@
+@file:OptIn(ExperimentalTime::class)
+
+package com.zhelenskiy.zheduler.zheduler.events
+
+import com.zhelenskiy.zheduler.zheduler.InMemoryTaskRepository
+import com.zhelenskiy.zheduler.zheduler.RecurrencePeriod
+import com.zhelenskiy.zheduler.zheduler.RecurrenceRule
+import com.zhelenskiy.zheduler.zheduler.RecurrenceState
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTermination
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTimeZone
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger
+import com.zhelenskiy.zheduler.zheduler.TaskNotification
+import com.zhelenskiy.zheduler.zheduler.TaskRepository
+import com.zhelenskiy.zheduler.zheduler.TaskStatus
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+
+/**
+ * The engine is what turns a stored due date into something that actually happens. What these
+ * tests defend is the part that is easy to get wrong and impossible to notice: that an alert goes
+ * out once and not twice, that a process killed and restarted neither repeats itself nor loses the
+ * event it was waiting for, and that a recurring task moves on instead of sitting overdue forever.
+ */
+class ScheduledEventEngineTest {
+
+    private val ny = TimeZone.of("America/New_York")
+
+    private class MutableClock(var current: Instant) : Clock {
+        override fun now(): Instant = current
+    }
+
+    private class RecordingNotifier : EventNotifier {
+        private val mutex = Mutex()
+        val alerts = mutableListOf<TaskAlert>()
+        override suspend fun post(alert: TaskAlert) {
+            mutex.withLock { alerts += alert }
+        }
+    }
+
+    private class Fixture(
+        val repository: TaskRepository,
+        val spaceId: String,
+        val clock: MutableClock,
+        val notifier: RecordingNotifier,
+        val store: ScheduleStore,
+        var zone: TimeZone,
+    ) {
+        var onSwept: (Instant?) -> Unit = {}
+
+        /** A new engine over the same repository and store — what a restarted process gets. */
+        fun engine() = ScheduledEventEngine(
+            repository = repository,
+            notifier = notifier,
+            store = store,
+            clock = clock,
+            timeZone = { zone },
+            onSwept = { onSwept(it) },
+        )
+    }
+
+    private suspend fun fixture(now: Instant, zone: TimeZone = TimeZone.UTC): Fixture {
+        val clock = MutableClock(now)
+        val repository = InMemoryTaskRepository(clock)
+        val space = assertNotNull(repository.createSpace("Test", "TEST"))
+        return Fixture(repository, space.id, clock, RecordingNotifier(), InMemoryScheduleStore(), zone)
+    }
+
+    private fun at(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0, tz: TimeZone = TimeZone.UTC) =
+        LocalDateTime(year, month, day, hour, minute).toInstant(tz)
+
+    @Test
+    fun `a reminder is delivered once and not again by a restarted process`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Pay rent",
+            dueDate = start + 2.hours,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(hours = 1))),
+        )
+
+        f.engine().sweep()
+        assertTrue(f.notifier.alerts.isEmpty(), "nothing is due yet")
+
+        f.clock.current = start + 1.hours
+        f.engine().sweep()
+        assertEquals(1, f.notifier.alerts.size, "the reminder falls due an hour before the deadline")
+        assertEquals("Pay rent", f.notifier.alerts.single().title)
+        // "Due in hour" is what the recurrence phrasing gives — it drops the one, because it is
+        // built for "Every hour". A notification is a sentence and needs the number.
+        assertEquals("Due in 1 hour", f.notifier.alerts.single().body)
+
+        // Same clock, fresh engine: the process died and came back before anything else happened.
+        f.engine().sweep()
+        f.engine().sweep()
+        assertEquals(1, f.notifier.alerts.size, "a restart must not repeat a delivered reminder")
+    }
+
+    @Test
+    fun `a recurring task with no deadline still says when it comes round`() = runTest {
+        // The event happening is worth a notification in its own right. A recurring task with no
+        // due date has no deadline to speak for it, so nothing was ever said: the task quietly
+        // reopened itself and the user found out by looking.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Water the plants",
+            status = TaskStatus.Done,
+            recurrenceRules = persistentListOf(
+                RecurrenceRule(
+                    timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                        period = RecurrencePeriod(days = 1),
+                        firstOccurrence = firstOccurrence,
+                        timezone = RecurrenceTimeZone.SystemDefault,
+                    ),
+                    statusChangeTrigger = null,
+                    resetToStatus = TaskStatus.Open,
+                ) to RecurrenceState()
+            ),
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence
+        f.engine().sweep()
+
+        assertEquals(
+            1,
+            f.notifier.alerts.size,
+            "the occurrence is the event; got ${f.notifier.alerts.map { it.body }}",
+        )
+        assertEquals("Water the plants", f.notifier.alerts.single().title)
+    }
+
+    @Test
+    fun `both the warning and the deadline itself are announced`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val due = start + 2.hours
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "File the return",
+            dueDate = due,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(hours = 1))),
+        )
+
+        f.engine().sweep()
+        f.clock.current = due - 1.hours
+        f.engine().sweep()
+        f.clock.current = due
+        f.engine().sweep()
+
+        assertEquals(
+            listOf("Due in 1 hour", "Due now"),
+            f.notifier.alerts.map { it.body },
+            "the warning when it was asked for, and the deadline when it arrives",
+        )
+    }
+
+    @Test
+    fun `a backlog of missed moments is one notification and not a pile`() = runTest {
+        // The device was off, or the deadline was set in the past. Everything the task had to say
+        // fell due at once; saying all of it is four notifications about one task.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val due = start + 4.hours
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Renew the passport",
+            dueDate = due,
+            notifications = persistentListOf(
+                TaskNotification(RecurrencePeriod(hours = 3)),
+                TaskNotification(RecurrencePeriod(hours = 2)),
+                TaskNotification(RecurrencePeriod(hours = 1)),
+            ),
+        )
+
+        f.engine().sweep()
+
+        // Back an instant after the deadline: three warnings and the deadline are all behind us.
+        f.clock.current = due + 1.minutes
+        f.engine().sweep()
+
+        assertEquals(
+            listOf("Overdue by 1 minute"),
+            f.notifier.alerts.map { it.body },
+            "one notification, worded from the clock rather than from the warning that raised it",
+        )
+    }
+
+    @Test
+    fun `a deadline that was already past when the task was written is announced`() = runTest {
+        // Giving a task a deadline that has gone is an ordinary thing to do — it is how you record
+        // something you have already missed. The moment is behind the last sweep, which is what
+        // "already dealt with" was being read from, so the task was filed in silence.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+
+        f.engine().sweep()
+
+        f.clock.current = start + 1.minutes
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Should have called back",
+            dueDate = start - 2.hours,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(hours = 1))),
+        )
+        f.engine().sweep()
+
+        assertEquals(
+            listOf("Overdue by 2 hours"),
+            f.notifier.alerts.map { it.body },
+            "one notification, for a deadline the task was born with and has already missed",
+        )
+    }
+
+    @Test
+    fun `a warning set long before the deadline still arrives`() = runTest {
+        // "Tell me a month ahead" on a deadline that is tomorrow. The moment to speak was weeks
+        // ago, but what it warns about has not happened yet — the warning is exactly as useful as
+        // it was meant to be, and judging it by how old the moment is threw it away.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+
+        f.engine().sweep()
+
+        f.clock.current = start + 1.minutes
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Renew the passport",
+            dueDate = start + 1.days,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(months = 1))),
+        )
+        f.engine().sweep()
+
+        assertEquals(
+            listOf("Due in 1 day"),
+            f.notifier.alerts.map { it.body },
+            "said as it stands today, not as it was set a month out",
+        )
+    }
+
+    @Test
+    fun `a deadline missed by more than a day is still announced`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val due = start + 1.hours
+        f.repository.addTask(f.spaceId, title = "Send the form", dueDate = due)
+
+        f.engine().sweep()
+
+        // Away for three days after it fell due.
+        f.clock.current = due + 3.days
+        f.engine().sweep()
+
+        assertEquals(
+            listOf("Overdue by 3 days"),
+            f.notifier.alerts.map { it.body },
+            "still overdue, still worth saying",
+        )
+    }
+
+    @Test
+    fun `a first run does not announce deadlines that went by before it`() = runTest {
+        // Two hours old, so it is well inside the catch-up window: what suppresses it is the run
+        // having nothing behind it, not the window. A deadline old enough for the window to catch
+        // would pass this test whether the first-run rule existed or not.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        f.repository.addTask(f.spaceId, title = "Missed this morning", dueDate = start - 2.hours)
+
+        f.engine().sweep()
+
+        assertTrue(
+            f.notifier.alerts.isEmpty(),
+            "opening the app for the first time is not a reason to announce what it never saw",
+        )
+    }
+
+    @Test
+    fun `a deadline that passed while the process was gone is announced when it returns`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        f.repository.addTask(f.spaceId, title = "Submit form", dueDate = start + 3.hours)
+
+        f.engine().sweep()
+
+        // The process is gone for the moment the deadline passes, and comes back an hour later.
+        f.clock.current = start + 4.hours
+        f.engine().sweep()
+
+        assertEquals(listOf("Submit form"), f.notifier.alerts.map { it.title })
+        // An hour late by the time anyone reads it, and it says so rather than "Due now".
+        assertEquals("Overdue by 1 hour", f.notifier.alerts.single().body)
+    }
+
+    @Test
+    fun `a settled task raises nothing`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Already done",
+            status = TaskStatus.Done,
+            dueDate = start + 1.hours,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(minutes = 30))),
+        )
+
+        f.engine().sweep()
+        f.clock.current = start + 2.hours
+        f.engine().sweep()
+
+        assertTrue(f.notifier.alerts.isEmpty(), "a finished task has no deadline left to warn about")
+    }
+
+    @Test
+    fun `a recurring task repeats and its deadline moves to the next occurrence`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Water the plants",
+                status = TaskStatus.Done,
+                dueDate = firstOccurrence,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = firstOccurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence
+        f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(TaskStatus.Open, after.status, "the occurrence resets the task for the next round")
+        assertEquals(
+            firstOccurrence + 1.days,
+            after.dueDate,
+            "the deadline moves on, or the task stays overdue forever",
+        )
+    }
+
+    @Test
+    fun `a recurring task keeps repeating when it is left in the status it resets to`() = runTest {
+        // The ordinary case for anything daily: it came round yesterday, reset to Open, and the
+        // user has not touched it since. The rule engine refuses to reset a task to the status it
+        // is already in, so nothing but the schedule moves — but the schedule must still move, or
+        // the task is stuck on yesterday's occurrence and never comes round again.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Feed the cat",
+                status = TaskStatus.Done,
+                dueDate = firstOccurrence,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = firstOccurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence
+        f.engine().sweep()
+        assertEquals(TaskStatus.Open, assertNotNull(f.repository.getTaskById(task.id)).status)
+
+        // The next day arrives with the task still Open.
+        f.clock.current = firstOccurrence + 1.days
+        f.engine().sweep()
+
+        assertEquals(
+            firstOccurrence + 2.days,
+            assertNotNull(f.repository.getTaskById(task.id)).dueDate,
+            "the second occurrence moves the deadline on as the first one did",
+        )
+    }
+
+    @Test
+    fun `a recurring task left behind for days catches up in one run`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Daily standup",
+                status = TaskStatus.Done,
+                dueDate = firstOccurrence,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = firstOccurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence + 5.days
+        val sweep = f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertNotNull(after.dueDate)
+        assertTrue(
+            after.dueDate!! > f.clock.current,
+            "after catching up the next occurrence is ahead of now, not five days behind",
+        )
+        assertNotNull(sweep.nextAt, "and there is a next moment to wait for")
+        assertTrue(sweep.nextAt!! > f.clock.current)
+    }
+
+    @Test
+    fun `a rule whose very first occurrence passes without firing still moves on`() = runTest {
+        // The commonest shape there is: a daily task created Open with a rule that resets it to
+        // Open. The repository declines to reset a status that is already right, so the rule never
+        // fires — and a timeout rule that has never fired answers "firstOccurrence" to every
+        // question about its next one, so nothing could wind it forward and it stuck there for good.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Check the logs",
+                status = TaskStatus.Open,
+                dueDate = firstOccurrence,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = firstOccurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence
+        val sweep = f.engine().sweep()
+
+        assertEquals(
+            firstOccurrence + 1.days,
+            assertNotNull(f.repository.getTaskById(task.id)).dueDate,
+            "the occurrence passed, so the schedule moves on even though the status had nowhere to go",
+        )
+        assertEquals(firstOccurrence + 1.days, sweep.nextAt, "and the next moment is known")
+    }
+
+    @Test
+    fun `a rule that is not due yet does not fire because another rule on the task is`() = runTest {
+        // Two rules, and only the second is due. A rule the editor has just saved carries no next
+        // occurrence, and the selection in processRecurrence keeps every such rule beside the one
+        // that is genuinely due, then takes the lowest index — so the monthly rule fires today,
+        // loses the start date it was given, and is re-anchored to now for good.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val monthly = start + 30.days
+        val daily = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Two rules",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(months = 1),
+                            firstOccurrence = monthly,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.InProgress,
+                    ) to RecurrenceState(),
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = daily,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState(),
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = daily
+        f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(
+            monthly,
+            after.recurrenceRules[0].second.nextOccurrenceDate,
+            "the monthly rule is still waiting for the date it was given",
+        )
+        assertEquals(
+            TaskStatus.Open,
+            after.status,
+            "the daily rule is the one that came round, so its reset is the one that took effect",
+        )
+    }
+
+    @Test
+    fun `a rule waiting for a status sees the status the run has just given the task`() = runTest {
+        // Two occurrences in one late sweep. The first resets the task to Open; the second belongs
+        // to a rule waiting for Done. Judging it against the task as it was when the run started —
+        // Done — fired it against a task that is no longer Done, resetting the status again and
+        // spending the only occurrence it had. Sweeping promptly would have left it armed, so an
+        // overnight gap was the whole difference.
+        val start = at(2026, 6, 1, 8, 0)
+        val f = fixture(start)
+        val nine = at(2026, 6, 1, 9, 0)
+        val ten = at(2026, 6, 1, 10, 0)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Two rules one sweep",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = nine,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState(),
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = null,
+                            firstOccurrence = ten,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = RecurrenceTrigger.StatusChange(
+                            persistentSetOf(TaskStatus.Done)
+                        ),
+                        resetToStatus = TaskStatus.InProgress,
+                        termination = RecurrenceTermination.afterOccurrences(1),
+                    ) to RecurrenceState(),
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = at(2026, 6, 1, 11, 0)
+        f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(TaskStatus.Open, after.status, "the daily rule reset it; the waiting rule did not")
+        assertEquals(
+            1,
+            after.recurrenceRules[1].first.termination.maxOccurrences,
+            "and the waiting rule still has its one occurrence to give",
+        )
+    }
+
+    @Test
+    fun `a rule that has run out leaves no occurrence behind it`() = runTest {
+        // The repository works out the next occurrence before it spends the last of the allowance,
+        // so a finished rule was left pointing at a date it no longer owed. Nothing serviced that
+        // date — the planner knows the rule is done — but the deadline had been moved onto it, so
+        // the task announced itself as due one more time than the rule was ever set to run.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Twice and no more",
+                status = TaskStatus.Done,
+                dueDate = firstOccurrence,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = firstOccurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                        termination = RecurrenceTermination.afterOccurrences(2),
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence
+        f.engine().sweep()
+        f.clock.current = firstOccurrence + 1.days
+        f.engine().sweep()
+
+        val spent = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(0, spent.recurrenceRules.single().first.termination.maxOccurrences)
+        assertNull(
+            spent.recurrenceRules.single().second.nextOccurrenceDate,
+            "a rule with nothing left owed has no next occurrence",
+        )
+
+        // The day after the series ended.
+        f.clock.current = firstOccurrence + 2.days
+        f.engine().sweep()
+
+        assertEquals(
+            1,
+            f.notifier.alerts.count { it.body == "Due now" },
+            "the deadline came round for each occurrence the rule owed and no more",
+        )
+    }
+
+    @Test
+    fun `the last occurrence before an end date still happens if it is noticed late`() = runTest {
+        // The occurrence fell at 23:00 and the rule stops at 23:30; the phone was asleep from 22:00
+        // until morning. Asking whether the rule has ended *now* rather than whether this
+        // occurrence fell before it ended threw the last one away, and every later sweep threw it
+        // away again — the reset the user scheduled simply never happened.
+        val lastOccurrence = at(2026, 6, 10, 23, 0)
+        val endsAt = at(2026, 6, 10, 23, 30)
+        val f = fixture(at(2026, 6, 10, 22, 0))
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Nightly until Wednesday",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = lastOccurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                        termination = RecurrenceTermination.onDate(endsAt),
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = at(2026, 6, 11, 7, 0)
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "the occurrence was inside the rule's life even though the sweep was not",
+        )
+    }
+
+    @Test
+    fun `two rules coming round together spend one occurrence each and no more`() = runTest {
+        // Firing a rule fires every other rule on the task whose moment has also come — the
+        // repository cascades. The second occurrence then arrives here already dealt with, and
+        // declining to fire it a second time looks exactly like the ordinary "nothing to reset"
+        // decline. Charging it again spends two of an allowance for one moment, so a rule set to
+        // stop after five stops after two and a half.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val moment = start + 1.hours
+        fun timeout(period: RecurrencePeriod) = RecurrenceTrigger.AfterTimeout(
+            period = period,
+            firstOccurrence = moment,
+            timezone = RecurrenceTimeZone.SystemDefault,
+        )
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Two at once",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = timeout(RecurrencePeriod(days = 7)),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.InProgress,
+                    ) to RecurrenceState(),
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = timeout(RecurrencePeriod(days = 1)),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                        termination = RecurrenceTermination.afterOccurrences(5),
+                    ) to RecurrenceState(),
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = moment
+        f.engine().sweep()
+
+        assertEquals(
+            4,
+            assertNotNull(f.repository.getTaskById(task.id))
+                .recurrenceRules[1].first.termination.maxOccurrences,
+            "one moment costs one of the five",
+        )
+    }
+
+    @Test
+    fun `a rule needing both a moment and a status waits for the status`() = runTest {
+        // "At June 1, when it is done." The moment arriving with the task not done is not the rule
+        // going off — it is the rule becoming ready. Treating it as a missed occurrence rolled the
+        // schedule past it and, for a one-shot, killed the rule outright: marking the task Done
+        // afterwards then did nothing, ever.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val moment = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Archive the quarter",
+                status = TaskStatus.Open,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = null,
+                            firstOccurrence = moment,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = RecurrenceTrigger.StatusChange(
+                            persistentSetOf(TaskStatus.Done)
+                        ),
+                        resetToStatus = TaskStatus.InProgress,
+                        termination = RecurrenceTermination.afterOccurrences(2),
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = moment
+        f.engine().sweep()
+
+        val waiting = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(TaskStatus.Open, waiting.status, "the status it waits for has not happened")
+        assertEquals(
+            2,
+            waiting.recurrenceRules.single().first.termination.maxOccurrences,
+            "and nothing has been spent, because nothing has happened",
+        )
+
+        // The status arrives a day later.
+        f.clock.current = moment + 1.days
+        f.repository.updateTask(
+            assertNotNull(f.repository.getTaskById(task.id)).copy(status = TaskStatus.Done)
+        )
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.InProgress,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "now both halves are true, so the rule fires",
+        )
+    }
+
+    @Test
+    fun `a one-shot rule stops mattering once its moment has gone`() = runTest {
+        // AfterTimeout with no period is a single occurrence. If it passes without firing — the
+        // task already being in the status it resets to — nothing can wind it forward, so it sat
+        // in the past being re-offered on every sweep, and reset the task months later the moment
+        // the user gave it any other status.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val once = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "One-off review",
+                status = TaskStatus.Open,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = null,
+                            firstOccurrence = once,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = once
+        f.engine().sweep()
+
+        // Much later, the user picks the task up. Two sweeps: the first still remembers having
+        // dealt with that occurrence, and forgets it on the way out — it is the one after that
+        // finds the stale occurrence waiting and acts on it.
+        f.clock.current = once + 60.days
+        f.repository.updateTask(
+            assertNotNull(f.repository.getTaskById(task.id)).copy(status = TaskStatus.Done)
+        )
+        f.engine().sweep()
+        f.clock.current = once + 60.days + 1.minutes
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "a spent one-shot rule must not reopen a task two months later",
+        )
+    }
+
+    @Test
+    fun `stopping after a number of occurrences counts the ones that were not acted on`() = runTest {
+        // The countdown lives in the repository and only moves when a fire changes the status. A
+        // daily rule resetting to Open on a task left Open never changes anything, so a rule that
+        // says it stops after two occurrences would otherwise run for ever.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Twice only",
+                status = TaskStatus.Open,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = firstOccurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                        termination = RecurrenceTermination.afterOccurrences(2),
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence
+        f.engine().sweep()
+        assertEquals(
+            1,
+            assertNotNull(f.repository.getTaskById(task.id)).recurrenceRules.single()
+                .first.termination.maxOccurrences,
+            "the first occurrence is spent even though the status had nowhere to go",
+        )
+
+        f.clock.current = firstOccurrence + 1.days
+        f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(0, after.recurrenceRules.single().first.termination.maxOccurrences)
+        assertTrue(
+            after.recurrenceRules.single().first.isTerminated(f.clock.current),
+            "and after the second the rule is finished",
+        )
+    }
+
+    @Test
+    fun `every sweep reports the next moment to the platform scheduler`() = runTest {
+        // On Android the process is dead between sweeps, so the only thing that brings it back is
+        // the wake-up the system holds. A sweep that does not report its next moment leaves that
+        // wake-up wherever it was — which for a task created just now is however far out the last
+        // sweep booked, and the reminder is simply never heard.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val reported = mutableListOf<Instant?>()
+        f.onSwept = { reported += it }
+
+        f.engine().sweep()
+        assertEquals(listOf<Instant?>(null), reported, "nothing scheduled yet")
+
+        f.repository.addTask(f.spaceId, title = "Call back", dueDate = start + 30.minutes)
+        f.engine().sweep()
+
+        assertEquals(
+            start + 30.minutes,
+            reported.last(),
+            "a task created after the last sweep must move the next wake-up",
+        )
+    }
+
+    @Test
+    fun `the next wake is the earliest event still ahead`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        f.repository.addTask(f.spaceId, title = "Later", dueDate = start + 5.hours)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Sooner",
+            dueDate = start + 4.hours,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(hours = 2))),
+        )
+
+        val sweep = f.engine().sweep()
+
+        assertEquals(
+            start + 2.hours,
+            sweep.nextAt,
+            "the reminder two hours before the four-hour deadline is the first thing due",
+        )
+    }
+
+    @Test
+    fun `a day before a deadline keeps the time of day across a fall-back`() = runTest {
+        // New York puts its clocks back at 02:00 on 2026-11-01, so the day that ends at 09:00 that
+        // morning is 25 hours long.
+        val due = at(2026, 11, 1, 9, 0, ny)
+        val f = fixture(due - 10.days, zone = ny)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Quarterly report",
+            dueDate = due,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(days = 1))),
+        )
+
+        val reminder = assertNotNull(f.engine().sweep().nextAt)
+
+        assertEquals(at(2026, 10, 31, 9, 0, ny), reminder, "the reminder keeps its wall-clock time")
+        assertEquals(25.hours, due - reminder, "which is 25 real hours, the day the clocks go back")
+    }
+
+    @Test
+    fun `a day before a deadline keeps the time of day across a spring-forward`() = runTest {
+        // The mirror of the fall-back case: New York loses an hour at 02:00 on 2026-03-08, so the
+        // day that ends at 09:00 that morning is 23 hours long.
+        val due = at(2026, 3, 8, 9, 0, ny)
+        val f = fixture(due - 10.days, zone = ny)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Tax return",
+            dueDate = due,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(days = 1))),
+        )
+
+        val reminder = assertNotNull(f.engine().sweep().nextAt)
+
+        assertEquals(at(2026, 3, 7, 9, 0, ny), reminder, "the reminder keeps its wall-clock time")
+        assertEquals(23.hours, due - reminder, "which is 23 real hours, the day the clocks go forward")
+    }
+
+    @Test
+    fun `a reminder falling in an hour that does not exist is still given`() = runTest {
+        // A day before 02:30 on the 9th is 02:30 on the 8th, and on the 8th New York has no 02:30
+        // at all. Dropping the reminder would be the easy reading and the wrong one.
+        val due = at(2026, 3, 9, 2, 30, ny)
+        val f = fixture(due - 10.days, zone = ny)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Backup finishes",
+            dueDate = due,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(days = 1))),
+        )
+
+        val reminder = assertNotNull(f.engine().sweep().nextAt)
+
+        assertEquals(
+            emptyList(),
+            LocalDateTime(2026, 3, 8, 2, 30).occurrencesIn(ny),
+            "the hour the reminder was aimed at genuinely has no instant",
+        )
+        assertEquals(
+            at(2026, 3, 8, 3, 30, ny),
+            reminder,
+            "so it moves on by the length of the jump rather than being lost",
+        )
+        assertTrue(reminder < due, "and it still arrives before the thing it warns about")
+    }
+
+    @Test
+    fun `changing zone between runs does not repeat a reminder already given`() = runTest {
+        // Flying west moves "a day before" an hour later. The reminder has already been given at
+        // the New York moment; the Sydney-shaped one must not arrive on top of it.
+        val due = at(2026, 11, 1, 9, 0, ny)
+        val reminderInNewYork = at(2026, 10, 31, 9, 0, ny)
+        val f = fixture(due - 10.days, zone = ny)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Board meeting",
+            dueDate = due,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(days = 1))),
+        )
+
+        f.engine().sweep()
+        f.clock.current = reminderInNewYork
+        f.engine().sweep()
+        assertEquals(1, f.notifier.alerts.size, "the reminder is given once, in New York")
+
+        f.zone = TimeZone.UTC
+        f.clock.current = reminderInNewYork + 90.minutes
+        f.engine().sweep()
+
+        assertEquals(1, f.notifier.alerts.size, "and not again an hour later because the zone moved")
+    }
+
+    @Test
+    fun `the same reminder is a different instant in a different zone`() = runTest {
+        // The deadline is one fixed instant. A day before it is not: in New York that day contains
+        // the end of daylight saving and is 25 hours long, in UTC it is 24.
+        val due = at(2026, 11, 1, 9, 0, ny)
+        val f = fixture(due - 10.days, zone = ny)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Board meeting",
+            dueDate = due,
+            notifications = persistentListOf(TaskNotification(RecurrencePeriod(days = 1))),
+        )
+
+        val inNewYork = assertNotNull(f.engine().sweep().nextAt)
+        f.zone = TimeZone.UTC
+        val inUtc = assertNotNull(f.engine().sweep().nextAt)
+
+        assertEquals(25.hours, due - inNewYork)
+        assertEquals(24.hours, due - inUtc, "the zone is read again on every run, not captured at startup")
+    }
+}

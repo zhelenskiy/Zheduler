@@ -25,6 +25,60 @@ carry recurrence rules and notifications, and are grouped and ordered by user-de
 * [/sqliteWasmWorker](./sqliteWasmWorker/src) wraps SQLite compiled to WebAssembly in a web worker,
   which is how the browser targets get a database off the main thread.
 
+### Scheduled events
+
+Due dates, reminders and recurrence rules are acted on by
+[`ScheduledEventEngine`](./shared/src/commonMain/kotlin/com/zhelenskiy/zheduler/zheduler/events/ScheduledEventEngine.kt).
+Nothing about a schedule is stored: every run recomputes the whole thing from the tasks, so editing
+a due date changes what is coming without anything having to be cancelled. The only thing written
+down is a watermark of the last moment swept, which is what stops a restarted process from either
+repeating an alert or losing one.
+
+A run delivers reminders and deadlines through a platform `EventNotifier` — the Android
+notification shade, the desktop notification service, `UNUserNotificationCenter`, the browser's
+notification API — and lets recurrence rules come round: the rule fires, its schedule is wound
+forward past the present, and the task's due date follows it. A device that was off for a week
+comes back to one task to do today rather than seven notifications.
+
+Nothing is dropped for being old. A deadline missed over a holiday is still missed, and a warning
+asked for a month ahead of a deadline that is now tomorrow is still the warning that was asked
+for — so a warning is judged by the deadline it warns of, not by how long ago it fell due. What
+stops any of it being said twice is a record of what has already been said, not a window. Only a
+first run holds its tongue, so that meeting a database full of old tasks for the first time is not
+a pile of notifications.
+
+What a notification says is worked out when it is delivered rather than when it was arranged:
+"Due in 1 day" while there is time, "Due now" at the moment, "Overdue by 3 days" once there is
+not. Everything one task has to say in a single run is said once, in the words of whichever moment
+describes where the task actually stands.
+
+**Time zones.** The zone is read again on every run rather than captured, because a process
+outlives the zone it started in. A reminder is a wall-clock offset from the deadline — "a day
+before 09:00" is 09:00 the previous day — so it is 25 real hours on the day the clocks go back and
+23 on the day they go forward. Such a reading is not always one instant, and
+[`WallClockResolution`](./shared/src/commonMain/kotlin/com/zhelenskiy/zheduler/zheduler/events/WallClockResolution.kt)
+is where that is faced: `occurrencesIn` returns two instants on the day a zone falls back, none on
+the day it springs forward, and one otherwise, with the policy for choosing between them stated
+rather than inherited from the platform conversion.
+
+**Surviving on Android.** The engine runs alongside the UI on every platform, but on Android that
+is not enough: the process is killed as soon as the app leaves the screen. There,
+[`ScheduledEventWorker`](./composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/events/ScheduledEventWorker.kt)
+sweeps through WorkManager, whose queue is kept in its own database — so the appointment survives
+the process being killed, the app being swapped out, and the device being restarted.
+`ScheduleRefreshReceiver` re-plans on `BOOT_COMPLETED`, so reminders are running from the moment
+the device is and without the app having been opened, and on `TIMEZONE_CHANGED` and `TIME_SET`,
+which move every reminder at once.
+
+Every sweep re-books that appointment, through the `onSwept` hook the engine is given — not just
+the sweeps the worker itself makes. Leaving it to the worker meant the only thing that could move
+the wake-up was the wake-up going off: a task created in the app while one was booked a day out
+was simply never heard, which is what happened the first time this was run on a device.
+
+WorkManager will not wake a dozing device to the second, so a reminder can arrive a few minutes
+late. The alternative is an exact alarm, which recent Android versions grant only to apps whose
+whole purpose is alarms.
+
 ### Build and Run Android Application
 
 To build and run the development version of the Android app, use the run configuration from the run widget

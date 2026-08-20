@@ -39,6 +39,8 @@ android {
 
 dependencies {
     implementation(projects.composeApp)
+    // The scheduling engine the worker drives lives here; composeApp keeps it off its own API.
+    implementation(projects.shared)
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.uiToolingPreview)
     implementation(libs.appdirs)

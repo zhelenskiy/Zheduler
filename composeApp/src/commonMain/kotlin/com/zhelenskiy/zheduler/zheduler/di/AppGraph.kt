@@ -7,6 +7,12 @@ import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import com.zhelenskiy.zheduler.zheduler.db.RoomTaskRepository
+import com.zhelenskiy.zheduler.zheduler.events.EventNotifier
+import com.zhelenskiy.zheduler.zheduler.events.ScheduleStore
+import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
+import com.zhelenskiy.zheduler.zheduler.events.createEventNotifier
+import com.zhelenskiy.zheduler.zheduler.events.createScheduleStore
+import com.zhelenskiy.zheduler.zheduler.events.reschedulePlatformSweep
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
@@ -45,6 +51,11 @@ interface AppGraph {
      * Provides the singleton RoomTaskRepository instance.
      */
     val taskRepository: RoomTaskRepository
+
+    /**
+     * The engine that acts on due dates, reminders and recurrence rules.
+     */
+    val scheduledEventEngine: ScheduledEventEngine
 
     /**
      * Singleton SpaceListContainer - preserves search state across navigation.
@@ -95,6 +106,29 @@ interface AppGraph {
         @SingleIn(AppScope::class)
         fun provideTaskRepository(database: ZhedulerDatabase, clock: Clock): RoomTaskRepository =
             RoomTaskRepository(database, clock)
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideScheduleStore(): ScheduleStore = createScheduleStore()
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideEventNotifier(): EventNotifier = createEventNotifier()
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideScheduledEventEngine(
+            repository: RoomTaskRepository,
+            notifier: EventNotifier,
+            store: ScheduleStore,
+            clock: Clock,
+        ): ScheduledEventEngine = ScheduledEventEngine(
+            repository = repository,
+            notifier = notifier,
+            store = store,
+            clock = clock,
+            onSwept = ::reschedulePlatformSweep,
+        )
 
         @Provides
         @SingleIn(AppScope::class)

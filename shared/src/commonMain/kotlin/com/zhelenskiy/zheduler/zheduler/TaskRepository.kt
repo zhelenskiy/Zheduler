@@ -604,22 +604,18 @@ interface TaskRepository {
 
     // ============ Recurrence operations ============
 
-    // Neither of the two entry points below has a caller yet, on purpose. The engine, the rule
-    // editor, storage and display are all finished; hooking them up waits on a real event system
-    // to drive them from. Until then a recurrence rule is recorded and shown but never advances,
-    // and that is the intended state — not an omission to be patched over by calling these from a
-    // screen or from app startup.
-    //
-    // Two things to settle whenever that work happens: firing a rule copies only the status and
-    // the rules, so `dueDate` is never moved on; and the sweep below selects tasks by `dueDate`,
-    // so a recurring task without one would never be picked up.
-
     /**
      * Process a recurrence trigger for a task.
      * Advances the recurrence state and resets the task for the next occurrence.
+     *
+     * Returns `null` when the task is already in the status the rule resets to, which for anything
+     * that came round recently is its ordinary state. That is not a failure and not the end of the
+     * series: `ScheduledEventEngine` moves the schedule on regardless. Note also that this leaves
+     * `dueDate` alone — advancing it is the engine's, since a due date is the task's own field.
+     *
      * @param taskId The task ID
      * @param triggerEvent The event that triggered the recurrence
-     * @return The updated task, or `null` if not found or not recurring
+     * @return The updated task, or `null` if not found, not recurring, or already reset
      */
     suspend fun processRecurrenceTrigger(
         taskId: String,
@@ -629,7 +625,9 @@ interface TaskRepository {
     /**
      * Process all date-based recurrences for tasks with past due dates.
      *
-     * Intended to be called periodically once there is something to call it; see the note above.
+     * Selects tasks by `dueDate`, so a recurring task without one is never picked up. The engine
+     * plans from the rules' own occurrence dates instead and does not go through here.
+     *
      * @param currentTime The current time
      * @return List of tasks that were updated
      */

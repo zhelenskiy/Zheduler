@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Reminders are posted from a background worker; from API 33 the user must agree first. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- So the schedule is running again from the moment the device is, without the app opened. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
     <application
             android:name=".ZhedulerApplication"
             android:allowBackup="true"
@@ -18,6 +23,21 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!--
+            Not exported: every action below is a protected system broadcast, so nothing else can
+            send them and nothing else needs to reach this.
+        -->
+        <receiver
+                android:name=".events.ScheduleRefreshReceiver"
+                android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+                <action android:name="android.intent.action.TIME_SET"/>
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

@@ -143,6 +143,9 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.kstore.file)
             implementation(libs.appdirs)
+            // The background sweeper lives here rather than in androidApp: the engine has to be
+            // able to re-book it after every run, and androidApp is downstream of this module.
+            implementation(libs.androidx.work.runtime)
         }
         iosMain.dependencies {
             implementation(libs.kstore.file)

@@ -195,6 +195,13 @@ fun App(themeState: ThemeState = rememberThemeState()) {
     val onColorSettingsChange: (ColorSettings) -> Unit = { themeState.colorSettings = it }
 
     val graph = appGraph
+    // Runs for as long as the UI is on screen. On Android a scheduled worker keeps this going
+    // after the process is gone; elsewhere the app being open is the only time there is anyone to
+    // notify anyway.
+    LaunchedEffect(graph) {
+        graph?.scheduledEventEngine?.run()
+    }
+
     if (graph != null) {
         MaterialTheme(colorScheme = themeState.colorScheme) {
             AppGraphProvider(graph) {

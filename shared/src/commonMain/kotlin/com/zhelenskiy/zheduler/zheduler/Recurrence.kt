@@ -4,6 +4,7 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
+import com.zhelenskiy.zheduler.zheduler.events.resolveIn
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
@@ -389,6 +390,29 @@ data class RecurrencePeriod(
     }
 
     /**
+     * Take this period off an instant, in [tz] — the mirror of [addTo], and how a reminder set
+     * "a day before" a deadline finds its moment.
+     *
+     * Date components move the calendar and keep the time of day, so a day before 09:00 is 09:00,
+     * whether or not the clocks changed in between. A time of day the zone skipped that morning
+     * resolves the way [resolveIn] does by default, rather than vanishing.
+     */
+    fun subtractFrom(instant: Instant, tz: TimeZone): Instant {
+        val elapsedSeconds = hours.toLong() * 60 * 60 + minutes.toLong() * 60 + seconds
+        if (years == 0 && months == 0 && weeks == 0 && days == 0) {
+            return instant.minus(elapsedSeconds, DateTimeUnit.SECOND)
+        }
+
+        val local = instant.toLocalDateTime(tz)
+        val shiftedDate = local.date
+            .minus(years.toLong(), DateTimeUnit.YEAR)
+            .minus(months.toLong(), DateTimeUnit.MONTH)
+            .minus(weeks.toLong() * 7 + days, DateTimeUnit.DAY)
+        val afterDateParts = LocalDateTime(shiftedDate, local.time).resolveIn(tz)
+        return afterDateParts.minus(elapsedSeconds, DateTimeUnit.SECOND)
+    }
+
+    /**
      * Add this period to a LocalDateTime, treating every component as wall-clock time.
      *
      * Prefer [addTo] with an instant wherever a real elapsed interval is meant.
@@ -414,8 +438,22 @@ data class RecurrencePeriod(
 
         return newInstant.toLocalDateTime(TimeZone.UTC)
     }
-    override fun toFullString(): String = buildString {
-        val skipNumber = listOf(years, months, weeks, days, hours, minutes, seconds).filter { it != 0 } == listOf(1)
+    /**
+     * "Every **day**", with the one left out where it reads better without it.
+     */
+    override fun toFullString(): String = spellOut(dropTheOne = true)
+
+    /**
+     * "Due in **1 day**" — the same words, but never without the number.
+     *
+     * [toFullString] drops it for a single unit of one because it follows "Every"; a sentence that
+     * says how long something is has nowhere for the reader to get it back from.
+     */
+    fun toCountedString(): String = spellOut(dropTheOne = false)
+
+    private fun spellOut(dropTheOne: Boolean): String = buildString {
+        val skipNumber = dropTheOne &&
+            listOf(years, months, weeks, days, hours, minutes, seconds).filter { it != 0 } == listOf(1)
         fun Int.asStringWithSpace() = if (this == 1 && skipNumber) "" else "$this "
         if (years > 0) append("${years.asStringWithSpace()}year${if (years > 1) "s" else ""} ")
         if (months > 0) append("${months.asStringWithSpace()}month${if (months > 1) "s" else ""} ")
@@ -1133,6 +1171,34 @@ object RecurrenceService {
         currentState = currentState,
         triggerTime = triggerTime
     )
+
+    /**
+     * The state an [edited] rule should carry, given whatever [previous] entry it replaces.
+     *
+     * Changing *when* a rule happens starts it again. Keeping the old progress across that edit is
+     * how a spent rule stayed spent: a one-shot that has fired answers "no next occurrence" to
+     * every question, whatever new date it is given, so re-dating it produced a rule that showed
+     * as active and could never fire again. Anything else about the rule — how it stops, what it
+     * resets to — leaves the progress alone, because a rule that has come round twice has still
+     * come round twice.
+     */
+    fun stateForEditedRule(
+        previous: Pair<RecurrenceRule, RecurrenceState>?,
+        edited: RecurrenceRule,
+    ): Pair<RecurrenceRule, RecurrenceState> {
+        val unchangedTiming = previous
+            ?.takeIf { (before, _) -> before.timeRecurrenceTrigger == edited.timeRecurrenceTrigger }
+            ?.second
+        // Kept exactly, not recomputed. A fixed-point rule waiting for its status carries an
+        // occurrence already in the past, and working the date out again from today would move it
+        // to next week — so editing anything else about such a rule silently disarmed it.
+        if (unchangedTiming != null) return edited to unchangedTiming
+
+        val fresh = RecurrenceState()
+        return edited to fresh.copy(
+            nextOccurrenceDate = RecurrenceCalculator.calculateNextOccurrence(edited, fresh),
+        )
+    }
 
     /**
      * Initialize recurrence state for a new recurring task with multiple rules
