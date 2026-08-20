@@ -906,6 +906,31 @@ class RoomTaskRepository(
         }
     }
 
+    override suspend fun getAutomaticStatusChangesBetween(
+        since: Instant,
+        until: Instant,
+    ): List<StatusChangeEvent> {
+        val rows = dao.getAutomaticStatusChangesBetween(
+            since.toEpochMilliseconds(),
+            until.toEpochMilliseconds(),
+        )
+        val tasksById = hydrateTasksAcrossSpaces(byIds(rows.mapTo(mutableSetOf()) { it.taskId }))
+            .associateBy { it.id }
+
+        return rows.mapNotNull { row ->
+            val task = tasksById[row.taskId] ?: return@mapNotNull null
+            StatusChangeEvent(
+                task = task,
+                statusChange = StatusChange(
+                    timestamp = Instant.fromEpochMilliseconds(row.timestamp),
+                    previousStatus = row.previousStatusJson.toTaskStatusOrNull(),
+                    newStatus = row.newStatusJson.toTaskStatus(),
+                    automaticChangeReason = row.automaticChangeReasonJson.toAutomaticChangeReasonOrNull(),
+                ),
+            )
+        }
+    }
+
     /**
      * Unlike the grouped queries, [TaskFilterCriteria] here is matched in Kotlin against whole
      * tasks (descriptions, tags, recurrence rules, connections), so the set has to be built before

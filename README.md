@@ -59,6 +59,11 @@ stop them firing twice, because firing moves the task out of the status that tri
 status is matched by kind and not by value, because the rule editor stores a bare `Blocked` or
 `Declined` that no real task ever equals.
 
+A sweep also says when the app has changed a status by itself — a task that became workable
+because its last blocker was finished, a parent that followed its subtasks. Not a recurrence
+reset: that is the schedule doing what it was told, and the deadline alert already lands on the
+same moment.
+
 **Time zones.** The zone is read again on every run rather than captured, because a process
 outlives the zone it started in. A reminder is a wall-clock offset from the deadline — "a day
 before 09:00" is 09:00 the previous day — so it is 25 real hours on the day the clocks go back and

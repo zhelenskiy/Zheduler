@@ -436,6 +436,19 @@ interface TaskRepository {
      */
     suspend fun getStatusChangesByDate(spaceId: String, year: Int, month: Int): Map<LocalDate, List<StatusChangeEvent>>
 
+    /**
+     * The status changes the app made on its own in `(since, until]`, across every space, oldest
+     * first.
+     *
+     * Only the automatic ones: a status the user set by hand is not something to tell them about.
+     * This is how the scheduler finds out that finishing one task unblocked another, or that a
+     * parent followed its subtasks, so it can say so.
+     *
+     * @param since exclusive lower bound — the moment the last sweep reached
+     * @param until inclusive upper bound
+     */
+    suspend fun getAutomaticStatusChangesBetween(since: Instant, until: Instant): List<StatusChangeEvent>
+
     // ============ Filtering and search ============
 
     /**

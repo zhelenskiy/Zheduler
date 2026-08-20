@@ -2,11 +2,14 @@
 
 package com.zhelenskiy.zheduler.zheduler.events
 
+import com.zhelenskiy.zheduler.zheduler.AutomaticChangeReason
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
 import com.zhelenskiy.zheduler.zheduler.RecurrenceRule
 import com.zhelenskiy.zheduler.zheduler.RecurrenceService
 import com.zhelenskiy.zheduler.zheduler.RecurrenceState
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTriggerEvent
+import com.zhelenskiy.zheduler.zheduler.StatusChange
+import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import kotlinx.collections.immutable.toPersistentList
@@ -144,6 +147,10 @@ class ScheduledEventEngine(
         val replanned = EventPlanner.eventsFor(after, tz, now)
         val nextAt = replanned.filter { it.at > now }.minOfOrNull { it.at }
 
+        val announced = announceAutomaticChanges(now, previous.delivered, firstRun = previous.sweptTo == null) {
+            candidates += it
+        }
+
         // Kept while the event they are for is still one the planner would offer. Nothing retires
         // by age any more, so this is what bounds the set: a task that is finished with stops
         // being planned and takes its keys with it.
@@ -152,7 +159,7 @@ class ScheduledEventEngine(
             ScheduleState(
                 sweptTo = now,
                 delivered = previous.delivered.filterKeys { it in stillPlanned } +
-                    delivered.associate { it.key to it.relevantAt.toEpochMilliseconds() },
+                    delivered.associate { it.key to it.relevantAt.toEpochMilliseconds() } + announced,
             )
         )
         speak(candidates)
@@ -222,6 +229,82 @@ class ScheduledEventEngine(
             .map { forOneTask -> forOneTask.maxWith(compareBy({ it.at }, { it.rank })) }
             .sortedBy { it.at }
             .forEach { notifier.post(it.alert) }
+    }
+
+    /**
+     * Say so when the app has changed a task's status on its own.
+     *
+     * These are the changes nobody asked for at the time: a task that stopped being blocked
+     * because its last blocker was finished, a parent that followed its subtasks, a rule that came
+     * round. The user finds out now rather than the next time they happen to scroll past it.
+     *
+     * Bounded by the catch-up window, so a device that has been off for a fortnight does not
+     * recite a fortnight of bookkeeping on the way back, and deduplicated by key rather than by
+     * watermark — see below for why.
+     */
+    private suspend fun announceAutomaticChanges(
+        now: Instant,
+        alreadyAnnounced: Map<String, Long>,
+        firstRun: Boolean,
+        offer: (Candidate) -> Unit,
+    ): Map<String, Long> {
+        // Read afresh rather than bounded by the watermark: the changes this very run has just
+        // caused are stamped by the repository's own clock, a few milliseconds after the [now]
+        // this run planned from, and a window ending at [now] would miss every one of them — only
+        // to pick them up on the next run, which is where the duplicates came from. The keys are
+        // what prevent a repeat, and they hold however the clocks fall.
+        val recent = repository.getAutomaticStatusChangesBetween(now - RECENT_CHANGES, clock.now())
+            .filter { it.statusChange.automaticChangeReason.isWorthAnnouncing() }
+
+        val keys = recent.associate { it.key to it.statusChange.timestamp.toEpochMilliseconds() }
+        // A first run has nothing behind it, exactly as with the alerts: it learns what has
+        // already happened without reciting a day of it to someone who has just opened the app.
+        // Only what it found, though — a change this very run caused, by catching a recurrence up
+        // and unblocking something, is news like any other, and suppressing it loses it for good.
+        // At or after, not strictly after: a change this run caused is stamped by the repository's
+        // own clock and stored to the millisecond, so it can read back as exactly the instant this
+        // run planned from.
+        val worthSaying =
+            if (firstRun) recent.filter { it.statusChange.timestamp >= now } else recent
+
+        worthSaying.filter { it.key !in alreadyAnnounced.keys }.forEach { (task, change) ->
+            offer(
+                Candidate(
+                    taskId = task.id,
+                    at = change.timestamp,
+                    rank = 0,
+                    alert = TaskAlert(
+                        id = change.key(task),
+                        taskId = task.id,
+                        spaceId = task.spaceId,
+                        title = task.title,
+                        body = "${reasonText(change.automaticChangeReason)} — now ${change.newStatus.displayName}",
+                        at = change.timestamp,
+                    ),
+                )
+            )
+        }
+        return keys
+    }
+
+    /**
+     * Every status the app arrived at by itself is worth saying — including a recurrence reset,
+     * which is the app changing a task under the user as much as an unblocking is. Where the
+     * deadline lands on the same moment only one of the two is spoken; see [speak].
+     *
+     * A status the user set by hand is not news to them.
+     */
+    private fun AutomaticChangeReason?.isWorthAnnouncing(): Boolean = this != null
+
+    private val StatusChangeEvent.key: String get() = statusChange.key(task)
+
+    private fun StatusChange.key(task: Task): String = "status:${task.id}:${timestamp.toEpochMilliseconds()}"
+
+    private fun reasonText(reason: AutomaticChangeReason?): String = when (reason) {
+        is AutomaticChangeReason.Unblocked -> "No longer blocked"
+        is AutomaticChangeReason.UpdatedFromSubtasks -> "Followed its subtasks"
+        is AutomaticChangeReason.Recurrence -> "Came round again"
+        null -> "Changed"
     }
 
     /**
@@ -486,6 +569,12 @@ class ScheduledEventEngine(
         repository.getAllSpaces().flatMap { repository.getAllTasks(it.id) }
 
     private companion object {
+        /**
+         * How far back the bookkeeping is recited. Deadlines have no such limit, but the statuses
+         * the app moved around three weeks ago are not news the way a missed deadline is.
+         */
+        val RECENT_CHANGES = 1.days
+
         /**
          * Enough steps to wind even a minutely rule through a couple of months away in one go, and
          * still a backstop against a period that never gets ahead of the clock. Stopping short is

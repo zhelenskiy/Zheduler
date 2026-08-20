@@ -305,6 +305,19 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         }
     }
 
+    override suspend fun getAutomaticStatusChangesBetween(
+        since: Instant,
+        until: Instant,
+    ): List<StatusChangeEvent> = mutex.withLock {
+        tasks.values
+            .flatMap { task ->
+                (statusTimelines[task.id] ?: emptyList())
+                    .filter { it.automaticChangeReason != null && it.timestamp > since && it.timestamp <= until }
+                    .map { StatusChangeEvent(task, it) }
+            }
+            .sortedBy { it.statusChange.timestamp }
+    }
+
     override suspend fun peekNextId(spaceId: String): String = mutex.withLock {
         val space = spaces[spaceId] ?: return@withLock "TASK-1"
         // Skips taken ids exactly as generation does; see RoomTaskRepository.peekNextId.

@@ -280,6 +280,20 @@ interface ZhedulerDao {
     @Query("SELECT * FROM status_changes WHERE taskId IN (:taskIds) ORDER BY taskId, timestamp ASC")
     suspend fun getStatusTimelinesForTasks(taskIds: Collection<String>): List<StatusChanges>
 
+    /**
+     * Status changes the app made for the user, in `(since, until]`, across every space.
+     *
+     * A null reason is a change the user made by hand and is not news to them.
+     */
+    @Query(
+        """
+        SELECT * FROM status_changes
+        WHERE timestamp > :since AND timestamp <= :until AND automaticChangeReasonJson IS NOT NULL
+        ORDER BY timestamp ASC
+        """
+    )
+    suspend fun getAutomaticStatusChangesBetween(since: Long, until: Long): List<StatusChanges>
+
     @Query(
         """
         INSERT INTO status_changes(taskId, timestamp, previousStatusJson, newStatusJson, automaticChangeReasonJson)
