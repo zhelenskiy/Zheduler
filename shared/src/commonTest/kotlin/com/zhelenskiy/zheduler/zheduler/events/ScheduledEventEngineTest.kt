@@ -927,6 +927,118 @@ class ScheduledEventEngineTest {
     }
 
     @Test
+    fun `a rule triggered by a status brings the task back when it reaches that status`() = runTest {
+        // "When I mark this done, put it back on the list." The rule has no time of its own — the
+        // event it waits for is the status itself.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Restock the fridge",
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = null,
+                        statusChangeTrigger = RecurrenceTrigger.StatusChange(persistentSetOf(TaskStatus.Done)),
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "nothing has happened to it yet",
+        )
+
+        f.repository.updateTask(assertNotNull(f.repository.getTaskById(task.id)).copy(status = TaskStatus.Done))
+        f.clock.current = start + 1.minutes
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "reaching Done is what the rule was waiting for",
+        )
+    }
+
+    @Test
+    fun `a status rule waiting on Declined fires for a real declined task`() = runTest {
+        // The rule editor stores a bare chip per status — Declined with no reason — and no real
+        // task ever equals it. Matching the whole value rather than the kind left the Blocked and
+        // Declined chips unable to fire at all, which is the bug the repository's own check was
+        // fixed for; a pre-filter here can reintroduce it without the repository being reached.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Renew the licence",
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = null,
+                        statusChangeTrigger = RecurrenceTrigger.StatusChange(
+                            persistentSetOf(TaskStatus.Declined(""))
+                        ),
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.engine().sweep()
+
+        f.clock.current = start + 1.minutes
+        f.repository.updateTask(
+            assertNotNull(f.repository.getTaskById(task.id))
+                .copy(status = TaskStatus.Declined("not this quarter"))
+        )
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "a declined task is declined whatever the reason says",
+        )
+    }
+
+    @Test
+    fun `a status rule does not fire again while the task sits in the status it was reset to`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Water cooler",
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = null,
+                        statusChangeTrigger = RecurrenceTrigger.StatusChange(persistentSetOf(TaskStatus.Done)),
+                        resetToStatus = TaskStatus.Open,
+                        termination = RecurrenceTermination.afterOccurrences(5),
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.repository.updateTask(assertNotNull(f.repository.getTaskById(task.id)).copy(status = TaskStatus.Done))
+        f.engine().sweep()
+        f.clock.current = start + 1.minutes
+        f.engine().sweep()
+        f.clock.current = start + 2.minutes
+        f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(
+            4,
+            after.recurrenceRules.single().first.termination.maxOccurrences,
+            "one completion is one occurrence, however many times the schedule is swept afterwards",
+        )
+    }
+
+    @Test
     fun `the next wake is the earliest event still ahead`() = runTest {
         val start = at(2026, 6, 1, 9, 0)
         val f = fixture(start)

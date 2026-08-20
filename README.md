@@ -52,6 +52,13 @@ What a notification says is worked out when it is delivered rather than when it 
 not. Everything one task has to say in a single run is said once, in the words of whichever moment
 describes where the task actually stands.
 
+Rules that wait for a status rather than a moment — "when I mark this done, put it back on the
+list" — are fired by the same run. They are not part of the plan, having no time of their own; a
+sweep notices them by looking at what each task's status now is. Nothing has to be remembered to
+stop them firing twice, because firing moves the task out of the status that triggered it. The
+status is matched by kind and not by value, because the rule editor stores a bare `Blocked` or
+`Declined` that no real task ever equals.
+
 **Time zones.** The zone is read again on every run rather than captured, because a process
 outlives the zone it started in. A reminder is a wall-clock offset from the deadline — "a day
 before 09:00" is 09:00 the previous day — so it is 25 real hours on the day the clocks go back and

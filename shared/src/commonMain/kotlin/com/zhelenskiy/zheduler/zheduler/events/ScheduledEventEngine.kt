@@ -135,7 +135,12 @@ class ScheduledEventEngine(
             }
         }
 
-        val after = if (mutated) allTasks() else tasks
+        // From a fresh read: the loop above has just reset statuses, and a rule waiting for one of
+        // them should see what the task is now rather than what it was when this run started.
+        val settled = if (mutated) allTasks() else tasks
+        val statusFired = fireStatusTriggers(settled, now)
+
+        val after = if (mutated || statusFired) allTasks() else tasks
         val replanned = EventPlanner.eventsFor(after, tz, now)
         val nextAt = replanned.filter { it.at > now }.minOfOrNull { it.at }
 
@@ -217,6 +222,41 @@ class ScheduledEventEngine(
             .map { forOneTask -> forOneTask.maxWith(compareBy({ it.at }, { it.rank })) }
             .sortedBy { it.at }
             .forEach { notifier.post(it.alert) }
+    }
+
+    /**
+     * Fire the rules that wait for a status rather than for a moment — "when I mark this done, put
+     * it back on the list".
+     *
+     * These have no place in the plan, because they have no time: what they wait for is the task
+     * arriving in one of the statuses they name, which a sweep can only notice by looking. Nothing
+     * has to be remembered to keep them from firing twice, since firing moves the task out of the
+     * status that triggered it, and a rule whose reset status is one it also waits for is refused
+     * by the repository.
+     *
+     * Only rules with no time trigger are looked for here; one that has both is a moment in the
+     * plan like any other, and goes through [advance].
+     */
+    private suspend fun fireStatusTriggers(tasks: List<Task>, now: Instant): Boolean {
+        var fired = false
+        for (task in tasks) {
+            val waiting = task.recurrenceRules.any { (rule, _) ->
+                rule.timeRecurrenceTrigger == null &&
+                    // By kind, not by value, exactly as RecurrenceCalculator.shouldTrigger does:
+                    // the rule editor stores a bare instance per chip — Blocked with no blockers,
+                    // Declined with no reason — which no real task ever equals. Comparing whole
+                    // values here left those two chips unable to fire, without the repository's
+                    // own correct check ever being reached.
+                    rule.statusChangeTrigger?.requiredStatuses.orEmpty()
+                        .any { it::class == task.status::class } &&
+                    !rule.isTerminated(now)
+            }
+            if (!waiting) continue
+            if (repository.processRecurrenceTrigger(task.id, RecurrenceTriggerEvent(task.status, now)) != null) {
+                fired = true
+            }
+        }
+        return fired
     }
 
     /**
