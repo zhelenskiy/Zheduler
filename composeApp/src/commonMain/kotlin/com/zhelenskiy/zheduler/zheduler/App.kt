@@ -59,6 +59,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.rememberContainer
 import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
 import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
+import com.zhelenskiy.zheduler.zheduler.util.ProvideCurrentTime
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
 import kotlinx.coroutines.flow.first
@@ -205,6 +206,7 @@ fun App(themeState: ThemeState = rememberThemeState()) {
     if (graph != null) {
         MaterialTheme(colorScheme = themeState.colorScheme) {
             AppGraphProvider(graph) {
+              ProvideCurrentTime {
                 // One host above the whole navigation graph: a screen does not need a snackbar of
                 // its own for its store to be able to say that something went wrong.
                 val failureSnackbar = remember { SnackbarHostState() }
@@ -218,6 +220,7 @@ fun App(themeState: ThemeState = rememberThemeState()) {
                         SnackbarHost(failureSnackbar, modifier = Modifier.align(Alignment.BottomCenter))
                     }
                 }
+              }
             }
         }
     } else {

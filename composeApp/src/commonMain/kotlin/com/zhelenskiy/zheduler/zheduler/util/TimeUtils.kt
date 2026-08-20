@@ -9,10 +9,13 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-fun formatDueDate(instant: Instant, clock: Clock = Clock.System): String {
+fun formatDueDate(instant: Instant, clock: Clock = Clock.System): String =
+    formatDueDate(instant, clock.now())
+
+fun formatDueDate(instant: Instant, now: Instant): String {
     val tz = TimeZone.currentSystemDefault()
     val dateTime = instant.toLocalDateTime(tz)
-    val nowDateTime = clock.now().toLocalDateTime(tz)
+    val nowDateTime = now.toLocalDateTime(tz)
 
     // Compare calendar dates, not raw time differences
     val dueDate = dateTime.date

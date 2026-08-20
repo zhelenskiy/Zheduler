@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.Priority
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
+import com.zhelenskiy.zheduler.zheduler.util.LocalNow
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -106,11 +107,14 @@ fun PriorityBadge(priority: Priority, isTotal: Boolean) {
 
 @Composable
 fun DueDateBadge(dueDate: Instant, isTotal: Boolean) {
-    val now = Clock.System.now()
+    // From the ticking clock, not from the clock at the moment this was drawn: a due date that
+    // goes by while the list is on screen has to turn red then, not the next time something else
+    // happens to redraw it.
+    val now = LocalNow.current
     val isOverdue = dueDate < now
     val color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
 
-    val dateText = formatDueDate(dueDate)
+    val dateText = formatDueDate(dueDate, now)
 
     Badge(
         color = color,

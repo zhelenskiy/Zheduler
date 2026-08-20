@@ -24,6 +24,7 @@ import com.zhelenskiy.zheduler.zheduler.RecurrencePeriod
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.TaskWithTotals
+import com.zhelenskiy.zheduler.zheduler.util.LocalNow
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -98,7 +99,7 @@ private fun TaskStatusAndInfoRow(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
-        if (taskWithTotals.isMissed(Clock.System.now())) {
+        if (taskWithTotals.isMissed(LocalNow.current)) {
             MissedBadge()
         }
         StatusBadge(status = task.status)

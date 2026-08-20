@@ -36,6 +36,7 @@ import com.zhelenskiy.zheduler.zheduler.components.form.RecurrenceRuleItem
 import com.zhelenskiy.zheduler.zheduler.components.markdown.TaskDescriptionView
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import com.zhelenskiy.zheduler.zheduler.util.LocalNow
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
 import com.zhelenskiy.zheduler.zheduler.util.formatCompactDateTime
@@ -207,7 +208,7 @@ private fun TaskStatusSection(
     var isTimelineExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
 
     Column {
-        if (taskWithTotals?.isMissed(Clock.System.now()) == true) {
+        if (taskWithTotals?.isMissed(LocalNow.current) == true) {
             val color = MaterialTheme.colorScheme.error
             Row(
                 modifier = Modifier.padding(vertical = 8.dp),
