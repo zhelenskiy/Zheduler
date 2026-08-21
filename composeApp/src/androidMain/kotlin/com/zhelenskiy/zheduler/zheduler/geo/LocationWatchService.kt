@@ -4,8 +4,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.net.wifi.WifiManager
 import android.content.pm.ServiceInfo
 import android.location.Location
 import android.location.LocationListener
@@ -16,6 +21,7 @@ import android.os.IBinder
 import android.os.Looper
 import com.zhelenskiy.zheduler.zheduler.di.androidApplication
 import com.zhelenskiy.zheduler.zheduler.di.obtainAppGraph
+import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -80,6 +86,19 @@ class LocationWatchService : Service() {
      */
     private val listener = LocationListener { _: Location -> sweepSoon() }
 
+    /**
+     * The radios changing, which is the other way a rule's condition can come true.
+     *
+     * Joining a network or a car's bluetooth connecting is a crossing exactly as walking into a
+     * building is, and it is announced rather than having to be watched for — so a sweep here
+     * costs nothing between events and catches the moment it happens.
+     */
+    private val radios = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = sweepSoon()
+    }
+
+    private var listeningToRadios = false
+
     override fun onCreate() {
         super.onCreate()
         running = true
@@ -93,14 +112,17 @@ class LocationWatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!hasLocationPermission()) {
+        if (!canWatch()) {
             // Revoked since this was started, which a sticky restart can well arrive after.
             // Stopping now rather than promoting is what keeps that from being a crash loop.
             stopSelf()
             return START_NOT_STICKY
         }
         startForeground()
+        startedWith = 1 or (if (hasLocationPermission()) 2 else 0) or
+            (if (hasBluetoothPermission()) 4 else 0)
         listen()
+        listenToRadios()
         // Also what stops the service again: the sweep reports whether anything is still waiting
         // on a place, and nothing being left is what turns the watch off. That is why this is safe
         // to start hopefully — at boot, say, without first reading the database.
@@ -112,7 +134,12 @@ class LocationWatchService : Service() {
 
     override fun onDestroy() {
         running = false
+        startedWith = 0
         alive = false
+        if (listeningToRadios) {
+            runCatching { unregisterReceiver(radios) }
+            listeningToRadios = false
+        }
         // Nothing is owed a sweep by a service that has stopped, and anything already posted is
         // dropped rather than left to run against a cancelled scope.
         pendingSweep = false
@@ -143,6 +170,33 @@ class LocationWatchService : Service() {
                     listening = true
                 }
             }
+    }
+
+    /**
+     * Listens for the network or a bluetooth device changing.
+     *
+     * Registered on the service rather than in the manifest: from Android 8 most of these are no
+     * longer delivered to a manifest receiver at all, and there is nothing to listen for anyway
+     * while the service is not running.
+     */
+    private fun listenToRadios() {
+        if (listeningToRadios) return
+        val filter = IntentFilter().apply {
+            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // From Android 13 a receiver has to say whether it expects anything from outside
+                // the app. These are all the system's own broadcasts.
+                registerReceiver(radios, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(radios, filter)
+            }
+            listeningToRadios = true
+        }
     }
 
     /**
@@ -186,6 +240,9 @@ class LocationWatchService : Service() {
         }
     }
 
+    /** Whether there is anything this service could still watch with. */
+    private fun canWatch(): Boolean = hasLocationPermission() || hasBluetoothPermission()
+
     private fun startForeground() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
@@ -201,8 +258,12 @@ class LocationWatchService : Service() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // From Android 10 the type has to be declared at the moment of starting as well as in
-            // the manifest, or the system refuses the service outright.
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            // the manifest, or the system refuses the service outright — and from 14 it refuses a
+            // location service outright unless the location permission is held. A rule that only
+            // watches a bluetooth device needs neither, so it runs as what it actually is.
+            val type = if (hasLocationPermission()) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            else ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            startForeground(NOTIFICATION_ID, notification, type)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -219,18 +280,37 @@ class LocationWatchService : Service() {
         var running: Boolean = false
             private set
 
+        /**
+         * What the running service was started to do, as a small bitmask.
+         *
+         * Compared rather than [running] alone, so that a permission granted while the service is
+         * already up reaches `onStartCommand` — which is the only place that registers for
+         * location updates and decides what kind of foreground service this is.
+         */
+        @Volatile
+        var startedWith: Int = 0
+            private set
+
+        /** Says the service is on its way out, before it has got there. See [updatePlaceWatch]. */
+        internal fun forget() {
+            startedWith = 0
+        }
+
         const val CHANNEL = "zheduler.places"
         const val NOTIFICATION_ID = 0x21E0
 
         /**
          * How often, and how far, before the device is asked again.
          *
-         * A minute and a hundred metres. The smallest fence is fifty metres across, so a hundred
-         * is the coarsest step that cannot stride over one; and a minute is far more often than a
-         * person changes which building they are in.
+         * Both have to be satisfied, so the minute is what bounds the cost: a smaller distance
+         * cannot ask for readings more often than that, it only stops a device sitting still from
+         * producing any. Ten metres rather than a hundred because a fence may now be a few metres
+         * across and a hundred-metre stride walks straight over one — though nothing sampled once
+         * a minute can promise to catch a fence that small, which is why a tiny one is better
+         * paired with a wifi or bluetooth condition.
          */
         const val MIN_INTERVAL_MS = 60_000L
-        const val MIN_DISTANCE_M = 100f
+        const val MIN_DISTANCE_M = 10f
     }
 }
 
@@ -242,17 +322,39 @@ class LocationWatchService : Service() {
  * by waiting — without the permission the service would have nothing to listen to — and the sweeps
  * still catch what they can as soon as it is granted.
  */
-actual fun updatePlaceWatch(watching: Boolean) {
+actual fun updatePlaceWatch(needs: ScheduledEventEngine.WatchNeeds) {
     val context = androidApplication()
     val intent = Intent(context, LocationWatchService::class.java)
-    val wanted = watching && context.hasLocationPermission()
-    if (wanted == LocationWatchService.running) return
+    // Only what this device can honour. A place needs the location permission and a signal needs
+    // whichever radio it is about; a watch running for something it will never be told about is a
+    // permanent notification and nothing else.
+    // Each kind against the permission that actually answers for it. Reading which wifi network
+    // is joined needs the location permission; bluetooth needs its own. Lumped together, a phone
+    // holding only one of them keeps a permanent notification for a watch that can never fire.
+    val wanted = (needs.places && context.hasLocationPermission()) ||
+        (SignalKind.Wifi in needs.signals && context.hasLocationPermission()) ||
+        (SignalKind.Bluetooth in needs.signals && context.hasBluetoothPermission())
+    // Compared on the *capabilities* as well as the answer: granting location to a service already
+    // running for bluetooth has to reach onStartCommand, which is the only place that registers
+    // for location updates and settles what kind of foreground service this is.
+    val signature = if (!wanted) 0
+    else 1 or (if (context.hasLocationPermission()) 2 else 0) or
+        (if (context.hasBluetoothPermission()) 4 else 0)
+    if (signature == LocationWatchService.startedWith) return
     runCatching {
         // From Android 12 a foreground service cannot be started from the background at all, and
         // the refusal is an exception. Most sweeps that turn the watch on are the app's own, made
         // while it is on the screen, where this is allowed; a restart is covered by
         // [startPlaceWatchAfterBoot], and the rest of the time the service is already up.
-        if (wanted) context.startForegroundService(intent) else context.stopService(intent)
+        if (wanted) {
+            context.startForegroundService(intent)
+        } else {
+            // Forgotten here rather than in onDestroy, which runs on the main thread some moments
+            // later: a sweep in that gap deciding the watch is wanted again would compare against
+            // a signature the service is about to abandon, skip the start, and leave it stopped.
+            LocationWatchService.forget()
+            context.stopService(intent)
+        }
     }
 }
 
@@ -268,8 +370,14 @@ actual fun updatePlaceWatch(watching: Boolean) {
 internal fun startPlaceWatchAfterBoot(context: Context) {
     // The standing permission, not the ordinary one: from Android 11 a location service started
     // with nothing of the app on the screen is given no location at all without it, so starting
-    // one here would be a notification the user pays for and hears nothing from.
-    if (!context.hasBackgroundLocationPermission()) return
+    // one here would be a notification the user pays for and hears nothing from. Bluetooth has no
+    // such split — a rule that only watches a device is served by the permission it already has.
+    // The standing bluetooth permission is only a real answer from Android 12, where it has to be
+    // granted; before that it is implicit and says nothing about whether a watch is wanted, so the
+    // location one remains the gate there.
+    val bluetoothIsMeaningful = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        context.hasBluetoothPermission()
+    if (!context.hasBackgroundLocationPermission() && !bluetoothIsMeaningful) return
     runCatching {
         context.startForegroundService(Intent(context, LocationWatchService::class.java))
     }

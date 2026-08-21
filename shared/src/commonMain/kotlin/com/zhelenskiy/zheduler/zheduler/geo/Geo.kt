@@ -1,6 +1,12 @@
+@file:OptIn(ExperimentalTime::class)
+
 package com.zhelenskiy.zheduler.zheduler.geo
 
 import kotlinx.serialization.Serializable
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.cos
@@ -77,10 +83,17 @@ data class GeoArea(
 
     companion object {
         /**
-         * Below this a fence is a coin toss rather than a place: consumer positioning is good to a
-         * few tens of metres at best, so a smaller circle is entered and left by the noise alone.
+         * A metre, which is finer than any consumer fix.
+         *
+         * So a fence this small will seldom be entered by positioning alone — the reading has to
+         * land within a metre of the point — and that is the user's to choose rather than ours to
+         * refuse. It is a sensible thing to ask for next to a condition that *is* precise: a rule
+         * that wants the office wifi and a point on the map is not relying on the metre.
+         *
+         * Not zero, because a circle of no size can never be entered at all, and because the key a
+         * place is remembered by is quantised to the metre.
          */
-        const val MIN_RADIUS_METERS: Double = 50.0
+        const val MIN_RADIUS_METERS: Double = 1.0
 
         /** Half the distance from pole to equator; past it a circle is no longer a place. */
         const val MAX_RADIUS_METERS: Double = 5_000_000.0
@@ -184,6 +197,87 @@ data class PlaceReading(
     }
 }
 
+/**
+ * A rule's condition on what is around the device — an area it is in, a network it is on.
+ *
+ * Split in two because a condition can be read two ways, and which one applies depends on what
+ * else the rule is waiting for. A rule with nothing but this is fired *by* the crossing; one that
+ * also has a moment or a status is armed by that and merely asks whether the condition holds.
+ */
+interface PresenceTrigger {
+    /** What this watches, by [GeoArea.key] or [NearbySignal.key]. */
+    val watchedKeys: Set<String>
+
+    /** Whether the crossings in [reading] are the ones this was waiting for. */
+    fun firedBy(reading: PlaceReading): Boolean
+
+    /** Whether this holds as a standing question about where the device is now. */
+    fun holdsIn(reading: PlaceReading): Boolean
+}
+
+/**
+ * Whether [reading] satisfies every one of these conditions at once.
+ *
+ * A rule may name both a place and a network — "at the office, on the office wifi" — and both have
+ * to be true. On a reading that is a crossing, at least one of them must be the thing that just
+ * happened and the rest must hold; asking every condition to have crossed at the same instant
+ * would mean a rule that could only fire if two things happened in the same second.
+ */
+fun List<PresenceTrigger>.satisfiedBy(reading: PlaceReading): Boolean {
+    if (isEmpty()) return true
+    // Nothing is satisfied by a device that cannot say what is around it: firing then would fire
+    // everywhere at once.
+    if (!reading.known) return false
+    return if (reading.isCrossing) {
+        any { it.firedBy(reading) } && all { it.firedBy(reading) || it.holdsIn(reading) }
+    } else {
+        all { it.holdsIn(reading) }
+    }
+}
+
+/** Whether any of [keys] just crossed the way this condition wanted. */
+internal fun crossingMatches(
+    keys: Set<String>,
+    reading: PlaceReading,
+    wantsArriving: Boolean,
+    wantsLeaving: Boolean,
+): Boolean = (wantsArriving && keys.any { it in reading.entered }) ||
+    (wantsLeaving && keys.any { it in reading.left })
+
+/**
+ * Whether the standing state of [keys] is what this condition wants.
+ *
+ * "Either way" names no state at all, so it holds wherever the device is. Absence has to be
+ * *measured* absence: a device on a phone that will not answer about bluetooth at all — the
+ * permission refused, the stack wedged — or an area added while the sweep was already under way,
+ * is not known to be missing, and treating unknown as absent is how "when I leave" holds true for
+ * somewhere nobody has ever looked. (A radio switched *off* is a different thing and a real
+ * answer: nothing is connected to an adapter that is off.)
+ */
+internal fun standingMatches(
+    keys: Set<String>,
+    reading: PlaceReading,
+    wantsArriving: Boolean,
+    wantsLeaving: Boolean,
+): Boolean = when {
+    wantsArriving && wantsLeaving -> true
+    wantsArriving -> keys.any { it in reading.inside }
+    else -> keys.any { it in reading.measured } && keys.none { it in reading.inside }
+}
+
+/**
+ * What one look at the radios came to.
+ *
+ * [missingSince] is when each absent signal was first noticed missing, which is what the grace is
+ * measured from. When the grace *ends* is worked out by the engine from what it has written down
+ * rather than reported here: a sweep that could not look at the radios still has to re-book the
+ * one that can, and a reading knows nothing about the sweeps that went before it.
+ */
+data class SignalReading(
+    val reading: PlaceReading,
+    val missingSince: Map<String, Long>,
+)
+
 /** Distances, and whether a fix counts as being inside an area. */
 object Geofencing {
 
@@ -266,7 +360,92 @@ object Geofencing {
     }
 
     /**
-     * Whereabouts as they should be remembered after [reading], for the areas still watched.
+     * What [signals] make of [nearby], given what was there last time.
+     *
+     * The counterpart of [read] for the things that are simply present or not — there is no
+     * distance to measure and so no boundary to widen. What takes the place of that margin is
+     * [grace]: a network drops for a moment far more readily than a user walks out of a building,
+     * and a router that hiccups must not read as having left the house. A signal that has gone is
+     * held as still present until it has been missing for [grace]; the next sweep after that is
+     * what reports the departure.
+     *
+     * Only the kinds [nearby] covers are looked at. The rest are left unmeasured — a phone that
+     * cannot be asked about bluetooth has not watched every paired device drive away. A radio
+     * switched off is not that: it is a real answer, and is reported as measured and empty.
+     */
+    fun readSignals(
+        signals: Collection<NearbySignal>,
+        nearby: NearbySignals,
+        wasInside: Map<String, Boolean>,
+        missingSince: Map<String, Long>,
+        now: Instant,
+        grace: Duration,
+    ): SignalReading {
+        if (nearby.kinds.isEmpty()) return SignalReading(PlaceReading.Unknown, emptyMap())
+        val inside = mutableSetOf<String>()
+        val entered = mutableSetOf<String>()
+        val left = mutableSetOf<String>()
+        val measured = mutableSetOf<String>()
+        val missing = mutableMapOf<String, Long>()
+
+        signals.distinctBy { it.key }.filter { it.kind in nearby.kinds }.forEach { signal ->
+            val key = signal.key
+            measured += key
+            val before = wasInside[key]
+            val here = key in nearby.present
+
+            // Measured from the moment it was first *noticed missing*, not from the last time it
+            // was seen. Those differ by everything: a phone sitting still runs no sweeps for hours,
+            // so "last seen" is hours old the instant the router blinks, and the very first sweep
+            // after the blink would call it a departure — which is precisely what the grace exists
+            // to prevent. First noticed missing is always now, so a blink is always inside it.
+            val missingFrom = if (here) null else missingSince[key] ?: now.toEpochMilliseconds()
+            missingFrom?.let { missing[key] = it }
+
+            val heldByGrace = before == true && missingFrom != null &&
+                now - Instant.fromEpochMilliseconds(missingFrom) < grace
+            val nowPresent = here || heldByGrace
+            if (nowPresent) inside += key
+            when {
+                before == null -> Unit
+                !before && nowPresent -> entered += key
+                before && !nowPresent -> left += key
+            }
+        }
+        return SignalReading(
+            reading = PlaceReading(
+                inside = inside,
+                entered = entered,
+                left = left,
+                known = true,
+                measured = measured,
+            ),
+            missingSince = missing,
+        )
+    }
+
+    /**
+     * The two readings as one.
+     *
+     * A sweep asks about places and about signals separately — they come from different hardware
+     * and either can fail on its own — and the rules are then matched against the pair as though it
+     * were a single answer about where the device is. Known if either half is: a phone that cannot
+     * get a fix but can see the office wifi knows something.
+     */
+    fun combine(places: PlaceReading, signals: PlaceReading): PlaceReading = PlaceReading(
+        inside = places.inside + signals.inside,
+        entered = places.entered + signals.entered,
+        left = places.left + signals.left,
+        known = places.known || signals.known,
+        measured = places.measured + signals.measured,
+    )
+
+    /** How long a signal has to be missing before it counts as gone. */
+    val SIGNAL_GRACE: Duration = 2.minutes
+
+    /**
+     * Whereabouts as they should be remembered after [reading], for whatever is still watched —
+     * areas and signals alike, both named by their key.
      *
      * A reading that knows nothing changes nothing: forgetting on a run that could not get a fix
      * would make the next successful one a first sighting, and first sightings never fire.
@@ -278,9 +457,9 @@ object Geofencing {
     fun remember(
         previous: Map<String, Boolean>,
         reading: PlaceReading,
-        areas: Collection<GeoArea>,
+        stillWatched: Collection<String>,
     ): Map<String, Boolean> {
-        val watched = areas.mapTo(mutableSetOf()) { it.key }
+        val watched = stillWatched.toSet()
         // Pruned to what is still watched, the way delivered events are pruned to what is still
         // planned: an area nobody references should not be remembered for ever.
         val kept = previous.filterKeys { it in watched }

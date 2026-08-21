@@ -1,5 +1,7 @@
 package com.zhelenskiy.zheduler.zheduler.geo
 
+import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
+
 /**
  * Tells the platform whether anything is still waiting on a place.
  *
@@ -14,4 +16,4 @@ package com.zhelenskiy.zheduler.zheduler.geo
  * Elsewhere it does nothing: the browser stops when its tab does, and the desktop has no notion of
  * where it is.
  */
-expect fun updatePlaceWatch(watching: Boolean)
+expect fun updatePlaceWatch(needs: ScheduledEventEngine.WatchNeeds)

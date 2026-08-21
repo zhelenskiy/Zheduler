@@ -31,6 +31,23 @@
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- For the same service when all it is watching is a bluetooth device, which needs no location. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+
+    <!--
+        For the rules that wait on a wifi network or a bluetooth device being near. Reading which
+        network is joined has needed the location permission since Android 8 as well as this one,
+        because the network you are on says where you are.
+
+        BLUETOOTH_CONNECT is the modern permission and is asked for at runtime; the two below it
+        are its predecessors, granted at install and capped at the last version that used them.
+        Nothing here scans or discovers — only what is already joined or connected is looked at —
+        so neither the scan permission nor a location strings attached to it are needed.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
 
     <application
             android:name=".ZhedulerApplication"
@@ -72,7 +89,7 @@
         <service
                 android:name="com.zhelenskiy.zheduler.zheduler.geo.LocationWatchService"
                 android:exported="false"
-                android:foregroundServiceType="location"/>
+                android:foregroundServiceType="location|connectedDevice"/>
 
         <!--
             Not exported: every action below is a protected system broadcast, so nothing else can

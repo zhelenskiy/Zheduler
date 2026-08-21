@@ -71,7 +71,7 @@ abstract class SavedLocationRepositoryTest : AbstractRepositoryTest {
         // Stored as it will be measured against, so the book cannot hold a fence the engine would
         // silently treat as a different size.
         val repo = createEmptyRepository()
-        val saved = repo.saveLocation(place("tiny", "Tiny").copy(radiusMeters = 1.0))
+        val saved = repo.saveLocation(place("tiny", "Tiny").copy(radiusMeters = 0.0))
 
         assertEquals(GeoArea.MIN_RADIUS_METERS, saved.radiusMeters)
         assertEquals(GeoArea.MIN_RADIUS_METERS, assertNotNull(repo.getSavedLocationById("tiny")).radiusMeters)

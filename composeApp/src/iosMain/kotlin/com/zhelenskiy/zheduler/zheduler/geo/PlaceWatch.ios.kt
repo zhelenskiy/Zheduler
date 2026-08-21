@@ -1,5 +1,7 @@
 package com.zhelenskiy.zheduler.zheduler.geo
 
+import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
+
 /**
  * Not answered here.
  *
@@ -11,4 +13,4 @@ package com.zhelenskiy.zheduler.zheduler.geo
  *
  * Until then the iOS build catches a crossing on its next sweep, the same way the web build does.
  */
-actual fun updatePlaceWatch(watching: Boolean) = Unit
+actual fun updatePlaceWatch(needs: ScheduledEventEngine.WatchNeeds) = Unit

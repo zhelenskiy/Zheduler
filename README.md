@@ -116,6 +116,18 @@ network positioning and no connectivity. Whereabouts are then left exactly as th
 crossing that happened meanwhile is found the moment a real fix arrives rather than being lost or
 invented. No network is needed for any of this; positioning is the device's own.
 
+A radius can be anything from a metre to a few thousand kilometres. A metre is finer than any
+consumer fix, so a fence that small will seldom be entered by positioning alone — but it is a
+reasonable thing to ask for beside a condition that *is* exact, and a rule wanting a point on the
+map and the office wifi is not relying on the metre.
+
+Signals are noisier still, and have no distance to measure, so what stands in for that margin is a
+grace period: a network that has gone is held as still present for a couple of minutes, and the
+clock runs from the first sweep that *noticed* it missing rather than from the last that saw it — a
+phone on a table runs no sweeps for hours, so "last seen" is stale the instant a router blinks, and
+measured from that a hiccup at midnight is a departure. A sweep is booked for the moment the grace
+runs out, since nothing else is going to happen to make the departure noticed.
+
 Boundaries are noisy. Getting *in* means being inside the radius; getting *out* means being clear
 of it by a margin — at least a tenth of the radius, and as much as the fix's own stated error where
 that is larger. Without it a fix sitting on the edge reads as arriving and leaving over and over,
@@ -125,12 +137,43 @@ Paired with a moment or a status, the place is a condition rather than the event
 once I get to the office" is armed by Monday and fired by arriving. A rule whose *only* trigger is
 a place has nothing else that can set it off, and waits for a crossing and for nothing else.
 
+**Wifi and bluetooth.** A rule can also wait on a network being joined or a bluetooth device being
+connected, and that is often the better question: being on the office network says you are *in* the
+office in a way that a hundred metres of GPS never quite does, and it works in a basement. These are
+matched by the same machinery as an area — present or absent, appearing or going away — and a rule
+may carry both, in which case both must hold. Where an area has a margin around its edge, a signal
+has a grace period instead: a router hiccups far more readily than a person walks out of a building,
+so a signal that has gone is treated as still present for a couple of minutes.
+
+A platform answers *per kind*, and "cannot tell" is not "not there" — that distinction is most of
+the work. Android reads the joined network and the connected bluetooth devices: the ones already
+joined and connected, never scanning or discovering, both of which are throttled, slow and rude. It
+also declines to answer where it *cannot* answer — the SSID is withheld while location is switched
+off, and reporting that as "on no network" would fire a rule about leaving the office wifi while the
+user sat in the office.
+
+The desktop asks the system for the name of its network (`networksetup` and `ipconfig` on macOS,
+`nmcli`, `netsh`) and knows nothing of bluetooth. Every one of those is a small trap in the same
+direction: the tools localise their output, so they are run under `LC_ALL=C`; Windows writes to a
+pipe in the console's own code page, so it is asked for UTF-8 first and a name that still will not
+decode is treated as unknown rather than as a name that matches nothing; and a modern Mac tells an
+unauthorised process it is "not associated with an AirPort network" *while joined to one*, so two
+sources have to agree before that is believed.
+
+iOS and the browser can answer for neither kind: the wifi name is behind an entitlement Apple grants
+per app, and a browser is deliberately never told. So a rule about a network never fires there, and
+the screen where signals are chosen says so — along with anything else it discovers by asking, such
+as a Mac that will not name its network — before the rule is written rather than leaving it to be
+found out by nothing ever happening.
+
 **Catching a crossing that happens while the app is not running.** A sweep only ever *samples*
 where the device is, so someone who leaves and comes back between two of them has crossed twice and
 a sweep comparing then with now sees neither. On Android
 [`LocationWatchService`](./composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/geo/LocationWatchService.kt)
 is a foreground service — the one thing the system will not kill — started only while a rule is
-waiting on a place and stopped again by the first sweep that finds none. It is restarted from
+waiting on a place or a signal and stopped again by the first sweep that finds none. It also listens
+for the radios changing, so joining a network or a car connecting is noticed as it happens rather
+than at the next sweep. It is restarted from
 `BOOT_COMPLETED`, which from Android 12 is the only moment a foreground service may be started from
 the background at all. Reading where the device is with nothing of the app on screen also needs the
 "all the time" location permission, which is a prompt of its own; the places screen says so and

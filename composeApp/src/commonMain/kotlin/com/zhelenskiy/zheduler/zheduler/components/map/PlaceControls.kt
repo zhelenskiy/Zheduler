@@ -137,8 +137,11 @@ internal fun radiusToSlider(radiusMeters: Double): Float {
 /** The radius a slider at [position] means, rounded to something a person would say. */
 internal fun sliderToRadius(position: Float): Double {
     val raw = GeoArea.MIN_RADIUS_METERS * exp(position.toDouble().coerceIn(0.0, 1.0) * RADIUS_SPAN)
-    // Rounded by size, so dragging gives 250 m and 3 km rather than 247 m and 2,981 m.
+    // Rounded by size, so dragging gives 250 m and 3 km rather than 247 m and 2,981 m — and,
+    // down at the bottom of the range, 2 m and 7 m rather than a jump from 1 m straight to 10.
     val step = when {
+        raw < 10 -> 1.0
+        raw < 100 -> 5.0
         raw < 1_000 -> 10.0
         raw < 10_000 -> 100.0
         raw < 100_000 -> 1_000.0

@@ -115,15 +115,15 @@ class GeofencingTest {
         val there = GeoFix(GeoPoint(0.0, 0.0))
 
         val first = Geofencing.read(listOf(fence), away, wasInside = emptyMap())
-        var remembered = Geofencing.remember(emptyMap(), first, listOf(fence))
+        var remembered = Geofencing.remember(emptyMap(), first, listOf(fence.key))
 
         val arriving = Geofencing.read(listOf(fence), there, remembered)
         assertEquals(setOf(fence.key), arriving.entered)
-        remembered = Geofencing.remember(remembered, arriving, listOf(fence))
+        remembered = Geofencing.remember(remembered, arriving, listOf(fence.key))
 
         val staying = Geofencing.read(listOf(fence), there, remembered)
         assertTrue(staying.entered.isEmpty(), "still being there is not arriving again")
-        remembered = Geofencing.remember(remembered, staying, listOf(fence))
+        remembered = Geofencing.remember(remembered, staying, listOf(fence.key))
 
         val leaving = Geofencing.read(listOf(fence), away, remembered)
         assertEquals(setOf(fence.key), leaving.left)
@@ -134,7 +134,7 @@ class GeofencingTest {
         val fence = area(GeoPoint(0.0, 0.0), 200.0)
         val known = mapOf(fence.key to true)
 
-        val kept = Geofencing.remember(known, PlaceReading.Unknown, listOf(fence))
+        val kept = Geofencing.remember(known, PlaceReading.Unknown, listOf(fence.key))
 
         assertEquals(known, kept, "forgetting would make the next reading a first sighting")
     }
@@ -150,7 +150,7 @@ class GeofencingTest {
         val savedMeanwhile = area(GeoPoint(10.0, 10.0), 200.0, name = "Home")
 
         val reading = Geofencing.read(listOf(looked), GeoFix(GeoPoint(0.0, 0.0)), wasInside = emptyMap())
-        val kept = Geofencing.remember(emptyMap(), reading, listOf(looked, savedMeanwhile))
+        val kept = Geofencing.remember(emptyMap(), reading, listOf(looked.key, savedMeanwhile.key))
 
         assertEquals(true, kept[looked.key], "this one was measured, and the device is there")
         assertTrue(
@@ -164,7 +164,7 @@ class GeofencingTest {
         val fence = area(GeoPoint(0.0, 0.0), 200.0)
         val known = mapOf(fence.key to true)
 
-        assertTrue(Geofencing.remember(known, PlaceReading.Unknown, areas = emptyList()).isEmpty())
+        assertTrue(Geofencing.remember(known, PlaceReading.Unknown, stillWatched = emptyList()).isEmpty())
     }
 
     @Test
@@ -184,16 +184,14 @@ class GeofencingTest {
         val leaving = PlaceReading(left = setOf(fence.key), known = true)
 
         assertFalse(
-            LocationChange(
-                areas = persistentSetOf(fence),
-                direction = GeofenceDirection.Entering,
-            ).isMetBy(leaving)
+            listOf(
+                LocationChange(persistentSetOf(fence), GeofenceDirection.Entering)
+            ).satisfiedBy(leaving)
         )
         assertTrue(
-            LocationChange(
-                areas = persistentSetOf(fence),
-                direction = GeofenceDirection.EitherWay,
-            ).isMetBy(leaving)
+            listOf(
+                LocationChange(persistentSetOf(fence), GeofenceDirection.EitherWay)
+            ).satisfiedBy(leaving)
         )
     }
 
@@ -202,10 +200,9 @@ class GeofencingTest {
         val fence = area(GeoPoint(0.0, 0.0), 200.0)
         GeofenceDirection.entries.forEach { direction ->
             assertFalse(
-                LocationChange(
-                    areas = persistentSetOf(fence),
-                    direction = direction,
-                ).isMetBy(PlaceReading.Unknown),
+                listOf(
+                    LocationChange(persistentSetOf(fence), direction)
+                ).satisfiedBy(PlaceReading.Unknown),
                 "$direction fired on a device that has no idea where it is",
             )
         }

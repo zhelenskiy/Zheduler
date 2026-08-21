@@ -33,7 +33,9 @@ import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccu
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.*
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.LocationChange
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.NearbyChange
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Wifi
 import com.zhelenskiy.zheduler.zheduler.components.common.TimeZoneSelector
 import com.zhelenskiy.zheduler.zheduler.components.common.icon
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.NoData
@@ -233,6 +235,11 @@ fun SingleRecurrenceRuleDialog(
         mutableStateOf(currentRule?.locationTrigger)
     }
 
+    /** The wifi and bluetooth this rule waits on, saved for the same reason as everything else. */
+    var nearbyTrigger by rememberSaveable(stateSaver = nullableJsonSaver<NearbyChange>()) {
+        mutableStateOf(currentRule?.nearbyTrigger)
+    }
+
     var resetToStatus by rememberSaveable(stateSaver = jsonSaver { TaskStatus.Open }) {
         mutableStateOf(currentRule?.resetToStatus ?: TaskStatus.Open)
     }
@@ -250,7 +257,8 @@ fun SingleRecurrenceRuleDialog(
     // A rule needs something to fire it. Save used to stay enabled with every trigger cleared and
     // then quietly keep the old rule: the dialog closed, nothing had changed, and nothing said so.
     // Removing a rule is what the list's delete button is for.
-    val hasTrigger = selectedTimeTrigger is Success || statusChangesTrigger != null || locationTrigger != null
+    val hasTrigger = selectedTimeTrigger is Success || statusChangesTrigger != null ||
+        locationTrigger != null || nearbyTrigger != null
     val isFormValid = selectedTimeTrigger !is FormResult.Failure && isTerminationCountValid && hasTrigger
 
     AlertDialog(
@@ -271,11 +279,13 @@ fun SingleRecurrenceRuleDialog(
                     onStatusChangeChange = { statusChangesTrigger = it },
                     locationTrigger = locationTrigger,
                     onLocationTriggerChange = { locationTrigger = it },
+                    nearbyTrigger = nearbyTrigger,
+                    onNearbyTriggerChange = { nearbyTrigger = it },
                 )
 
                 AnimatedVisibility(
                     visible = selectedTimeTrigger !is NoData || statusChangesTrigger != null ||
-                        locationTrigger != null
+                        locationTrigger != null || nearbyTrigger != null
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -307,13 +317,17 @@ fun SingleRecurrenceRuleDialog(
                 onClick = {
                     val timeTrigger = (selectedTimeTrigger as? Success)?.value
                     val place = locationTrigger?.takeIf { it.areas.isNotEmpty() }
-                    val rule = if (timeTrigger != null || statusChangesTrigger != null || place != null) {
+                    val nearby = nearbyTrigger?.takeIf { it.signals.isNotEmpty() }
+                    val rule = if (timeTrigger != null || statusChangesTrigger != null ||
+                        place != null || nearby != null
+                    ) {
                         RecurrenceRule(
                             timeRecurrenceTrigger = timeTrigger,
                             statusChangeTrigger = statusChangesTrigger,
                             resetToStatus = resetToStatus,
                             termination = termination,
                             locationTrigger = place,
+                            nearbyTrigger = nearby,
                         )
                     } else {
                         null
@@ -1037,6 +1051,8 @@ private fun TriggerSelectors(
     onStatusChangeChange: (StatusChange?) -> Unit,
     locationTrigger: LocationChange?,
     onLocationTriggerChange: (LocationChange?) -> Unit,
+    nearbyTrigger: NearbyChange?,
+    onNearbyTriggerChange: (NearbyChange?) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Triggers", style = MaterialTheme.typography.titleMedium)
@@ -1054,6 +1070,62 @@ private fun TriggerSelectors(
         LocationTriggerSelector(
             trigger = locationTrigger,
             onTriggerChange = onLocationTriggerChange,
+        )
+        NearbyTriggerSelector(
+            trigger = nearbyTrigger,
+            onTriggerChange = onNearbyTriggerChange,
+        )
+    }
+}
+
+/**
+ * What has to be within reach, if anything.
+ *
+ * Beside the place rather than instead of it: a rule may want both, and then both have to be true
+ * — "at the office, on the office wifi" is a stricter thing to ask than either alone, and is how
+ * somebody pins a rule to a building they have neighbours in.
+ */
+@Composable
+private fun NearbyTriggerSelector(
+    trigger: NearbyChange?,
+    onTriggerChange: (NearbyChange?) -> Unit,
+) {
+    var picking by rememberSaveable { mutableStateOf(false) }
+
+    FlowRow(
+        itemVerticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Nearby", style = MaterialTheme.typography.titleSmall)
+        FilterChip(
+            selected = trigger == null,
+            onClick = { onTriggerChange(null) },
+            label = { Text("Anything", style = MaterialTheme.typography.labelSmall) },
+        )
+        FilterChip(
+            selected = trigger != null,
+            onClick = { picking = true },
+            label = {
+                Text(
+                    text = trigger?.phrase() ?: "Wifi or bluetooth",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            },
+            leadingIcon = {
+                Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(16.dp))
+            },
+        )
+    }
+
+    if (picking) {
+        SignalSelectionDialog(
+            current = trigger,
+            onDismiss = { picking = false },
+            onConfirm = {
+                // An empty choice is no condition at all rather than one nothing can satisfy.
+                onTriggerChange(it?.takeIf { chosen -> chosen.signals.isNotEmpty() })
+                picking = false
+            },
         )
     }
 }

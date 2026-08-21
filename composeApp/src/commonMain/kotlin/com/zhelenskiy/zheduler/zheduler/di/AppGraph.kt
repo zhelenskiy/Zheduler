@@ -16,7 +16,9 @@ import com.zhelenskiy.zheduler.zheduler.events.createEventNotifier
 import com.zhelenskiy.zheduler.zheduler.events.createScheduleStore
 import com.zhelenskiy.zheduler.zheduler.events.reschedulePlatformSweep
 import com.zhelenskiy.zheduler.zheduler.geo.LocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.SignalSource
 import com.zhelenskiy.zheduler.zheduler.geo.createLocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.createSignalSource
 import com.zhelenskiy.zheduler.zheduler.geo.updatePlaceWatch
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
@@ -142,6 +144,10 @@ interface AppGraph {
 
         @Provides
         @SingleIn(AppScope::class)
+        fun provideSignalSource(): SignalSource = createSignalSource()
+
+        @Provides
+        @SingleIn(AppScope::class)
         fun provideScheduledEventEngine(
             repository: RoomTaskRepository,
             notifier: EventNotifier,
@@ -149,6 +155,7 @@ interface AppGraph {
             clock: Clock,
             preferences: NotificationPreferences,
             locationSource: LocationSource,
+            signalSource: SignalSource,
         ): ScheduledEventEngine = ScheduledEventEngine(
             repository = repository,
             notifier = notifier,
@@ -157,6 +164,7 @@ interface AppGraph {
             appSounds = { preferences.settings.value },
             onSwept = ::reschedulePlatformSweep,
             locationSource = locationSource,
+            signalSource = signalSource,
             onWatchingPlaces = ::updatePlaceWatch,
         )
 

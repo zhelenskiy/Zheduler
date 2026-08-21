@@ -48,6 +48,23 @@ data class ScheduleState(
      * arriving home. Pruned each run to the areas still watched.
      */
     val insideAreas: Map<String, Boolean> = emptyMap(),
+
+    /**
+     * When each absent wifi network or bluetooth device was first noticed missing, in epoch
+     * milliseconds.
+     *
+     * What the grace period is measured from. A radio drops for a moment far more readily than a
+     * user leaves a building, so a signal that has gone is held as still present until it has been
+     * missing a while — and "a while" needs a moment to count from.
+     *
+     * *First noticed missing*, not last seen. A phone sitting on a table runs no sweeps for hours,
+     * so the moment it was last seen is hours stale as soon as anything happens; measured from
+     * that, the first sweep after a router blinked would call it a departure and the grace would
+     * protect nothing at all.
+     *
+     * Pruned each run to the signals still watched.
+     */
+    val signalsMissingSince: Map<String, Long> = emptyMap(),
 )
 
 /** Where [ScheduleState] is kept between runs. */

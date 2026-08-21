@@ -17,6 +17,11 @@ import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
 import com.zhelenskiy.zheduler.zheduler.geo.GeoFix
 import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
 import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
+import com.zhelenskiy.zheduler.zheduler.geo.Geofencing
+import com.zhelenskiy.zheduler.zheduler.geo.NearbySignal
+import com.zhelenskiy.zheduler.zheduler.geo.NearbySignals
+import com.zhelenskiy.zheduler.zheduler.geo.SignalDirection
+import com.zhelenskiy.zheduler.zheduler.geo.SignalKind
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.sync.Mutex
@@ -34,6 +39,7 @@ import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -69,8 +75,8 @@ class ScheduledEventEngineTest {
     ) {
         var onSwept: (Instant?) -> Unit = {}
 
-        /** Told after every run whether any rule is still waiting on a place. */
-        var onWatchingPlaces: (Boolean) -> Unit = {}
+        /** Told after every run what is still worth watching for. */
+        var onWatchingPlaces: (ScheduledEventEngine.WatchNeeds) -> Unit = {}
 
         /**
          * Where the device is, as the test says it is.
@@ -82,6 +88,13 @@ class ScheduledEventEngineTest {
 
         /** How many times the platform was actually asked, which is a cost worth pinning. */
         var timesAsked: Int = 0
+            private set
+
+        /** What the radios can see, as the test says they can. */
+        var nearby: NearbySignals = NearbySignals.Unknown
+
+        /** How many times the radios were read — the same cost, and the same worth pinning. */
+        var timesAskedNearby: Int = 0
             private set
 
         /** A new engine over the same repository and store — what a restarted process gets. */
@@ -96,6 +109,10 @@ class ScheduledEventEngineTest {
             locationSource = {
                 timesAsked++
                 whereabouts
+            },
+            signalSource = {
+                timesAskedNearby++
+                nearby
             },
         )
     }
@@ -1645,7 +1662,7 @@ class ScheduledEventEngineTest {
             ),
         )
 
-        f.onWatchingPlaces = { watching = it }
+        f.onWatchingPlaces = { watching = it.any }
 
         f.whereabouts = elsewhere
         f.engine().sweep()
@@ -1659,6 +1676,408 @@ class ScheduledEventEngineTest {
         f.clock.current = occurrence + 1.hours
         f.engine().sweep()
         assertEquals(false, watching, "nothing is waiting on the office any more")
+    }
+
+    // ==================== Rules that wait on wifi and bluetooth ====================
+
+    private val officeWifi = NearbySignal.Wifi("Office")
+
+    private fun wifiRule(
+        direction: SignalDirection,
+        signal: NearbySignal = officeWifi,
+        resetTo: TaskStatus = TaskStatus.Open,
+        area: GeoArea? = null,
+    ) = RecurrenceRule(
+        timeRecurrenceTrigger = null,
+        statusChangeTrigger = null,
+        resetToStatus = resetTo,
+        locationTrigger = area?.let {
+            RecurrenceTrigger.LocationChange(persistentSetOf(it), GeofenceDirection.Entering)
+        },
+        nearbyTrigger = RecurrenceTrigger.NearbyChange(persistentSetOf(signal), direction),
+    ) to RecurrenceState()
+
+    @Test
+    fun `joining a network brings a task round`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(wifiRule(SignalDirection.Appearing)),
+            )
+        )
+
+        // Off the network to begin with, so it is known to have been absent.
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+        assertEquals(TaskStatus.Done, assertNotNull(f.repository.getTaskById(task.id)).status)
+
+        f.clock.current = start + 1.hours
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "joining the office network is what this rule was waiting for",
+        )
+    }
+
+    @Test
+    fun `being on the network already when the rule is written does not fire it`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(wifiRule(SignalDirection.Appearing)),
+            )
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+        f.clock.current = start + 1.hours
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "staying on a network is not joining it",
+        )
+    }
+
+    @Test
+    fun `a network dropping for a moment does not fire a rule about leaving it`() = runTest {
+        // The whole reason a signal has a grace period. A router that reboots is not the user
+        // going out, and a rule that reset a task every time the wifi blinked would be unusable.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Lock up",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(wifiRule(SignalDirection.Disappearing)),
+            )
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        // Gone, but only just.
+        f.clock.current = start + 30.seconds
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "a blink is not a departure",
+        )
+
+        // Still gone, well past the grace.
+        f.clock.current = start + 10.minutes
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "gone for long enough is gone",
+        )
+    }
+
+    @Test
+    fun `sweeping often does not hold a departed network present for ever`() = runTest {
+        // The grace is measured from the sweep that first noticed the signal missing, and that
+        // moment is then left alone. Moved forward on every later sweep, it would renew itself —
+        // and a phone that is moving sweeps every time its position updates, so a user walking
+        // away from the house would keep the wifi "present" for the whole walk and the rule would
+        // never fire at all.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Lock up",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(wifiRule(SignalDirection.Disappearing)),
+            )
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        // Gone, and then swept every half minute — well inside the two-minute grace each time.
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        repeat(10) { step ->
+            f.clock.current = start + (30 * (step + 1)).seconds
+            f.engine().sweep()
+        }
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "five minutes off the network is a departure however often it was looked at",
+        )
+    }
+
+    @Test
+    fun `a blink after hours of quiet is still only a blink`() = runTest {
+        // The scenario the grace is really for. A phone on a table runs no sweeps at all: nothing
+        // moves, no radio changes, and the next booked one may be a day out. Then the router
+        // reboots at midnight. If the grace were counted from when the network was last *seen*,
+        // that moment would be hours old and the very first sweep after the blink would call it a
+        // departure — waking the user to a task that came round because their router hiccupped.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Lock up",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(wifiRule(SignalDirection.Disappearing)),
+            )
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        // Eight hours later, and nothing has swept in between.
+        f.clock.current = start + 8.hours
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "the network has been missing for one sweep, not for eight hours",
+        )
+
+        // Back a minute later, as a rebooting router is.
+        f.clock.current = start + 8.hours + 1.minutes
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "and it never went away, so nothing has come back either",
+        )
+    }
+
+    @Test
+    fun `a sweep that could not look does not restart the clock on a departure`() = runTest {
+        // The radios fail in bursts: a bluetooth stack wedges, location services go off, the
+        // source throws. Every one of those leaves a kind unmeasured for a sweep or several — and
+        // if that wiped the note of when a signal went missing, the grace would begin again
+        // afterwards. Under a source that flaps, the departure would then be postponed for ever.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Lock up",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(wifiRule(SignalDirection.Disappearing)),
+            )
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        // Gone, and noticed.
+        f.clock.current = start + 1.minutes
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+
+        // Now the source cannot say anything at all for a while.
+        f.nearby = NearbySignals.Unknown
+        f.clock.current = start + 2.minutes
+        f.engine().sweep()
+        f.clock.current = start + 3.minutes
+        f.engine().sweep()
+
+        // It comes back, still with nothing on the network. The grace expired during the silence.
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.clock.current = start + 4.minutes
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "it went at one minute past and the grace is two; the blind sweeps in between change nothing",
+        )
+    }
+
+    @Test
+    fun `a sweep is booked for the moment a held signal stops being held`() = runTest {
+        // Nothing else will happen to make the departure noticed: the radio has already changed,
+        // the user is sitting still, and with no timed tasks the next ordinary sweep is a day out.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        var nextAt: Instant? = null
+        f.onSwept = { nextAt = it }
+
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Lock up",
+            status = TaskStatus.Done,
+            recurrenceRules = persistentListOf(wifiRule(SignalDirection.Disappearing)),
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        f.clock.current = start + 1.minutes
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+
+        assertEquals(
+            start + 1.minutes + Geofencing.SIGNAL_GRACE,
+            nextAt,
+            "the grace running out is itself something to come back for",
+        )
+    }
+
+    @Test
+    fun `a sweep that could not look still books the one that can`() = runTest {
+        // The appointment matters as much as the clock. A phone that has gone still after a
+        // disconnection will do nothing else on its own, so the sweep that notices the departure
+        // has to be booked. Worked out from this run's reading alone, a wedged radio would swallow
+        // the appointment along with the answer and the departure would wait for a day.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        var nextAt: Instant? = null
+        f.onSwept = { nextAt = it }
+
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Lock up",
+            status = TaskStatus.Done,
+            recurrenceRules = persistentListOf(wifiRule(SignalDirection.Disappearing)),
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+
+        // Noticed missing.
+        f.clock.current = start + 1.minutes
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+
+        // And now the radio will not answer at all.
+        f.clock.current = start + 90.seconds
+        f.nearby = NearbySignals.Unknown
+        f.engine().sweep()
+
+        assertEquals(
+            start + 1.minutes + Geofencing.SIGNAL_GRACE,
+            nextAt,
+            "the grace still runs out at the same moment, and something still has to come back for it",
+        )
+    }
+
+    @Test
+    fun `a rule wanting a place and a network is not fired by the place alone`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    wifiRule(SignalDirection.Appearing, area = office)
+                ),
+            )
+        )
+
+        f.whereabouts = elsewhere
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+
+        // At the office, but on somebody else's network: half of what was asked for.
+        f.clock.current = start + 1.hours
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "the wifi condition was not met",
+        )
+
+        // And now on the network too.
+        f.clock.current = start + 2.hours
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = setOf(officeWifi.key))
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "both conditions hold, and joining the network is the crossing",
+        )
+    }
+
+    @Test
+    fun `a device that cannot see wifi at all fires nothing`() = runTest {
+        // What iOS and the browser answer. It must not read as a device provably off every
+        // network, or every rule about leaving one goes off the moment it is written.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Lock up",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(wifiRule(SignalDirection.Disappearing)),
+            )
+        )
+
+        f.nearby = NearbySignals.Unknown
+        f.engine().sweep()
+        f.clock.current = start + 1.hours
+        f.engine().sweep()
+
+        assertEquals(TaskStatus.Done, assertNotNull(f.repository.getTaskById(task.id)).status)
+    }
+
+    @Test
+    fun `nothing is asked of the radios when no rule watches one`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        f.repository.addTask(spaceId = f.spaceId, title = "Pay rent", dueDate = start + 2.hours)
+
+        f.engine().sweep()
+        f.engine().sweep()
+
+        assertEquals(0, f.timesAskedNearby, "the radios were read for nothing")
+    }
+
+    @Test
+    fun `a rule waiting on a network keeps the watch running`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        var needs: ScheduledEventEngine.WatchNeeds? = null
+        f.onWatchingPlaces = { needs = it }
+
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Hand in the form",
+            status = TaskStatus.Done,
+            recurrenceRules = persistentListOf(wifiRule(SignalDirection.Appearing)),
+        )
+
+        f.nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet())
+        f.engine().sweep()
+
+        assertEquals(
+            ScheduledEventEngine.WatchNeeds(places = false, signals = setOf(SignalKind.Wifi)),
+            needs,
+            "a rule watching a network needs the device kept awake as much as one watching a place" +
+                " — and the two are reported apart, because a platform can honour one and not the other",
+        )
     }
 
     @Test

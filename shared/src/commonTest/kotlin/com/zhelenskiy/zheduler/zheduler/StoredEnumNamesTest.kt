@@ -2,6 +2,8 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
 import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
+import com.zhelenskiy.zheduler.zheduler.geo.SignalDirection
+import com.zhelenskiy.zheduler.zheduler.geo.SignalKind
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -48,6 +50,20 @@ class StoredEnumNamesTest {
             GeofenceDirection.entries.mapTo(mutableSetOf()) { it.name },
             listOf("Entering", "Leaving", "EitherWay"),
             "GeofenceDirection",
+        )
+    }
+
+    @Test
+    fun `signal kinds and directions keep the names written into every location rule`() {
+        assertKeeps(
+            SignalKind.entries.mapTo(mutableSetOf()) { it.name },
+            listOf("Wifi", "Bluetooth"),
+            "SignalKind",
+        )
+        assertKeeps(
+            SignalDirection.entries.mapTo(mutableSetOf()) { it.name },
+            listOf("Appearing", "Disappearing", "EitherWay"),
+            "SignalDirection",
         )
     }
 

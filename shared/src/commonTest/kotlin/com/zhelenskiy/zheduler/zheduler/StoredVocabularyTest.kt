@@ -6,6 +6,8 @@ import kotlinx.serialization.json.Json
 import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
 import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
 import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
+import com.zhelenskiy.zheduler.zheduler.geo.NearbySignal
+import com.zhelenskiy.zheduler.zheduler.geo.SignalDirection
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -103,6 +105,84 @@ class StoredVocabularyTest {
                     )
                 )
             ),
+        )
+    }
+
+    @Test
+    fun `nearby signals keep the names they are stored under`() {
+        assertEquals(
+            "com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.NearbyChange",
+            nameOf(
+                json.encodeToString<RecurrenceTrigger>(
+                    RecurrenceTrigger.NearbyChange(
+                        signals = persistentSetOf(NearbySignal.Wifi("Office")),
+                        direction = SignalDirection.Appearing,
+                    )
+                )
+            ),
+        )
+        assertEquals(
+            "com.zhelenskiy.zheduler.zheduler.geo.NearbySignal.Wifi",
+            nameOf(json.encodeToString<NearbySignal>(NearbySignal.Wifi("Office"))),
+        )
+        assertEquals(
+            "com.zhelenskiy.zheduler.zheduler.geo.NearbySignal.Bluetooth",
+            nameOf(json.encodeToString<NearbySignal>(NearbySignal.Bluetooth("AA:BB", "Car"))),
+        )
+    }
+
+    @Test
+    fun `a rule written before there were signals still reads back`() {
+        // Both fields live in the same JSON column and neither was there when most rules were
+        // written, so both have to decode from their absence.
+        val stored = """
+            {
+              "timeRecurrenceTrigger": null,
+              "statusChangeTrigger": null,
+              "resetToStatus": {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"},
+              "locationTrigger": {
+                "areas":[{"name":"Home","point":{"latitude":51.5,"longitude":-0.12},"radiusMeters":200.0}],
+                "direction":"Entering"
+              }
+            }
+        """.trimIndent()
+
+        val rule = json.decodeFromString<RecurrenceRule>(stored)
+
+        assertEquals(null, rule.nearbyTrigger)
+        assertNotNull(rule.locationTrigger)
+        assertEquals(1, rule.presenceTriggers.size)
+    }
+
+    @Test
+    fun `a rule that watches a place and a network survives being written and read back`() {
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = null,
+            statusChangeTrigger = null,
+            resetToStatus = TaskStatus.Open,
+            locationTrigger = RecurrenceTrigger.LocationChange(
+                areas = persistentSetOf(
+                    GeoArea(name = "Office", point = GeoPoint(51.5, -0.12), radiusMeters = 1.0)
+                ),
+                direction = GeofenceDirection.Entering,
+            ),
+            nearbyTrigger = RecurrenceTrigger.NearbyChange(
+                signals = persistentSetOf(
+                    NearbySignal.Wifi("Office"),
+                    NearbySignal.Bluetooth("AA:BB:CC:DD:EE:FF", "Desk phone"),
+                ),
+                direction = SignalDirection.Appearing,
+            ),
+        )
+
+        val restored = json.decodeFromString<RecurrenceRule>(json.encodeToString(rule))
+
+        assertEquals(rule, restored)
+        assertEquals(2, restored.presenceTriggers.size)
+        assertEquals(
+            listOf("Office", "Desk phone"),
+            assertNotNull(restored.nearbyTrigger).signals.map { it.label },
+            "the order signals were chosen in is the order they are shown in",
         )
     }
 

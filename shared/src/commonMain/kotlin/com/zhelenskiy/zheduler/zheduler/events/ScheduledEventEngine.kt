@@ -15,8 +15,15 @@ import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
 import com.zhelenskiy.zheduler.zheduler.geo.Geofencing
 import com.zhelenskiy.zheduler.zheduler.geo.LocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.NearbySignal
+import com.zhelenskiy.zheduler.zheduler.geo.NearbySignals
 import com.zhelenskiy.zheduler.zheduler.geo.NoLocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.NoSignalSource
 import com.zhelenskiy.zheduler.zheduler.geo.PlaceReading
+import com.zhelenskiy.zheduler.zheduler.geo.SignalKind
+import com.zhelenskiy.zheduler.zheduler.geo.SignalReading
+import com.zhelenskiy.zheduler.zheduler.geo.SignalSource
+import com.zhelenskiy.zheduler.zheduler.geo.satisfiedBy
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -57,6 +64,10 @@ import kotlin.time.Instant
  * @param locationSource where the device is, asked at most once a run and only when some rule is
  *   watching a place. Defaults to knowing nothing, which is what a platform without positioning
  *   answers and what leaves every rule that waits on a place quietly unfired.
+ * @param signalSource what is near the device other than by coordinates — the wifi it is on, the
+ *   bluetooth it is connected to. Asked on the same terms as [locationSource] and answering the
+ *   same way when it cannot say, per kind: a desktop that knows its network and nothing of
+ *   bluetooth leaves the bluetooth rules unanswered rather than reporting them all gone.
  * @param onWatchingPlaces told after every run whether any rule is still waiting on a place. A
  *   platform that can watch continuously — Android, with a foreground service — uses this to start
  *   and stop doing so, because a device that watches where it is going costs battery and should
@@ -72,7 +83,8 @@ class ScheduledEventEngine(
     private val appSounds: () -> NotificationSettings = { NotificationSettings() },
     private val onSwept: (Instant?) -> Unit = {},
     private val locationSource: LocationSource = NoLocationSource,
-    private val onWatchingPlaces: (Boolean) -> Unit = {},
+    private val signalSource: SignalSource = NoSignalSource,
+    private val onWatchingPlaces: (WatchNeeds) -> Unit = {},
 ) {
 
     /**
@@ -81,6 +93,21 @@ class ScheduledEventEngine(
      * deliver the same events twice, and the slower one's save puts the watermark back.
      */
     private val sweeping = Mutex()
+
+    /**
+     * What still has to be watched for, after a run.
+     *
+     * The two apart rather than one flag, because the platforms need different things for each and
+     * can hold one without the other: a phone allowed bluetooth but not location can watch for a
+     * car and not for a place, and a watch it cannot honour is a notification the user pays for
+     * and hears nothing from.
+     */
+    data class WatchNeeds(
+        val places: Boolean = false,
+        val signals: Set<SignalKind> = emptySet(),
+    ) {
+        val any: Boolean get() = places || signals.isNotEmpty()
+    }
 
     /** What one run did, and when the next thing is due. */
     data class Sweep(
@@ -107,7 +134,9 @@ class ScheduledEventEngine(
         // Rules fired by a moment or a status are asked only where the device *is* — see
         // PlaceReading.standing — while the crossings themselves fire their own rules further down.
         val watched = watchedAreas(tasks, now)
-        val reading = readPlaces(watched, previous.insideAreas)
+        val watchedSignals = watchedSignals(tasks, now)
+        val surroundings = readSurroundings(watched, watchedSignals, previous, now)
+        val reading = surroundings.reading
         val standing = reading.standing()
 
         // A first run has nothing behind it and says nothing about the past, so installing the app
@@ -176,7 +205,7 @@ class ScheduledEventEngine(
 
         val after = if (mutated || statusFired || locationFired) allTasks() else tasks
         val replanned = EventPlanner.eventsFor(after, tz, now)
-        val nextAt = replanned.filter { it.at > now }.minOfOrNull { it.at }
+        val plannedNext = replanned.filter { it.at > now }.minOfOrNull { it.at }
 
         val announced = announceAutomaticChanges(now, previous.delivered, firstRun = previous.sweptTo == null) {
             candidates += it
@@ -189,17 +218,54 @@ class ScheduledEventEngine(
         // Once this run's rules have had their turn, so a rule that has just run out takes its
         // whereabouts with it and stops the device being watched on its behalf.
         val stillWatched = watchedAreas(after, now)
+        val stillWatchedSignals = watchedSignals(after, now)
+        val watchedKeys = stillWatched.map { it.key } + stillWatchedSignals.map { it.key }
+        val insideNow = Geofencing.remember(previous.insideAreas, reading, watchedKeys)
+        // Only for what is still watched. The moment itself is settled by the reading — first
+        // noticed missing, and left alone on every sweep after that, or the grace would renew
+        // itself and a departure would never be noticed at all.
+        //
+        // What this run could not look at is carried over rather than dropped: a bluetooth stack
+        // that wedges for ten minutes would otherwise wipe the note and restart the grace from
+        // scratch afterwards, so a car that disconnected half an hour ago would be held as still
+        // present for another two minutes every time.
+        val missingSinceNow = (
+            previous.signalsMissingSince.filterKeys { it !in reading.measured } +
+                surroundings.missingSince
+            ).filterKeys { key -> stillWatchedSignals.any { it.key == key } }
         store.save(
             ScheduleState(
                 sweptTo = now,
                 delivered = previous.delivered.filterKeys { it in stillPlanned } +
                     delivered.associate { it.key to it.relevantAt.toEpochMilliseconds() } + announced,
-                insideAreas = Geofencing.remember(previous.insideAreas, reading, stillWatched),
+                insideAreas = insideNow,
+                signalsMissingSince = missingSinceNow,
             )
         )
+        // A signal being held through its grace is a moment of its own: nothing else will happen
+        // to make the departure noticed, so unless a sweep is booked for when the grace runs out,
+        // a phone that goes still after a disconnection waits for whatever comes next — which with
+        // no timed tasks at all is a day away.
+        //
+        // Worked out from what has just been written down rather than from this run's reading, so
+        // that a sweep which could not look at the radios still re-books the one that can. Read
+        // from the reading alone, a wedged bluetooth stack would swallow the appointment as well
+        // as the answer.
+        val heldUntil = missingSinceNow
+            .filterKeys { insideNow[it] == true }
+            .values
+            .minOrNull()
+            ?.let { Instant.fromEpochMilliseconds(it) + Geofencing.SIGNAL_GRACE }
+        val nextAt = listOfNotNull(plannedNext, heldUntil?.takeIf { it > now }).minOrNull()
+
         speak(candidates)
         onSwept(nextAt)
-        onWatchingPlaces(stillWatched.isNotEmpty())
+        onWatchingPlaces(
+            WatchNeeds(
+                places = stillWatched.isNotEmpty(),
+                signals = stillWatchedSignals.mapTo(mutableSetOf()) { it.kind },
+            )
+        )
         return Sweep(delivered, nextAt)
     }
 
@@ -369,8 +435,8 @@ class ScheduledEventEngine(
                     // own correct check ever being reached.
                     rule.statusChangeTrigger?.requiredStatuses.orEmpty()
                         .any { it::class == task.status::class } &&
-                    // A rule that names a place as well as a status wants the device to be there.
-                    rule.locationTrigger?.isMetBy(standing) != false &&
+                    // A rule that names a place or a network as well as a status wants those too.
+                    rule.presenceTriggers.satisfiedBy(standing) &&
                     !rule.isTerminated(now)
             }
             if (!waiting) continue
@@ -382,7 +448,8 @@ class ScheduledEventEngine(
     }
 
     /**
-     * Fire the rules waiting for the device to arrive somewhere or leave it.
+     * Fire the rules waiting for something to come within reach or leave it — a place, a wifi
+     * network, a bluetooth device.
      *
      * The counterpart of [fireStatusTriggers], and unplanned for the same reason: nobody can say
      * in advance when a user will walk somewhere, so a crossing is only ever noticed by looking.
@@ -390,7 +457,7 @@ class ScheduledEventEngine(
      * reading and the last, and the last is written down at the end of every run.
      *
      * A rule with a moment of its own is not fired here — its moment is what fires it, with the
-     * place as a condition; see [advance].
+     * surroundings as a condition; see [advance].
      */
     private suspend fun fireLocationTriggers(tasks: List<Task>, now: Instant, reading: PlaceReading): Boolean {
         if (!reading.isCrossing) return false
@@ -398,7 +465,8 @@ class ScheduledEventEngine(
         for (task in tasks) {
             val waiting = task.recurrenceRules.any { (rule, _) ->
                 rule.timeRecurrenceTrigger == null &&
-                    rule.locationTrigger?.isMetBy(reading) == true &&
+                    rule.presenceTriggers.isNotEmpty() &&
+                    rule.presenceTriggers.satisfiedBy(reading) &&
                     rule.statusChangeTrigger?.requiredStatuses.orEmpty()
                         .let { it.isEmpty() || it.any { status -> status::class == task.status::class } } &&
                     !rule.isTerminated(now)
@@ -420,11 +488,18 @@ class ScheduledEventEngine(
      * areas stay watched for ever, and on Android that is a permanent notification and a location
      * reading every minute for something that can no longer happen.
      */
-    private fun watchedAreas(tasks: List<Task>, now: Instant): List<GeoArea> = tasks
+    private fun watchedAreas(tasks: List<Task>, now: Instant): List<GeoArea> =
+        liveRules(tasks, now).flatMap { rule -> rule.locationTrigger?.areas.orEmpty() }.distinctBy { it.key }
+
+    /** Every wifi network and bluetooth device some rule of [tasks] is still watching. */
+    private fun watchedSignals(tasks: List<Task>, now: Instant): List<NearbySignal> =
+        liveRules(tasks, now).flatMap { rule -> rule.nearbyTrigger?.signals.orEmpty() }.distinctBy { it.key }
+
+    /** The rules of [tasks] that can still come round. */
+    private fun liveRules(tasks: List<Task>, now: Instant): List<RecurrenceRule> = tasks
         .flatMap { task -> task.recurrenceRules }
         .filterNot { (rule, state) -> rule.isTerminated(now) || rule.hasNothingLeft() || rule.isSpent(state) }
-        .flatMap { (rule, _) -> rule.locationTrigger?.areas.orEmpty() }
-        .distinctBy { it.key }
+        .map { (rule, _) -> rule }
 
     /**
      * Whether this rule's schedule has run out, as `RecurrenceCalculator.shouldTrigger` reads it:
@@ -434,13 +509,49 @@ class ScheduledEventEngine(
         timeRecurrenceTrigger != null && state.nextOccurrenceDate == null && state.occurrenceCount > 0
 
     /**
+     * Everything around the device that some rule cares about, as one answer.
+     *
+     * Both halves are asked separately and joined, because they come from different hardware and
+     * either can fail on its own: a phone in a basement has no fix and can still see the office
+     * wifi, and either half being unknown must not silence the other.
+     *
+     * Nothing at all is asked when no rule is watching: positioning and radios cost battery and,
+     * on the phones, a permission prompt, and a database with no such rule in it should never
+     * provoke either.
+     */
+    private suspend fun readSurroundings(
+        areas: List<GeoArea>,
+        signals: List<NearbySignal>,
+        previous: ScheduleState,
+        now: Instant,
+    ): Surroundings {
+        val places = readPlaces(areas, previous.insideAreas)
+        val nearby = readSignals(signals, previous, now)
+        return Surroundings(
+            reading = Geofencing.combine(places, nearby.reading),
+            missingSince = nearby.missingSince,
+        )
+    }
+
+    /**
+     * One run's answer about what is around the device, and which signals were *really* there.
+     *
+     * The two are not the same set. A signal inside its grace period counts as present so that a
+     * momentary drop is not a departure — but it was not seen, and the moment the grace is measured
+     * from must not be moved on by it. Refreshed from what counts as present rather than from what
+     * was seen, a signal that has genuinely gone is held for ever by any device that sweeps more
+     * often than the grace is long, which on a phone that is moving is every one of them.
+     */
+    private data class Surroundings(
+        val reading: PlaceReading,
+        val missingSince: Map<String, Long>,
+    )
+
+    /**
      * Where the device is, against [areas], given [wasInside] from the last run.
      *
-     * Nothing is asked of the platform when no rule is watching anywhere: positioning costs
-     * battery and, on the phones, a permission prompt, and a database with no such rule in it
-     * should never provoke either. A source that cannot answer — no permission, no hardware, a
-     * desktop — leaves the whereabouts unknown rather than reporting the device outside
-     * everything.
+     * A source that cannot answer — no permission, no hardware, a desktop — leaves the whereabouts
+     * unknown rather than reporting the device outside everything.
      */
     private suspend fun readPlaces(areas: List<GeoArea>, wasInside: Map<String, Boolean>): PlaceReading {
         if (areas.isEmpty()) return PlaceReading.Unknown
@@ -452,6 +563,30 @@ class ScheduledEventEngine(
             null
         } ?: return PlaceReading.Unknown
         return Geofencing.read(areas, fix, wasInside)
+    }
+
+    /** What is near the device, against [signals], given what was near it last run. */
+    private suspend fun readSignals(
+        signals: List<NearbySignal>,
+        previous: ScheduleState,
+        now: Instant,
+    ): SignalReading {
+        if (signals.isEmpty()) return SignalReading(PlaceReading.Unknown, emptyMap())
+        val nearby = try {
+            signalSource.nearby()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            NearbySignals.Unknown
+        }
+        return Geofencing.readSignals(
+            signals = signals,
+            nearby = nearby,
+            wasInside = previous.insideAreas,
+            missingSince = previous.signalsMissingSince,
+            now = now,
+            grace = Geofencing.SIGNAL_GRACE,
+        )
     }
 
     /**
@@ -483,10 +618,11 @@ class ScheduledEventEngine(
         // never happened, and for a rule with a single occurrence killed it outright.
         val armed = task.recurrenceRules.getOrNull(event.ruleIndex)?.first
         if (!armed.acceptsStatusOf(task)) return false
-        // And a place named alongside a moment reads the same way: the occurrence waits until the
-        // device is there. It is asked as a state, not a crossing — "every Monday, if I am at the
-        // office" is answered by where the user is on Monday, not by them having just walked in.
-        if (armed?.locationTrigger?.isMetBy(standing) == false) return false
+        // And a place or a network named alongside a moment reads the same way: the occurrence
+        // waits until the device is there. Asked as a state, not a crossing — "every Monday, if I
+        // am at the office" is answered by where the user is on Monday, not by them having just
+        // walked in.
+        if (armed != null && !armed.presenceTriggers.satisfiedBy(standing)) return false
 
         // Stamped with the moment the rule was *due*, not the moment this run noticed, so a late
         // sweep does not drag the whole series later with it.

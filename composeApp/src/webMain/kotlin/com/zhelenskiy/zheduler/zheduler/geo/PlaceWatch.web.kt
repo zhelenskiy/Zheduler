@@ -1,5 +1,7 @@
 package com.zhelenskiy.zheduler.zheduler.geo
 
+import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
+
 /**
  * A tab watches while it is open and not a moment longer, whatever it is told.
  *
@@ -8,4 +10,4 @@ package com.zhelenskiy.zheduler.zheduler.geo
  * found when it is opened again, by the same comparison against remembered whereabouts that finds
  * one made while a phone was asleep.
  */
-actual fun updatePlaceWatch(watching: Boolean) = Unit
+actual fun updatePlaceWatch(needs: ScheduledEventEngine.WatchNeeds) = Unit

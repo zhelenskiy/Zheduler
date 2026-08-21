@@ -7,7 +7,13 @@ import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
 import com.zhelenskiy.zheduler.zheduler.events.resolveIn
 import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
 import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
+import com.zhelenskiy.zheduler.zheduler.geo.NearbySignal
 import com.zhelenskiy.zheduler.zheduler.geo.PlaceReading
+import com.zhelenskiy.zheduler.zheduler.geo.PresenceTrigger
+import com.zhelenskiy.zheduler.zheduler.geo.SignalDirection
+import com.zhelenskiy.zheduler.zheduler.geo.crossingMatches
+import com.zhelenskiy.zheduler.zheduler.geo.satisfiedBy
+import com.zhelenskiy.zheduler.zheduler.geo.standingMatches
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
@@ -706,28 +712,23 @@ sealed class RecurrenceTrigger {
         @Serializable(with = PersistentSetSerializer::class)
         val areas: PersistentSet<GeoArea>,
         val direction: GeofenceDirection = GeofenceDirection.Entering,
-    ) : RecurrenceTrigger() {
+    ) : RecurrenceTrigger(), PresenceTrigger {
 
-        /**
-         * Whether [reading] is the thing this rule was waiting for.
-         *
-         * A crossing is matched as a crossing and anything else as a state, because a rule with a
-         * moment of its own is asking "am I there?" while one without is asking "did I just get
-         * there?". A reading that knows nothing satisfies neither: firing on a device that cannot
-         * say where it is would go off everywhere at once.
-         */
-        fun isMetBy(reading: PlaceReading): Boolean = when {
-            !reading.known -> false
-            reading.isCrossing -> areas.any { area ->
-                (direction.matchesEntering && area.key in reading.entered) ||
-                    (direction.matchesLeaving && area.key in reading.left)
-            }
-            // As a standing condition: inside for arriving, outside for leaving. "Either way"
-            // names no state at all, so it holds wherever the device is.
-            direction == GeofenceDirection.EitherWay -> true
-            direction == GeofenceDirection.Entering -> areas.any { it.key in reading.inside }
-            else -> areas.none { it.key in reading.inside }
-        }
+        override val watchedKeys: Set<String> get() = areas.mapTo(mutableSetOf()) { it.key }
+
+        override fun firedBy(reading: PlaceReading): Boolean = crossingMatches(
+            keys = watchedKeys,
+            reading = reading,
+            wantsArriving = direction.matchesEntering,
+            wantsLeaving = direction.matchesLeaving,
+        )
+
+        override fun holdsIn(reading: PlaceReading): Boolean = standingMatches(
+            keys = watchedKeys,
+            reading = reading,
+            wantsArriving = direction.matchesEntering,
+            wantsLeaving = direction.matchesLeaving,
+        )
 
         /** How this reads inside a rule's summary, as a clause rather than a sentence. */
         fun phrase(): String {
@@ -737,6 +738,49 @@ sealed class RecurrenceTrigger {
                 GeofenceDirection.Entering -> "when I reach $places"
                 GeofenceDirection.Leaving -> "when I leave $places"
                 GeofenceDirection.EitherWay -> "when I reach or leave $places"
+            }
+        }
+    }
+
+    /**
+     * Triggered by a wifi network or a bluetooth device coming within reach, or leaving it.
+     *
+     * The same shape as [LocationChange] and matched by the same machinery, because it answers the
+     * same question by other means: being on the office network says you are at the office rather
+     * more definitely than a fix on the roof does, and it works in the basement. A rule may carry
+     * both, and then both have to be true.
+     */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.NearbyChange")
+    @Serializable
+    data class NearbyChange(
+        @Serializable(with = PersistentSetSerializer::class)
+        val signals: PersistentSet<NearbySignal>,
+        val direction: SignalDirection = SignalDirection.Appearing,
+    ) : RecurrenceTrigger(), PresenceTrigger {
+
+        override val watchedKeys: Set<String> get() = signals.mapTo(mutableSetOf()) { it.key }
+
+        override fun firedBy(reading: PlaceReading): Boolean = crossingMatches(
+            keys = watchedKeys,
+            reading = reading,
+            wantsArriving = direction.matchesAppearing,
+            wantsLeaving = direction.matchesDisappearing,
+        )
+
+        override fun holdsIn(reading: PlaceReading): Boolean = standingMatches(
+            keys = watchedKeys,
+            reading = reading,
+            wantsArriving = direction.matchesAppearing,
+            wantsLeaving = direction.matchesDisappearing,
+        )
+
+        fun phrase(): String {
+            val things = signals.takeIf { it.isNotEmpty() }?.joinToString(" or ") { it.label }
+                ?: "nothing"
+            return when (direction) {
+                SignalDirection.Appearing -> "when $things is near"
+                SignalDirection.Disappearing -> "when $things is out of reach"
+                SignalDirection.EitherWay -> "when $things comes or goes"
             }
         }
     }
@@ -758,12 +802,26 @@ data class RecurrenceRule(
      * lives in a JSON column and a missing field is simply the default.
      */
     val locationTrigger: RecurrenceTrigger.LocationChange? = null,
+    /** Defaulted for the same reason, and read alongside [locationTrigger] as one condition. */
+    val nearbyTrigger: RecurrenceTrigger.NearbyChange? = null,
 ) {
     init {
-        require(timeRecurrenceTrigger != null || statusChangeTrigger != null || locationTrigger != null) {
+        require(
+            timeRecurrenceTrigger != null || statusChangeTrigger != null ||
+                locationTrigger != null || nearbyTrigger != null
+        ) {
             "At least one trigger must be specified"
         }
     }
+
+    /**
+     * Everything this rule asks about what is around the device, as one list.
+     *
+     * A place and a network are the same kind of condition and are matched together — see
+     * `satisfiedBy` — so nothing below here needs to know which of the two it is holding.
+     */
+    val presenceTriggers: List<PresenceTrigger>
+        get() = listOfNotNull(locationTrigger, nearbyTrigger)
     fun toBriefString(): String {
         val timeRecurrenceTriggerString = timeRecurrenceTrigger?.let {
             when (it) {
@@ -776,11 +834,13 @@ data class RecurrenceRule(
         val timeAndStatus = statusChangeTrigger?.requiredStatuses
             ?.joinToString(prefix = statusChangePrefix) { it.toBriefString() }
             ?: timeRecurrenceTriggerString
-        val place = locationTrigger?.phrase()
+        val around = listOfNotNull(locationTrigger?.phrase(), nearbyTrigger?.phrase())
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(" and ")
         return when {
-            timeAndStatus != null && place != null -> "$timeAndStatus, $place"
+            timeAndStatus != null && around != null -> "$timeAndStatus, $around"
             timeAndStatus != null -> timeAndStatus
-            place != null -> place.replaceFirstChar(Char::uppercaseChar)
+            around != null -> around.replaceFirstChar(Char::uppercaseChar)
             else -> error("No recurrence trigger found")
         }
     }
@@ -1150,14 +1210,15 @@ object RecurrenceCalculator {
         // A boundary being crossed is news only to the rules watching for one. Without this the
         // cascade in processRecurrence would let arriving at the office fire every other rule on
         // the task that happened to be ready.
-        event.places.isCrossing && rule.locationTrigger == null -> false
-        // And the other way about: a rule whose only trigger is a place has nothing else that can
-        // set it off, so it waits for a crossing and for nothing else. Read as a standing
-        // condition it would go off on any status change made while the device stood in the right
-        // place — "when I leave the office" firing because something was marked done at home.
-        !event.places.isCrossing && rule.locationTrigger != null &&
+        event.places.isCrossing && rule.presenceTriggers.isEmpty() -> false
+        // And the other way about: a rule whose only trigger is something around the device has
+        // nothing else that can set it off, so it waits for a crossing and for nothing else. Read
+        // as a standing condition it would go off on any status change made while the device stood
+        // in the right place — "when I leave the office" firing because something was marked done
+        // at home.
+        !event.places.isCrossing && rule.presenceTriggers.isNotEmpty() &&
             rule.timeRecurrenceTrigger == null && rule.statusChangeTrigger == null -> false
-        rule.locationTrigger?.isMetBy(event.places) == false -> false
+        !rule.presenceTriggers.satisfiedBy(event.places) -> false
         rule.timeRecurrenceTrigger != null && recurrenceState.nextOccurrenceDate != null && event.currentTime < recurrenceState.nextOccurrenceDate ->
             false
         // A rule that has fired and has no next occurrence is finished: either the one that would
