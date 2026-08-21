@@ -31,6 +31,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -655,6 +656,10 @@ private fun LazyListScope.TaskGroupItems(
                         onToggleCollapse(groupKey)
                     }
                 }
+                // Pressing anywhere on the header opens the group, and the arrow is what shows
+                // it: the whole row lighting up is a lot of ink for a heading, and the arrow is
+                // where the eye already is. One interaction source, so the two are the same press.
+                val pressed = remember { MutableInteractionSource() }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -663,7 +668,12 @@ private fun LazyListScope.TaskGroupItems(
                         // 24dp target, half the size a finger is meant to be given, and it is the
                         // only way into a group. Merged into one thing to press, and named, so a
                         // reader hears which group rather than a column of "Expand".
-                        .clickable(onClickLabel = if (isCollapsed) "Expand group" else "Collapse group", onClick = toggle)
+                        .clickable(
+                            interactionSource = pressed,
+                            indication = null,
+                            onClickLabel = if (isCollapsed) "Expand group" else "Collapse group",
+                            onClick = toggle,
+                        )
                         .semantics(mergeDescendants = true) {}
                         .padding(
                             top = if (level == 0) 2.dp else 0.dp,
@@ -681,7 +691,8 @@ private fun LazyListScope.TaskGroupItems(
                         modifier = Modifier
                             .size(24.dp)
                             .focusProperties { canFocus = false }
-                            .clearAndSetSemantics {}
+                            .clearAndSetSemantics {},
+                        interactionSource = pressed,
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
