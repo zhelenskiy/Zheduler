@@ -18,6 +18,7 @@ data class TaskAlert(
     val title: String,
     val body: String,
     val at: Instant,
+    val sound: NotificationSound = NotificationSound.Default,
 )
 
 /**

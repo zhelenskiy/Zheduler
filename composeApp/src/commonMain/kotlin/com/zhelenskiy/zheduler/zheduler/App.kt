@@ -59,6 +59,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.rememberContainer
 import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
 import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
+import com.zhelenskiy.zheduler.zheduler.events.LocalNotificationPreferences
 import com.zhelenskiy.zheduler.zheduler.util.ProvideCurrentTime
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
@@ -200,12 +201,16 @@ fun App(themeState: ThemeState = rememberThemeState()) {
     // after the process is gone; elsewhere the app being open is the only time there is anyone to
     // notify anyway.
     LaunchedEffect(graph) {
+        graph?.notificationPreferences?.load()
         graph?.scheduledEventEngine?.run()
     }
 
     if (graph != null) {
         MaterialTheme(colorScheme = themeState.colorScheme) {
             AppGraphProvider(graph) {
+              CompositionLocalProvider(
+                  LocalNotificationPreferences provides graph.notificationPreferences
+              ) {
               ProvideCurrentTime {
                 // One host above the whole navigation graph: a screen does not need a snackbar of
                 // its own for its store to be able to say that something went wrong.
@@ -220,6 +225,7 @@ fun App(themeState: ThemeState = rememberThemeState()) {
                         SnackbarHost(failureSnackbar, modifier = Modifier.align(Alignment.BottomCenter))
                     }
                 }
+              }
               }
             }
         }

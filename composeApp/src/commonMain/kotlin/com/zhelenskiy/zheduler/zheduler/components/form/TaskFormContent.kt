@@ -29,6 +29,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.TagChip
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.*
 import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundPicker
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import kotlin.time.ExperimentalTime
 
@@ -559,6 +560,10 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                     } else {
                                         null
                                     }
+                                )
+                                NotificationSoundPicker(
+                                    sound = formState.notificationSound(index),
+                                    onSoundSelected = { formState.updateNotificationSound(index, it) },
                                 )
                                 IconButton(onClick = {
                                     formState.removeNotification(index)

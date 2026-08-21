@@ -1,5 +1,6 @@
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -14,8 +15,9 @@ import kotlin.test.assertTrue
  * connection column it cannot read the row at all.
  *
  * Sister of [StoredVocabularyTest], which pins the class names of the polymorphic types. Those
- * could be pinned with `@SerialName`; these cannot, because nothing serializes them — so this test
- * is the whole of the protection.
+ * could be pinned with `@SerialName`; most of these cannot, because nothing serializes them — so
+ * this test is the whole of the protection. [NotificationSound] is the exception: it is serialized,
+ * by name, and is pinned here beside the rest rather than somewhere of its own.
  *
  * Adding a constant is fine and passes. Renaming or removing one fails here, and the question that
  * raises is not how to update the list below — it is what happens to the rows already written.
@@ -27,6 +29,15 @@ class StoredEnumNamesTest {
         assertTrue(
             missing.isEmpty(),
             "$what no longer writes $missing — rows already written say those names",
+        )
+    }
+
+    @Test
+    fun `notification sounds keep the names written into every task's notifications`() {
+        assertKeeps(
+            NotificationSound.entries.mapTo(mutableSetOf()) { it.name },
+            listOf("Default", "Silent", "Alarm", "Chime", "Bell"),
+            "NotificationSound",
         )
     }
 

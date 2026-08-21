@@ -10,6 +10,9 @@ import io.github.xxfast.kstore.KStore
  */
 expect fun createScheduleStore(): ScheduleStore
 
+/** Where this platform keeps what the user chose for notifications to sound like. */
+expect fun createNotificationSettingsStore(): KStore<NotificationSettings>
+
 expect fun createEventNotifier(): EventNotifier
 
 /** A [ScheduleStore] over kstore, which every platform here already uses for its settings. */

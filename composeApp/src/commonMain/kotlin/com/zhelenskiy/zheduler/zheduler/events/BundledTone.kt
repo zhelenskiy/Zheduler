@@ -1,0 +1,24 @@
+package com.zhelenskiy.zheduler.zheduler.events
+
+import org.jetbrains.compose.resources.ExperimentalResourceApi
+import zheduler.composeapp.generated.resources.Res
+
+/**
+ * The bytes of a tone that ships with the app, or `null` for a sound the platform owns.
+ *
+ * One copy, read through Compose Resources, so desktop, iOS and the browser all play the same
+ * file. Android is the exception and keeps its own copy under `res/raw`: it plays a notification
+ * sound by handing the system a URI, and the system cannot read this module's assets.
+ */
+@OptIn(ExperimentalResourceApi::class)
+suspend fun readBundledTone(sound: NotificationSound): ByteArray? {
+    val name = sound.bundledName ?: return null
+    return runCatching { Res.readBytes("files/sounds/$name.wav") }.getOrNull()
+}
+
+/** Where the browser can fetch [sound] from, or `null` for a sound the platform owns. */
+@OptIn(ExperimentalResourceApi::class)
+fun bundledToneUri(sound: NotificationSound): String? {
+    val name = sound.bundledName ?: return null
+    return runCatching { Res.getUri("files/sounds/$name.wav") }.getOrNull()
+}

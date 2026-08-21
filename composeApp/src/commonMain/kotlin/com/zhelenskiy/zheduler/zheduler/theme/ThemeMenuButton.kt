@@ -23,9 +23,15 @@ import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.zhelenskiy.zheduler.zheduler.components.common.displayName
+import com.zhelenskiy.zheduler.zheduler.events.LocalNotificationPreferences
+import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -275,11 +281,21 @@ fun ThemeMenuButton(
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var soundMenuOpen by remember { mutableStateOf(false) }
+
+    // Read here rather than passed in: every screen's app bar shows this menu, and none of them
+    // has anything else to do with what a notification sounds like.
+    val preferences = LocalNotificationPreferences.current
+    val soundInUse = remember(preferences) {
+        preferences?.defaultSound ?: MutableStateFlow(NotificationSound.Default)
+    }
+    val notificationSound by soundInUse.collectAsState()
+    val scope = rememberCoroutineScope()
 
     IconButton(onClick = { expanded = true }) {
         Icon(
             imageVector = getThemeIcon(themeMode),
-            contentDescription = "Theme settings"
+            contentDescription = "Settings"
         )
     }
 
@@ -331,6 +347,30 @@ fun ThemeMenuButton(
                 colorSettings = colorSettings,
                 onColorSettingsChange = onColorSettingsChange
             )
+        }
+
+        if (preferences != null) {
+            HorizontalDivider()
+
+            // The app's own voice: what a deadline arriving, a rule coming round or a status the
+            // app changed by itself sounds like. A reminder the user set carries its own choice.
+            DropdownMenuItem(
+                text = { Text("Notification sound: ${notificationSound.displayName}") },
+                leadingIcon = { Icon(Icons.Default.Notifications, contentDescription = null) },
+                onClick = { soundMenuOpen = true },
+            )
+            DropdownMenu(expanded = soundMenuOpen, onDismissRequest = { soundMenuOpen = false }) {
+                NotificationSound.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.displayName) },
+                        onClick = {
+                            scope.launch { preferences.setDefaultSound(option) }
+                            soundMenuOpen = false
+                            expanded = false
+                        },
+                    )
+                }
+            }
         }
     }
 }

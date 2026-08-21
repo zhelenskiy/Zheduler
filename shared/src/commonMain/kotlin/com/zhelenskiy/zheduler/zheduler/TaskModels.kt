@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentListOf
@@ -168,10 +169,14 @@ data class TaskConnection(
 /**
  * A notification for a task, triggered at a specific time before the deadline.
  * The time is specified using RecurrencePeriod in compact format (e.g., "1d", "2h30m").
+ *
+ * [sound] is defaulted so that every notification written before there was a choice still reads
+ * back — the list lives in a JSON column, and a missing field is simply the default.
  */
 @Serializable
 data class TaskNotification(
-    val timeBeforeDeadline: RecurrencePeriod
+    val timeBeforeDeadline: RecurrencePeriod,
+    val sound: NotificationSound = NotificationSound.Default,
 )
 
 /**

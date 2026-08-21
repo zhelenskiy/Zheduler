@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The tones are reached by an android.resource:// URI built from the sound's name, so nothing in
+  the code refers to them by resource id. Shrinking is off today; the day it is turned on, this is
+  what stops Chime and Bell from being dropped and going quiet with nothing to say so.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/chime,@raw/bell" />

@@ -36,7 +36,17 @@ object EventPlanner {
                 val at = notification.timeBeforeDeadline.subtractFrom(due, tz)
                 // A reminder is a warning; once the deadline itself has gone by there is nothing
                 // left to warn about, and the deadline event covers the moment.
-                if (at < due) add(ScheduledEvent.Reminder(task.id, at, due, notification.timeBeforeDeadline))
+                if (at < due) {
+                    add(
+                        ScheduledEvent.Reminder(
+                            taskId = task.id,
+                            at = at,
+                            dueDate = due,
+                            lead = notification.timeBeforeDeadline,
+                            sound = notification.sound,
+                        )
+                    )
+                }
             }
         }
 

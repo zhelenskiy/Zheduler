@@ -32,7 +32,13 @@ import kotlin.time.toJavaDuration
 class ScheduledEventWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = try {
-        obtainAppGraph().scheduledEventEngine.sweep()
+        val graph = obtainAppGraph()
+        // Read here as well as at startup: this runs in a process that may have no UI at all —
+        // woken after the process died, or at boot — and the engine asks the preferences what
+        // everything other than a reminder should sound like. Unread, they answer with the
+        // default, so a user who chose silence was rung at three in the morning.
+        graph.notificationPreferences.load()
+        graph.scheduledEventEngine.sweep()
         // The engine re-books the next one itself, through the hook it is given — including after
         // sweeps made while the app is open, which is the only way a task created just now can be
         // heard about before whatever was booked previously comes round.

@@ -9,12 +9,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
+import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
 import com.zhelenskiy.zheduler.zheduler.RecurrenceRule
 import com.zhelenskiy.zheduler.zheduler.RecurrenceState
 import com.zhelenskiy.zheduler.zheduler.TaskConnection
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toPersistentSet
@@ -64,6 +66,14 @@ data class PersistedFormState(
      * back over the prefill, and the copy was gone. Only what the user touched is applied.
      */
     val editedFields: Set<String>? = null,
+    /**
+     * What each notification sounds like, alongside [notifications].
+     *
+     * Defaulted for the sake of records written before a notification had a sound; a record
+     * missing them restores the times and leaves the sounds at their default, which is what those
+     * notifications meant when they were written.
+     */
+    val notificationSounds: PersistentList<NotificationSound>? = null,
 )
 
 /** Field names for [PersistedFormState.editedFields]. Stored, so they may not be renamed freely. */
@@ -113,6 +123,8 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
             connections = decode<Set<TaskConnection>>(KEY_CONNECTIONS)?.toPersistentSet(),
             connectionsBase = decode<Set<TaskConnection>>(KEY_CONNECTIONS_BASE)?.toPersistentSet(),
             notifications = decode<List<String>>(KEY_NOTIFICATIONS)?.toPersistentList(),
+            notificationSounds = decode<List<NotificationSound>>(KEY_NOTIFICATION_SOUNDS)
+                ?.toPersistentList(),
             recurrenceRules = decode<List<Pair<RecurrenceRule, RecurrenceState>>>(KEY_RECURRENCE_RULES)
                 ?.toPersistentList(),
             autoUpdateStatusFromSubtasks = savedStateHandle[KEY_AUTO_UPDATE_STATUS],
@@ -138,6 +150,8 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
             state.connectionsBase?.let { Json.encodeToString<Set<TaskConnection>>(it) }
         savedStateHandle[KEY_NOTIFICATIONS] =
             state.notifications?.let { Json.encodeToString<List<String>>(it) }
+        savedStateHandle[KEY_NOTIFICATION_SOUNDS] =
+            state.notificationSounds?.let { Json.encodeToString<List<NotificationSound>>(it) }
         savedStateHandle[KEY_RECURRENCE_RULES] = state.recurrenceRules
             ?.let { Json.encodeToString<List<Pair<RecurrenceRule, RecurrenceState>>>(it) }
         savedStateHandle[KEY_AUTO_UPDATE_STATUS] = state.autoUpdateStatusFromSubtasks
@@ -157,6 +171,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         savedStateHandle.remove<String>(KEY_CONNECTIONS)
         savedStateHandle.remove<String>(KEY_CONNECTIONS_BASE)
         savedStateHandle.remove<String>(KEY_NOTIFICATIONS)
+        savedStateHandle.remove<String>(KEY_NOTIFICATION_SOUNDS)
         savedStateHandle.remove<String>(KEY_RECURRENCE_RULES)
         savedStateHandle.remove<Boolean>(KEY_AUTO_UPDATE_STATUS)
         savedStateHandle.remove<String>(KEY_EDITED_FIELDS)
@@ -174,6 +189,7 @@ class FormStatePersistence(private val savedStateHandle: SavedStateHandle) {
         const val KEY_STATUS = "form_status"
         const val KEY_CONNECTIONS = "form_connections"
         const val KEY_CONNECTIONS_BASE = "form_connections_base"
+        const val KEY_NOTIFICATION_SOUNDS = "form_notification_sounds"
         const val KEY_NOTIFICATIONS = "form_notifications"
         const val KEY_RECURRENCE_RULES = "form_recurrence_rules"
         const val KEY_AUTO_UPDATE_STATUS = "form_auto_update_status"
@@ -193,6 +209,7 @@ fun TaskFormState.toPersistedState() = PersistedFormState(
     connections = connections,
     connectionsBase = connections,
     notifications = notifications,
+    notificationSounds = notificationSounds,
     recurrenceRules = recurrenceRules,
     autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks,
 )
@@ -207,7 +224,9 @@ internal fun PersistedFormState.fieldsDifferingFrom(base: PersistedFormState): S
     if (dueDate != base.dueDate) add(FormField.DUE_DATE)
     if (status != base.status) add(FormField.STATUS)
     if (connections != base.connections) add(FormField.CONNECTIONS)
-    if (notifications != base.notifications) add(FormField.NOTIFICATIONS)
+    if (notifications != base.notifications || notificationSounds != base.notificationSounds) {
+        add(FormField.NOTIFICATIONS)
+    }
     if (recurrenceRules != base.recurrenceRules) add(FormField.RECURRENCE_RULES)
     if (autoUpdateStatusFromSubtasks != base.autoUpdateStatusFromSubtasks) add(FormField.AUTO_UPDATE_STATUS)
 }
@@ -246,6 +265,13 @@ fun PersistedFormState.applyTo(formState: TaskFormState) {
     if (restoredNotifications != null || restoredRules != null) {
         formState.restoreEntries(
             notifications = restoredNotifications ?: formState.notifications,
+            // A record written before a notification had a sound restores its times against fresh
+            // defaults rather than against the task's sounds, which the restored times no longer
+            // line up with.
+            notificationSounds = when {
+                restoredNotifications == null -> formState.notificationSounds
+                else -> notificationSounds ?: persistentListOf()
+            },
             recurrenceRules = restoredRules ?: formState.recurrenceRules,
         )
     }
@@ -278,7 +304,8 @@ fun TaskFormState.persistedIn(persistence: FormStatePersistence) {
 
     LaunchedEffect(
         this, restored, title, description, priority, estimatedTime, tags, dueDate,
-        status, connections, notifications, recurrenceRules, autoUpdateStatusFromSubtasks,
+        status, connections, notifications, notificationSounds, recurrenceRules,
+        autoUpdateStatusFromSubtasks,
     ) {
         if (!restored) return@LaunchedEffect
         val current = toPersistedState()

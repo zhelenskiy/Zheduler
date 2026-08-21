@@ -8,6 +8,8 @@ import dev.zacsweers.metro.SingleIn
 import com.zhelenskiy.zheduler.zheduler.db.ZhedulerDatabase
 import com.zhelenskiy.zheduler.zheduler.db.RoomTaskRepository
 import com.zhelenskiy.zheduler.zheduler.events.EventNotifier
+import com.zhelenskiy.zheduler.zheduler.events.NotificationPreferences
+import com.zhelenskiy.zheduler.zheduler.events.createNotificationSettingsStore
 import com.zhelenskiy.zheduler.zheduler.events.ScheduleStore
 import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
 import com.zhelenskiy.zheduler.zheduler.events.createEventNotifier
@@ -56,6 +58,11 @@ interface AppGraph {
      * The engine that acts on due dates, reminders and recurrence rules.
      */
     val scheduledEventEngine: ScheduledEventEngine
+
+    /**
+     * What everything other than a reminder sounds like.
+     */
+    val notificationPreferences: NotificationPreferences
 
     /**
      * Singleton SpaceListContainer - preserves search state across navigation.
@@ -117,16 +124,23 @@ interface AppGraph {
 
         @Provides
         @SingleIn(AppScope::class)
+        fun provideNotificationPreferences(): NotificationPreferences =
+            NotificationPreferences(createNotificationSettingsStore())
+
+        @Provides
+        @SingleIn(AppScope::class)
         fun provideScheduledEventEngine(
             repository: RoomTaskRepository,
             notifier: EventNotifier,
             store: ScheduleStore,
             clock: Clock,
+            preferences: NotificationPreferences,
         ): ScheduledEventEngine = ScheduledEventEngine(
             repository = repository,
             notifier = notifier,
             store = store,
             clock = clock,
+            defaultSound = { preferences.defaultSound.value },
             onSwept = ::reschedulePlatformSweep,
         )
 
