@@ -6,6 +6,32 @@
     <!-- So the schedule is running again from the moment the device is, without the app opened. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
+    <!--
+        For the rules that fire on arriving somewhere or leaving it. Coarse is enough for a fence
+        of a few hundred metres, and is declared alongside fine so a user who grants only the
+        approximate position still gets the feature.
+
+        The standing one is what lets a sweep ask while nothing of the app is on the screen, which
+        is the difference between arriving home being noticed then and being noticed next time the
+        app is opened. From Android 10 it is a prompt of its own and may only be asked for once the
+        others are held; the places screen offers it separately.
+
+        None of the three is asked for unless a rule is actually watching somewhere.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+
+    <!--
+        A boundary is a moment, not a state. The sweeps WorkManager books only sample where the
+        device is, so someone who leaves and comes back between two of them has crossed twice and
+        neither crossing is anywhere to be seen. A foreground service is the only thing the system
+        will let keep running to catch them — and is asked for only while a rule is actually
+        waiting on a place. See LocationWatchService.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+
     <application
             android:name=".ZhedulerApplication"
             android:allowBackup="true"
@@ -38,6 +64,15 @@
                     android:name="android.support.FILE_PROVIDER_PATHS"
                     android:resource="@xml/sound_paths"/>
         </provider>
+
+        <!--
+            Runs only while some rule is waiting on a place, and is stopped again the moment none
+            is. Not exported: nothing outside the app has any business starting it.
+        -->
+        <service
+                android:name="com.zhelenskiy.zheduler.zheduler.geo.LocationWatchService"
+                android:exported="false"
+                android:foregroundServiceType="location"/>
 
         <!--
             Not exported: every action below is a protected system broadcast, so nothing else can

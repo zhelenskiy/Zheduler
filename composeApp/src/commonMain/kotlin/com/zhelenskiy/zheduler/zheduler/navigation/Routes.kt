@@ -45,3 +45,12 @@ data class ViewModeEditorRoute(
 
 @Serializable
 data class SavedFilterManagementRoute(val spaceId: String)
+
+/**
+ * The address book of places.
+ *
+ * Carries no space id, unlike every other route here: a place is a place in all of them, so this
+ * hangs off the space list rather than off one space.
+ */
+@Serializable
+object SavedLocationsRoute

@@ -15,10 +15,14 @@ import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
 import com.zhelenskiy.zheduler.zheduler.events.createEventNotifier
 import com.zhelenskiy.zheduler.zheduler.events.createScheduleStore
 import com.zhelenskiy.zheduler.zheduler.events.reschedulePlatformSweep
+import com.zhelenskiy.zheduler.zheduler.geo.LocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.createLocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.updatePlaceWatch
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainerFactory
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedLocationContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainerFactory
@@ -68,6 +72,11 @@ interface AppGraph {
      * Singleton SpaceListContainer - preserves search state across navigation.
      */
     val spaceListContainer: SpaceListContainer
+
+    /**
+     * The address book of places, which belongs to no space and so needs no factory.
+     */
+    val savedLocationContainer: SavedLocationContainer
 
     /**
      * Factory for creating TaskListContainer instances with runtime parameters.
@@ -129,12 +138,17 @@ interface AppGraph {
 
         @Provides
         @SingleIn(AppScope::class)
+        fun provideLocationSource(): LocationSource = createLocationSource()
+
+        @Provides
+        @SingleIn(AppScope::class)
         fun provideScheduledEventEngine(
             repository: RoomTaskRepository,
             notifier: EventNotifier,
             store: ScheduleStore,
             clock: Clock,
             preferences: NotificationPreferences,
+            locationSource: LocationSource,
         ): ScheduledEventEngine = ScheduledEventEngine(
             repository = repository,
             notifier = notifier,
@@ -142,12 +156,19 @@ interface AppGraph {
             clock = clock,
             appSounds = { preferences.settings.value },
             onSwept = ::reschedulePlatformSweep,
+            locationSource = locationSource,
+            onWatchingPlaces = ::updatePlaceWatch,
         )
 
         @Provides
         @SingleIn(AppScope::class)
         fun provideSpaceListContainer(repository: RoomTaskRepository): SpaceListContainer =
             SpaceListContainer(repository)
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideSavedLocationContainer(repository: RoomTaskRepository): SavedLocationContainer =
+            SavedLocationContainer(repository)
 
         @Provides
         fun provideTaskListContainerFactory(repository: RoomTaskRepository): TaskListContainerFactory =

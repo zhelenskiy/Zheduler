@@ -11,7 +11,12 @@ import com.zhelenskiy.zheduler.zheduler.RecurrenceTimeZone
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger
 import com.zhelenskiy.zheduler.zheduler.TaskNotification
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
+import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
+import com.zhelenskiy.zheduler.zheduler.geo.GeoFix
+import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
+import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.sync.Mutex
@@ -64,6 +69,21 @@ class ScheduledEventEngineTest {
     ) {
         var onSwept: (Instant?) -> Unit = {}
 
+        /** Told after every run whether any rule is still waiting on a place. */
+        var onWatchingPlaces: (Boolean) -> Unit = {}
+
+        /**
+         * Where the device is, as the test says it is.
+         *
+         * Null is a device that cannot say, which is what a desktop answers and what the engine
+         * must treat as "unknown" rather than as "outside everything".
+         */
+        var whereabouts: GeoFix? = null
+
+        /** How many times the platform was actually asked, which is a cost worth pinning. */
+        var timesAsked: Int = 0
+            private set
+
         /** A new engine over the same repository and store — what a restarted process gets. */
         fun engine() = ScheduledEventEngine(
             repository = repository,
@@ -72,6 +92,11 @@ class ScheduledEventEngineTest {
             clock = clock,
             timeZone = { zone },
             onSwept = { onSwept(it) },
+            onWatchingPlaces = { onWatchingPlaces(it) },
+            locationSource = {
+                timesAsked++
+                whereabouts
+            },
         )
     }
 
@@ -1250,5 +1275,504 @@ class ScheduledEventEngineTest {
 
         assertEquals(25.hours, due - inNewYork)
         assertEquals(24.hours, due - inUtc, "the zone is read again on every run, not captured at startup")
+    }
+
+    // ==================== Rules that wait for a place ====================
+
+    private val office = GeoArea(name = "Office", point = GeoPoint(0.0, 0.0), radiusMeters = 200.0)
+
+    /** Far enough from [office] to be outside it by any margin. */
+    private val elsewhere = GeoFix(GeoPoint(1.0, 1.0))
+    private val atTheOffice = GeoFix(GeoPoint(0.0, 0.0))
+
+    private fun placeRule(
+        direction: GeofenceDirection,
+        area: GeoArea = office,
+        resetTo: TaskStatus = TaskStatus.Open,
+        timeTrigger: RecurrenceTrigger.TimeRecurrenceTrigger? = null,
+    ) = RecurrenceRule(
+        timeRecurrenceTrigger = timeTrigger,
+        statusChangeTrigger = null,
+        resetToStatus = resetTo,
+        locationTrigger = RecurrenceTrigger.LocationChange(persistentSetOf(area), direction),
+    ) to RecurrenceState()
+
+    @Test
+    fun `arriving somewhere brings a task round`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(placeRule(GeofenceDirection.Entering)),
+            )
+        )
+
+        // Somewhere else to begin with, so the office is known to have been outside.
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+        assertEquals(TaskStatus.Done, assertNotNull(f.repository.getTaskById(task.id)).status)
+
+        f.clock.current = start + 1.hours
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "arriving at the office is what this rule was waiting for",
+        )
+    }
+
+    @Test
+    fun `being there already when the rule is written does not fire it`() = runTest {
+        // The whole reason whereabouts distinguish "never looked" from "known to be outside": a
+        // rule about home, written at home, must not go off the moment it is saved.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(placeRule(GeofenceDirection.Entering)),
+            )
+        )
+
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+        assertEquals(TaskStatus.Done, assertNotNull(f.repository.getTaskById(task.id)).status)
+
+        f.clock.current = start + 1.hours
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "standing still is not arriving",
+        )
+    }
+
+    @Test
+    fun `a rule waiting to leave does not fire on arriving`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Lock up",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(placeRule(GeofenceDirection.Leaving)),
+            )
+        )
+
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+
+        f.clock.current = start + 1.hours
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "this rule is about leaving",
+        )
+
+        f.clock.current = start + 2.hours
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+        assertEquals(TaskStatus.Open, assertNotNull(f.repository.getTaskById(task.id)).status)
+    }
+
+    @Test
+    fun `one crossing fires the rule once however often it is swept`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = null,
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                        termination = RecurrenceTermination(
+                            afterOccurrences = RecurrenceTerminationCondition.AfterOccurrences(2),
+                        ),
+                        locationTrigger = RecurrenceTrigger.LocationChange(
+                            persistentSetOf(office),
+                            GeofenceDirection.Entering,
+                        ),
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+
+        f.clock.current = start + 1.hours
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+        f.engine().sweep()
+        f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(TaskStatus.Open, after.status)
+        assertEquals(
+            1,
+            after.recurrenceRules.single().first.termination.maxOccurrences,
+            "one arrival should spend one of the two allowed times",
+        )
+    }
+
+    @Test
+    fun `a crossing does not set off the rule that was waiting for a status`() = runTest {
+        // Firing one rule cascades through the rest of the task's, so a departure that fires the
+        // place rule leaves the task in a status the *other* rule is waiting for. Without a gate,
+        // that second rule goes off on the same crossing and the departure lands the task
+        // somewhere the user never asked it to be.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Two rules",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    // First in the list, so the cascade reaches it before anything else.
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = null,
+                        statusChangeTrigger = RecurrenceTrigger.StatusChange(
+                            persistentSetOf(TaskStatus.InProgress)
+                        ),
+                        resetToStatus = TaskStatus.Done,
+                    ) to RecurrenceState(),
+                    placeRule(GeofenceDirection.Leaving, resetTo = TaskStatus.InProgress),
+                ),
+            )
+        )
+
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+
+        f.clock.current = start + 1.hours
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.InProgress,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "leaving is the place rule's business alone",
+        )
+    }
+
+    @Test
+    fun `a rule that only watches a place is not fired by a status changing`() = runTest {
+        // It has no moment and no status of its own to wait for, so a crossing is the only thing
+        // that can set it off. Asked as a standing question — "is the device outside?" — it is
+        // true all day, and any other rule firing would drag it along.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Two rules",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = null,
+                        statusChangeTrigger = RecurrenceTrigger.StatusChange(
+                            persistentSetOf(TaskStatus.Done)
+                        ),
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState(),
+                    placeRule(GeofenceDirection.Leaving, resetTo = TaskStatus.InProgress),
+                ),
+            )
+        )
+
+        // Outside the office, and known to be — but never having crossed the boundary.
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "the status rule fired; the place rule had no crossing to fire on",
+        )
+    }
+
+    @Test
+    fun `a plain schedule still comes round in a sweep where a boundary is crossed`() = runTest {
+        // The crossing belongs to the rules watching for one, and to no others — but "to no
+        // others" must not become "nothing else happens in this sweep". A task with an ordinary
+        // daily rule, sitting on a device that has just walked into an office it knows nothing
+        // about, is owed its occurrence like any other day.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val occurrence = start + 1.hours
+
+        val watcher = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(placeRule(GeofenceDirection.Entering)),
+            )
+        )
+        val everyday = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Water the plants",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = occurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+        )
+
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+
+        // The moment and the arrival land in the same run.
+        f.clock.current = occurrence
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(watcher.id)).status,
+            "the arrival fired the rule watching for it",
+        )
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(everyday.id)).status,
+            "and the daily task came round regardless of anyone walking anywhere",
+        )
+    }
+
+    @Test
+    fun `a rule whose end date has gone is not dragged along by another rule firing`() = runTest {
+        // Firing one rule cascades through the rest of the task's, and the cascade judges each of
+        // them on `shouldTrigger` alone. A rule that waits only for a place has no occurrence of
+        // its own, so the termination check that compares the next occurrence against the end date
+        // has nothing to compare — and without a check of its own such a rule outlives its end
+        // date for ever.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val ended = RecurrenceTermination(
+            onDate = RecurrenceTerminationCondition.OnDate(start - 1.days),
+        )
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Two places",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    // Finished last week, and first in the list so the cascade reaches it first.
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = null,
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Declined("this rule is over"),
+                        termination = ended,
+                        locationTrigger = RecurrenceTrigger.LocationChange(
+                            persistentSetOf(office),
+                            GeofenceDirection.Entering,
+                        ),
+                    ) to RecurrenceState(),
+                    placeRule(GeofenceDirection.Entering, resetTo = TaskStatus.Open),
+                ),
+            )
+        )
+
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+
+        f.clock.current = start + 1.hours
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+
+        val after = assertNotNull(f.repository.getTaskById(task.id))
+        assertEquals(TaskStatus.Open, after.status, "the live rule fired, as it should have")
+        // On the finished rule's own bookkeeping, not on the task's status: the cascade fires
+        // every rule that passes and leaves the task in the *last* one's reset status either way,
+        // so the status alone cannot tell whether the finished rule went off on the way past.
+        assertEquals(
+            0,
+            after.recurrenceRules.first().second.occurrenceCount,
+            "the rule that ended last week came round again",
+        )
+    }
+
+    @Test
+    fun `a rule that can never come round again stops the device being watched`() = runTest {
+        // A one-shot with a moment and a place fires once and is finished: it has no next
+        // occurrence, which is how the calculator knows it will never fire again. Judged on the
+        // rule alone rather than on what its schedule has left, its areas stay watched for ever —
+        // and on a phone that is a permanent notification and a location reading every minute for
+        // something that cannot happen.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val occurrence = start + 1.hours
+        var watching: Boolean? = null
+
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Hand in the form",
+            status = TaskStatus.Done,
+            recurrenceRules = persistentListOf(
+                placeRule(
+                    direction = GeofenceDirection.Entering,
+                    timeTrigger = RecurrenceTrigger.AfterTimeout(
+                        // No period: one occurrence and no more.
+                        period = null,
+                        firstOccurrence = occurrence,
+                        timezone = RecurrenceTimeZone.SystemDefault,
+                    ),
+                )
+            ),
+        )
+
+        f.onWatchingPlaces = { watching = it }
+
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+        assertEquals(true, watching, "a rule is waiting on the office, so the device is watched")
+
+        // The moment comes and the user arrives: the rule fires, and has nothing left.
+        f.clock.current = occurrence
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+
+        f.clock.current = occurrence + 1.hours
+        f.engine().sweep()
+        assertEquals(false, watching, "nothing is waiting on the office any more")
+    }
+
+    @Test
+    fun `nothing is asked of the platform when no rule watches a place`() = runTest {
+        // Positioning costs battery and, on a phone, a permission prompt. A database with no such
+        // rule in it must provoke neither.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Pay rent",
+            dueDate = start + 2.hours,
+        )
+
+        f.engine().sweep()
+        f.engine().sweep()
+
+        assertEquals(0, f.timesAsked, "the device was asked where it is for nothing")
+    }
+
+    @Test
+    fun `a device that cannot say where it is fires nothing`() = runTest {
+        // What a desktop answers, and what a phone answers when the permission was refused. It
+        // must not read as a device provably outside every area, or every leaving rule goes off.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Lock up",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(placeRule(GeofenceDirection.Leaving)),
+            )
+        )
+
+        f.whereabouts = null
+        f.engine().sweep()
+        f.engine().sweep()
+
+        assertEquals(TaskStatus.Done, assertNotNull(f.repository.getTaskById(task.id)).status)
+        assertEquals(2, f.timesAsked, "asked once a sweep, no more")
+    }
+
+    @Test
+    fun `a moment that comes round while the device is elsewhere waits for it to arrive`() = runTest {
+        // A rule with both a moment and a place reads as the moment arming it and the place
+        // setting it off — the same pairing a status makes. Spending the occurrence while the user
+        // is nowhere near would leave the task never coming round at all.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val occurrence = start + 1.hours
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Water the office plants",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    placeRule(
+                        direction = GeofenceDirection.Entering,
+                        timeTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = occurrence,
+                            timezone = RecurrenceTimeZone.SystemDefault,
+                        ),
+                    )
+                ),
+            )
+        )
+
+        f.whereabouts = elsewhere
+        f.engine().sweep()
+
+        f.clock.current = occurrence
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "the moment has come but the user has not",
+        )
+
+        f.clock.current = occurrence + 30.minutes
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+        assertEquals(
+            TaskStatus.Open,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "armed by the moment, fired by arriving",
+        )
+    }
+
+    @Test
+    fun `whereabouts survive a restart so that no crossing is invented`() = runTest {
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val task = assertNotNull(
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Hand in the form",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(placeRule(GeofenceDirection.Entering)),
+            )
+        )
+
+        f.whereabouts = atTheOffice
+        f.engine().sweep()
+
+        // A fresh engine over the same store: the process died and came back, still at the office.
+        f.clock.current = start + 1.hours
+        f.engine().sweep()
+
+        assertEquals(
+            TaskStatus.Done,
+            assertNotNull(f.repository.getTaskById(task.id)).status,
+            "a restart must not read as having arrived all over again",
+        )
     }
 }

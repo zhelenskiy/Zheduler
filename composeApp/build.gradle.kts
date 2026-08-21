@@ -130,6 +130,7 @@ kotlin {
             implementation(libs.flowmvi.core)
             implementation(libs.flowmvi.compose)
             implementation(libs.kotlinx.collections.immutable)
+            implementation(libs.ktor.clientCore)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -139,6 +140,7 @@ kotlin {
             implementation(compose.desktop.currentOs)
         }
         jvmMain.dependencies {
+            implementation(libs.ktor.clientCio)
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.nucleus.system.color)
@@ -149,6 +151,7 @@ kotlin {
             implementation(libs.appdirs)
         }
         androidMain.dependencies {
+            implementation(libs.ktor.clientOkhttp)
             implementation(libs.kstore.file)
             implementation(libs.appdirs)
             // The background sweeper lives here rather than in androidApp: the engine has to be
@@ -156,12 +159,15 @@ kotlin {
             implementation(libs.androidx.work.runtime)
         }
         iosMain.dependencies {
+            implementation(libs.ktor.clientDarwin)
             implementation(libs.kstore.file)
         }
         jsMain.dependencies {
+            implementation(libs.ktor.clientJs)
             implementation(libs.kstore.storage)
         }
         wasmJsMain.dependencies {
+            implementation(libs.ktor.clientJs)
             implementation(libs.kstore.storage)
         }
     }

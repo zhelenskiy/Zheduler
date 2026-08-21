@@ -304,3 +304,24 @@ data class SavedFilters(
     val criteriaJson: String,
     val viewModeId: String?,
 )
+
+/**
+ * The user's address book of places, to pick from when a rule is written.
+ *
+ * Not tied to a space, unlike everything above: where you live is where you live in every one of
+ * them. That also means nothing cascades this table away, which is right — a rule keeps its own
+ * copy of the area it watches, so an entry deleted here changes no rule, and a space deleted
+ * elsewhere takes no place with it.
+ *
+ * Unindexed on purpose. The only query that is not "all of them" matches names with a leading
+ * wildcard, which no index can seek on, and an address book is a few dozen rows.
+ */
+@Entity(tableName = "saved_locations")
+data class SavedLocations(
+    @PrimaryKey val id: String,
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val radiusMeters: Double,
+    val address: String,
+)

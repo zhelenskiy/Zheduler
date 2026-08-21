@@ -3,6 +3,7 @@
 package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
+import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import com.zhelenskiy.zheduler.zheduler.paging.toPage
 import kotlinx.collections.immutable.PersistentList
@@ -63,6 +64,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
     private val customViewModes = mutableMapOf<String, MutableMap<String, ViewMode>>() // spaceId -> (viewModeId -> ViewMode)
     private val activeViewModeBySpaceId = mutableMapOf<String, String>()
     private val savedFilters = mutableMapOf<String, MutableMap<String, SavedFilter>>() // spaceId -> (filterId -> SavedFilter)
+
+    /** Not keyed by space: the address book belongs to the user, not to one workspace. */
+    private val savedLocations = mutableMapOf<String, SavedLocation>()
 
     override suspend fun hasSpaces(): Boolean = mutex.withLock { spaces.isNotEmpty() }
 
@@ -880,6 +884,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         customViewModes.clear()
         activeViewModeBySpaceId.clear()
         savedFilters.clear()
+        savedLocations.clear()
         notifyChanged()
     }
 
@@ -1027,5 +1032,38 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun deleteSavedFilter(spaceId: String, filterId: String): Boolean = mutex.withLock {
         savedFilters[spaceId]?.remove(filterId) != null
+    }
+
+    // ============ Saved locations ============
+
+    override suspend fun getAllSavedLocations(): List<SavedLocation> = mutex.withLock {
+        savedLocations.values.sortedBy { it.name.lowercase() }
+    }
+
+    override suspend fun searchSavedLocations(query: String): List<SavedLocation> {
+        val needle = query.trim()
+        return getAllSavedLocations().filter {
+            needle.isEmpty() ||
+                it.name.contains(needle, ignoreCase = true) ||
+                it.address.contains(needle, ignoreCase = true)
+        }
+    }
+
+    override suspend fun getSavedLocationById(id: String): SavedLocation? = mutex.withLock {
+        savedLocations[id]
+    }
+
+    override suspend fun saveLocation(location: SavedLocation): SavedLocation = mutex.withLock {
+        // Clamped on the way in exactly as the Room repository clamps it, so the two answer alike.
+        val stored = location.copy(radiusMeters = location.toArea().radius(), point = location.point.sane())
+        savedLocations[stored.id] = stored
+        notifyChanged()
+        stored
+    }
+
+    override suspend fun deleteSavedLocation(id: String): Boolean = mutex.withLock {
+        val removed = savedLocations.remove(id) != null
+        if (removed) notifyChanged()
+        removed
     }
 }

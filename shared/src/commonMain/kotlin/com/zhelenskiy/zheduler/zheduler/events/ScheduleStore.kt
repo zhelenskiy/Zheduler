@@ -36,6 +36,18 @@ data class ScheduleState(
      * over again.
      */
     val delivered: Map<String, Long> = emptyMap(),
+
+    /**
+     * Whether the device was inside each watched area when it was last looked at, by
+     * `GeoArea.key`.
+     *
+     * The whole of what a boundary crossing is made of: a crossing is this answer differing from
+     * the one a fresh reading gives, so without it every sweep would see the device standing
+     * somewhere and nothing more. An area absent here has never been looked at, which is not the
+     * same as one known to be outside — a rule written while standing at home must not read as
+     * arriving home. Pruned each run to the areas still watched.
+     */
+    val insideAreas: Map<String, Boolean> = emptyMap(),
 )
 
 /** Where [ScheduleState] is kept between runs. */

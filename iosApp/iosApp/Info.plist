@@ -4,5 +4,14 @@
     <dict>
         <key>CADisableMinimumFrameDurationOnPhone</key>
         <true/>
+        <!--
+            Required before Core Location will so much as show the prompt. Without them
+            requestWhenInUseAuthorization does nothing at all — no dialog, no refusal, the status
+            simply stays notDetermined — and every rule that waits on a place is silently dead.
+        -->
+        <key>NSLocationWhenInUseUsageDescription</key>
+        <string>Zheduler uses your location to bring a task round when you arrive somewhere or leave it.</string>
+        <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+        <string>Allowing this all the time lets Zheduler notice you arriving or leaving while the app is closed. Otherwise it only notices next time you open it.</string>
     </dict>
 </plist>

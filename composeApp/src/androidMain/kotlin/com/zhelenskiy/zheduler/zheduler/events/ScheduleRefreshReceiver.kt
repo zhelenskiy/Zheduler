@@ -3,6 +3,7 @@ package com.zhelenskiy.zheduler.zheduler.events
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.zhelenskiy.zheduler.zheduler.geo.startPlaceWatchAfterBoot
 
 /**
  * Puts the schedule back on its feet after the things that invalidate it.
@@ -24,6 +25,14 @@ class ScheduleRefreshReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
+                -> {
+                sweepNow(context.applicationContext)
+                // Here and nowhere else: from Android 12 a foreground service may only be started
+                // from the background while one of these very broadcasts is being handled, so a
+                // watch not restarted now waits for the user to open the app.
+                startPlaceWatchAfterBoot(context.applicationContext)
+            }
+
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_TIME_CHANGED,
                 -> sweepNow(context.applicationContext)

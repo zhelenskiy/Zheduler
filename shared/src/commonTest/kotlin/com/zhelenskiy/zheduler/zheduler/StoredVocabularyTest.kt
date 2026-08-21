@@ -3,8 +3,12 @@ package com.zhelenskiy.zheduler.zheduler
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.serialization.json.Json
+import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
+import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
+import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -86,6 +90,65 @@ class StoredVocabularyTest {
         assertEquals(
             "com.zhelenskiy.zheduler.zheduler.FixedPointPattern.DayOfMonth",
             nameOf(json.encodeToString<FixedPointPattern>(FixedPointPattern.DayOfMonth(1, TimeOfDay(9, 0)))),
+        )
+        assertEquals(
+            "com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.LocationChange",
+            nameOf(
+                json.encodeToString<RecurrenceTrigger>(
+                    RecurrenceTrigger.LocationChange(
+                        areas = persistentSetOf(
+                            GeoArea(name = "Home", point = GeoPoint(51.5, -0.12), radiusMeters = 200.0)
+                        ),
+                        direction = GeofenceDirection.Entering,
+                    )
+                )
+            ),
+        )
+    }
+
+    @Test
+    fun `a rule written before there were places still reads back`() {
+        // The rules live in a JSON column, so every rule anyone has ever saved lacks this field.
+        // A default is what lets it decode; without one the task will not read at all, and the
+        // space it belongs to goes with it.
+        val stored = """
+            {
+              "timeRecurrenceTrigger": null,
+              "statusChangeTrigger": {
+                "requiredStatuses": [{"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Done"}]
+              },
+              "resetToStatus": {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"}
+            }
+        """.trimIndent()
+
+        val rule = json.decodeFromString<RecurrenceRule>(stored)
+
+        assertEquals(null, rule.locationTrigger)
+        assertEquals(TaskStatus.Open, rule.resetToStatus)
+    }
+
+    @Test
+    fun `a place survives being written and read back whole`() {
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = null,
+            statusChangeTrigger = null,
+            resetToStatus = TaskStatus.Open,
+            locationTrigger = RecurrenceTrigger.LocationChange(
+                areas = persistentSetOf(
+                    GeoArea(name = "Home", point = GeoPoint(51.5, -0.12), radiusMeters = 200.0),
+                    GeoArea(name = "Work", point = GeoPoint(51.6, -0.10), radiusMeters = 500.0),
+                ),
+                direction = GeofenceDirection.Leaving,
+            ),
+        )
+
+        val restored = json.decodeFromString<RecurrenceRule>(json.encodeToString(rule))
+
+        assertEquals(rule, restored)
+        assertEquals(
+            listOf("Home", "Work"),
+            assertNotNull(restored.locationTrigger).areas.map { it.name },
+            "the order places were chosen in is the order they are shown in",
         )
     }
 

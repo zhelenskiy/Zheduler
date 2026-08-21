@@ -133,6 +133,24 @@ internal val AddDueSound = object : Migration(4, 5) {
 }
 
 /**
+ * Adds the address book of places a location rule can watch.
+ *
+ * Its own table rather than a column on anything: a place is picked from once and copied into
+ * every rule that watches it, so it belongs to no space and outlives every rule. The statement is
+ * Room's own, from the version-6 schema it exported.
+ */
+internal val AddSavedLocations = object : Migration(5, 6) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `saved_locations` (" +
+                "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `latitude` REAL NOT NULL, " +
+                "`longitude` REAL NOT NULL, `radiusMeters` REAL NOT NULL, `address` TEXT NOT NULL, " +
+                "PRIMARY KEY(`id`))"
+        )
+    }
+}
+
+/**
  * Every migration the app ships, applied wherever a [ZhedulerDatabase] is opened.
  *
  * Databases in the field were created by SQLDelight at version 1 and carry no `room_master_table`;
@@ -140,4 +158,10 @@ internal val AddDueSound = object : Migration(4, 5) {
  * Version 1 is not one schema but several — see [AdoptLegacySchema].
  */
 internal fun RoomDatabase.Builder<ZhedulerDatabase>.withZhedulerMigrations(): RoomDatabase.Builder<ZhedulerDatabase> =
-    addMigrations(AdoptLegacySchema, AddEstimatedTimeSeconds, IndexEstimatedTimeSeconds, AddDueSound)
+    addMigrations(
+        AdoptLegacySchema,
+        AddEstimatedTimeSeconds,
+        IndexEstimatedTimeSeconds,
+        AddDueSound,
+        AddSavedLocations,
+    )

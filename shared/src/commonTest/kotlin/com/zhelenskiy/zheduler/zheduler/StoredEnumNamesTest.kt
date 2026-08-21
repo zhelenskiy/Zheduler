@@ -1,6 +1,7 @@
 package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
+import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -38,6 +39,15 @@ class StoredEnumNamesTest {
             NotificationSound.entries.mapTo(mutableSetOf()) { it.name },
             listOf("Default", "System", "Silent", "Alarm", "Chime", "Bell"),
             "NotificationSound",
+        )
+    }
+
+    @Test
+    fun `geofence directions keep the names written into every location rule`() {
+        assertKeeps(
+            GeofenceDirection.entries.mapTo(mutableSetOf()) { it.name },
+            listOf("Entering", "Leaving", "EitherWay"),
+            "GeofenceDirection",
         )
     }
 

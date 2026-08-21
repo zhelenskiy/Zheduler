@@ -3,6 +3,7 @@
 package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
+import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
@@ -753,4 +754,26 @@ interface TaskRepository {
      * @return true if deleted successfully, false if not found
      */
     suspend fun deleteSavedFilter(spaceId: String, filterId: String): Boolean
+
+    // ============ Saved locations ============
+
+    /**
+     * The user's address book of places, by name.
+     *
+     * Not scoped to a space: where you live is where you live in every one of them. A rule keeps
+     * its own copy of the area it watches, so this list is only ever somewhere to pick from.
+     */
+    suspend fun getAllSavedLocations(): List<SavedLocation>
+
+    /** The places whose name or address contain [query]; all of them when it is blank. */
+    suspend fun searchSavedLocations(query: String): List<SavedLocation>
+
+    /** A place by its ID, or null if there is no such place. */
+    suspend fun getSavedLocationById(id: String): SavedLocation?
+
+    /** Creates or renames a place, and returns it as stored. */
+    suspend fun saveLocation(location: SavedLocation): SavedLocation
+
+    /** Removes a place from the book. Rules that copied it are untouched. */
+    suspend fun deleteSavedLocation(id: String): Boolean
 }

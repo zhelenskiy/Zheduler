@@ -5,6 +5,9 @@ package com.zhelenskiy.zheduler.zheduler
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
 import com.zhelenskiy.zheduler.zheduler.events.resolveIn
+import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
+import com.zhelenskiy.zheduler.zheduler.geo.GeofenceDirection
+import com.zhelenskiy.zheduler.zheduler.geo.PlaceReading
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
@@ -683,6 +686,60 @@ sealed class RecurrenceTrigger {
         @Serializable(with = PersistentSetSerializer::class)
         val requiredStatuses: PersistentSet<TaskStatus>
     ) : RecurrenceTrigger()
+
+    /**
+     * Triggered by crossing the edge of one of [areas].
+     *
+     * The areas are copied into the rule rather than referred to by id, so the rule keeps working
+     * when the place is deleted from the address book and still means something on a device the
+     * task was exported to. A set, so that the same place named twice is watched once.
+     *
+     * Like [StatusChange] this has no moment of its own — nothing can be scheduled for the user
+     * walking somewhere — so a rule that has only this fires when a sweep notices the crossing.
+     * Paired with a time trigger it is a condition on where the device is, which is the same
+     * reading a status pairing gets: the moment arms the rule, the place decides whether it goes
+     * off. See `RecurrenceCalculator.shouldTrigger`.
+     */
+    @SerialName("com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.LocationChange")
+    @Serializable
+    data class LocationChange(
+        @Serializable(with = PersistentSetSerializer::class)
+        val areas: PersistentSet<GeoArea>,
+        val direction: GeofenceDirection = GeofenceDirection.Entering,
+    ) : RecurrenceTrigger() {
+
+        /**
+         * Whether [reading] is the thing this rule was waiting for.
+         *
+         * A crossing is matched as a crossing and anything else as a state, because a rule with a
+         * moment of its own is asking "am I there?" while one without is asking "did I just get
+         * there?". A reading that knows nothing satisfies neither: firing on a device that cannot
+         * say where it is would go off everywhere at once.
+         */
+        fun isMetBy(reading: PlaceReading): Boolean = when {
+            !reading.known -> false
+            reading.isCrossing -> areas.any { area ->
+                (direction.matchesEntering && area.key in reading.entered) ||
+                    (direction.matchesLeaving && area.key in reading.left)
+            }
+            // As a standing condition: inside for arriving, outside for leaving. "Either way"
+            // names no state at all, so it holds wherever the device is.
+            direction == GeofenceDirection.EitherWay -> true
+            direction == GeofenceDirection.Entering -> areas.any { it.key in reading.inside }
+            else -> areas.none { it.key in reading.inside }
+        }
+
+        /** How this reads inside a rule's summary, as a clause rather than a sentence. */
+        fun phrase(): String {
+            val places = areas.takeIf { it.isNotEmpty() }?.joinToString(" or ") { it.name.ifBlank { "an unnamed place" } }
+                ?: "nowhere"
+            return when (direction) {
+                GeofenceDirection.Entering -> "when I reach $places"
+                GeofenceDirection.Leaving -> "when I leave $places"
+                GeofenceDirection.EitherWay -> "when I reach or leave $places"
+            }
+        }
+    }
 }
 
 interface Presentable {
@@ -696,9 +753,14 @@ data class RecurrenceRule(
     val statusChangeTrigger: StatusChange?,
     val resetToStatus: TaskStatus,
     val termination: RecurrenceTermination = RecurrenceTermination.Never,
+    /**
+     * Defaulted so that every rule written before there were places still reads back: the list
+     * lives in a JSON column and a missing field is simply the default.
+     */
+    val locationTrigger: RecurrenceTrigger.LocationChange? = null,
 ) {
     init {
-        require(timeRecurrenceTrigger != null || statusChangeTrigger != null) {
+        require(timeRecurrenceTrigger != null || statusChangeTrigger != null || locationTrigger != null) {
             "At least one trigger must be specified"
         }
     }
@@ -711,10 +773,16 @@ data class RecurrenceRule(
             }
         }
         val statusChangePrefix = if (timeRecurrenceTriggerString == null) "On " else "$timeRecurrenceTriggerString on "
-        return statusChangeTrigger?.requiredStatuses
+        val timeAndStatus = statusChangeTrigger?.requiredStatuses
             ?.joinToString(prefix = statusChangePrefix) { it.toBriefString() }
             ?: timeRecurrenceTriggerString
-            ?: error("No recurrence trigger found")
+        val place = locationTrigger?.phrase()
+        return when {
+            timeAndStatus != null && place != null -> "$timeAndStatus, $place"
+            timeAndStatus != null -> timeAndStatus
+            place != null -> place.replaceFirstChar(Char::uppercaseChar)
+            else -> error("No recurrence trigger found")
+        }
     }
 
     /**
@@ -1079,6 +1147,17 @@ object RecurrenceCalculator {
         rule.statusChangeTrigger is StatusChange &&
                 rule.statusChangeTrigger.requiredStatuses.none { it::class == event.currentStatus::class } ->
             false
+        // A boundary being crossed is news only to the rules watching for one. Without this the
+        // cascade in processRecurrence would let arriving at the office fire every other rule on
+        // the task that happened to be ready.
+        event.places.isCrossing && rule.locationTrigger == null -> false
+        // And the other way about: a rule whose only trigger is a place has nothing else that can
+        // set it off, so it waits for a crossing and for nothing else. Read as a standing
+        // condition it would go off on any status change made while the device stood in the right
+        // place — "when I leave the office" firing because something was marked done at home.
+        !event.places.isCrossing && rule.locationTrigger != null &&
+            rule.timeRecurrenceTrigger == null && rule.statusChangeTrigger == null -> false
+        rule.locationTrigger?.isMetBy(event.places) == false -> false
         rule.timeRecurrenceTrigger != null && recurrenceState.nextOccurrenceDate != null && event.currentTime < recurrenceState.nextOccurrenceDate ->
             false
         // A rule that has fired and has no next occurrence is finished: either the one that would
@@ -1093,6 +1172,20 @@ object RecurrenceCalculator {
         // See calculateNextOccurrence: this is a countdown of occurrences still owed.
         rule.termination.maxOccurrences.let { it != null && it <= 0 } ->
             false
+        // A rule that owes no occurrence and whose end date has gone is finished. The gate below
+        // judges the *next occurrence* against the end date, which says nothing about a rule that
+        // has no moment of its own — one that waits for a status, or for a place, never has one —
+        // so such a rule slipped past every termination check here and went on firing for ever.
+        // The ordinary paths ask `isTerminated` first, but `processRecurrence` cascades through
+        // the task's other rules on nothing but this.
+        //
+        // Only where there is no occurrence pending. One that fell due before the end date is
+        // still owed however late the thing that fires it turns up — see the "late trigger event
+        // does advance rule" test, which is exactly that case.
+        rule.termination.endDate != null &&
+                recurrenceState.nextOccurrenceDate == null &&
+                event.currentTime > rule.termination.endDate!! ->
+            false
         rule.termination.endDate != null && recurrenceState.nextOccurrenceDate != null && recurrenceState.nextOccurrenceDate > rule.termination.endDate!! ->
             false
         else -> true
@@ -1101,8 +1194,16 @@ object RecurrenceCalculator {
 
 /**
  * Events that can trigger recurrence advancement
+ *
+ * [places] is what the areas being watched made of the last reading, and defaults to knowing
+ * nothing — which is what every caller that is not about location should pass. A rule waiting on a
+ * place does not fire on a reading that cannot say where the device is.
  */
-data class RecurrenceTriggerEvent(val currentStatus: TaskStatus, val currentTime: Instant)
+data class RecurrenceTriggerEvent(
+    val currentStatus: TaskStatus,
+    val currentTime: Instant,
+    val places: PlaceReading = PlaceReading.Unknown,
+)
 
 /**
  * Service for managing recurring tasks with support for multiple recurrence rules

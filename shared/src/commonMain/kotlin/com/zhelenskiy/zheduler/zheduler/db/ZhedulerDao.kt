@@ -852,6 +852,55 @@ interface ZhedulerDao {
 
     @Query("DELETE FROM saved_filters WHERE spaceId = :spaceId AND id = :id")
     suspend fun deleteSavedFilter(spaceId: String, id: String)
+
+    // ============ Saved locations ============
+
+    @Query("SELECT * FROM saved_locations ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getAllSavedLocations(): List<SavedLocations>
+
+    @Query("SELECT * FROM saved_locations WHERE id = :id")
+    suspend fun getSavedLocationById(id: String): SavedLocations?
+
+    /**
+     * Matched anywhere in the name or the address, so that searching the book by street works as
+     * well as by the name it was given. The caller passes the query through `escapedForLike`, so
+     * a `%` typed by the user matches a literal one.
+     */
+    @Query(
+        """
+        SELECT * FROM saved_locations
+        WHERE :query = ''
+           OR name LIKE '%' || :query || '%' ESCAPE '\'
+           OR address LIKE '%' || :query || '%' ESCAPE '\'
+        ORDER BY name COLLATE NOCASE ASC
+        """
+    )
+    suspend fun searchSavedLocations(query: String): List<SavedLocations>
+
+    @Query(
+        """
+        INSERT OR REPLACE INTO saved_locations(id, name, latitude, longitude, radiusMeters, address)
+        VALUES (:id, :name, :latitude, :longitude, :radiusMeters, :address)
+        """
+    )
+    suspend fun insertOrUpdateSavedLocation(
+        id: String,
+        name: String,
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Double,
+        address: String,
+    )
+
+    @Query("DELETE FROM saved_locations WHERE id = :id")
+    suspend fun deleteSavedLocation(id: String)
+
+    /**
+     * For "clear all data", which nothing else reaches: the book hangs off no space, so deleting
+     * every space — which is how the rest of the database is cleared — would leave it behind.
+     */
+    @Query("DELETE FROM saved_locations")
+    suspend fun deleteAllSavedLocations()
 }
 
 

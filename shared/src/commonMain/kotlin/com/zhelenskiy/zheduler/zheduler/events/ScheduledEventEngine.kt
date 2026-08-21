@@ -12,6 +12,11 @@ import com.zhelenskiy.zheduler.zheduler.StatusChange
 import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
 import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
+import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
+import com.zhelenskiy.zheduler.zheduler.geo.Geofencing
+import com.zhelenskiy.zheduler.zheduler.geo.LocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.NoLocationSource
+import com.zhelenskiy.zheduler.zheduler.geo.PlaceReading
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -49,6 +54,14 @@ import kotlin.time.Instant
  *   scheduler is what wakes this process — Android's — this is what keeps that scheduler in step:
  *   without it the only thing that ever re-books the wake-up is a run of the wake-up itself, so a
  *   task created in the app while one is booked a day out stays unheard until that day is up.
+ * @param locationSource where the device is, asked at most once a run and only when some rule is
+ *   watching a place. Defaults to knowing nothing, which is what a platform without positioning
+ *   answers and what leaves every rule that waits on a place quietly unfired.
+ * @param onWatchingPlaces told after every run whether any rule is still waiting on a place. A
+ *   platform that can watch continuously — Android, with a foreground service — uses this to start
+ *   and stop doing so, because a device that watches where it is going costs battery and should
+ *   only do it while something is actually waiting. Sweeping alone samples: a user who goes out and
+ *   comes back between two sweeps crossed a boundary twice and the sweep sees neither.
  */
 class ScheduledEventEngine(
     private val repository: TaskRepository,
@@ -58,6 +71,8 @@ class ScheduledEventEngine(
     private val timeZone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     private val appSounds: () -> NotificationSettings = { NotificationSettings() },
     private val onSwept: (Instant?) -> Unit = {},
+    private val locationSource: LocationSource = NoLocationSource,
+    private val onWatchingPlaces: (Boolean) -> Unit = {},
 ) {
 
     /**
@@ -87,6 +102,13 @@ class ScheduledEventEngine(
         val previous = store.load()
         val tasks = seedUnscheduledRules(allTasks(), now)
         val planned = EventPlanner.eventsFor(tasks, tz, now)
+
+        // Asked once per run and shared by everything below, so a sweep costs at most one fix.
+        // Rules fired by a moment or a status are asked only where the device *is* — see
+        // PlaceReading.standing — while the crossings themselves fire their own rules further down.
+        val watched = watchedAreas(tasks, now)
+        val reading = readPlaces(watched, previous.insideAreas)
+        val standing = reading.standing()
 
         // A first run has nothing behind it and says nothing about the past, so installing the app
         // does not announce every deadline the tasks ever missed. After that the only limits are
@@ -132,7 +154,7 @@ class ScheduledEventEngine(
                 // The occurrence is an event in its own right and says so. A recurring task with
                 // a deadline has the Deadline event on the same moment and only one of the two is
                 // spoken; one without a deadline had nothing at all before this.
-                is ScheduledEvent.Occurrence -> if (advance(task, event, now)) {
+                is ScheduledEvent.Occurrence -> if (advance(task, event, now, standing)) {
                     mutated = true
                     delivered += event
                     if (!firstRun) {
@@ -145,9 +167,14 @@ class ScheduledEventEngine(
         // From a fresh read: the loop above has just reset statuses, and a rule waiting for one of
         // them should see what the task is now rather than what it was when this run started.
         val settled = if (mutated) allTasks() else tasks
-        val statusFired = fireStatusTriggers(settled, now)
+        val statusFired = fireStatusTriggers(settled, now, standing)
 
-        val after = if (mutated || statusFired) allTasks() else tasks
+        // After the status rules, and from a fresh read for the same reason they are: a rule that
+        // waits for a place and a status wants the status the task has now.
+        val crossed = if (statusFired) allTasks() else settled
+        val locationFired = fireLocationTriggers(crossed, now, reading)
+
+        val after = if (mutated || statusFired || locationFired) allTasks() else tasks
         val replanned = EventPlanner.eventsFor(after, tz, now)
         val nextAt = replanned.filter { it.at > now }.minOfOrNull { it.at }
 
@@ -159,15 +186,20 @@ class ScheduledEventEngine(
         // by age any more, so this is what bounds the set: a task that is finished with stops
         // being planned and takes its keys with it.
         val stillPlanned = replanned.mapTo(mutableSetOf()) { it.key }
+        // Once this run's rules have had their turn, so a rule that has just run out takes its
+        // whereabouts with it and stops the device being watched on its behalf.
+        val stillWatched = watchedAreas(after, now)
         store.save(
             ScheduleState(
                 sweptTo = now,
                 delivered = previous.delivered.filterKeys { it in stillPlanned } +
                     delivered.associate { it.key to it.relevantAt.toEpochMilliseconds() } + announced,
+                insideAreas = Geofencing.remember(previous.insideAreas, reading, stillWatched),
             )
         )
         speak(candidates)
         onSwept(nextAt)
+        onWatchingPlaces(stillWatched.isNotEmpty())
         return Sweep(delivered, nextAt)
     }
 
@@ -325,7 +357,7 @@ class ScheduledEventEngine(
      * Only rules with no time trigger are looked for here; one that has both is a moment in the
      * plan like any other, and goes through [advance].
      */
-    private suspend fun fireStatusTriggers(tasks: List<Task>, now: Instant): Boolean {
+    private suspend fun fireStatusTriggers(tasks: List<Task>, now: Instant, standing: PlaceReading): Boolean {
         var fired = false
         for (task in tasks) {
             val waiting = task.recurrenceRules.any { (rule, _) ->
@@ -337,14 +369,89 @@ class ScheduledEventEngine(
                     // own correct check ever being reached.
                     rule.statusChangeTrigger?.requiredStatuses.orEmpty()
                         .any { it::class == task.status::class } &&
+                    // A rule that names a place as well as a status wants the device to be there.
+                    rule.locationTrigger?.isMetBy(standing) != false &&
                     !rule.isTerminated(now)
             }
             if (!waiting) continue
-            if (repository.processRecurrenceTrigger(task.id, RecurrenceTriggerEvent(task.status, now)) != null) {
+            if (repository.processRecurrenceTrigger(task.id, RecurrenceTriggerEvent(task.status, now, standing)) != null) {
                 fired = true
             }
         }
         return fired
+    }
+
+    /**
+     * Fire the rules waiting for the device to arrive somewhere or leave it.
+     *
+     * The counterpart of [fireStatusTriggers], and unplanned for the same reason: nobody can say
+     * in advance when a user will walk somewhere, so a crossing is only ever noticed by looking.
+     * What stops one firing twice is that a crossing exists only in the difference between this
+     * reading and the last, and the last is written down at the end of every run.
+     *
+     * A rule with a moment of its own is not fired here — its moment is what fires it, with the
+     * place as a condition; see [advance].
+     */
+    private suspend fun fireLocationTriggers(tasks: List<Task>, now: Instant, reading: PlaceReading): Boolean {
+        if (!reading.isCrossing) return false
+        var fired = false
+        for (task in tasks) {
+            val waiting = task.recurrenceRules.any { (rule, _) ->
+                rule.timeRecurrenceTrigger == null &&
+                    rule.locationTrigger?.isMetBy(reading) == true &&
+                    rule.statusChangeTrigger?.requiredStatuses.orEmpty()
+                        .let { it.isEmpty() || it.any { status -> status::class == task.status::class } } &&
+                    !rule.isTerminated(now)
+            }
+            if (!waiting) continue
+            if (repository.processRecurrenceTrigger(task.id, RecurrenceTriggerEvent(task.status, now, reading)) != null) {
+                fired = true
+            }
+        }
+        return fired
+    }
+
+    /**
+     * Every area some rule of [tasks] is still watching, each place once.
+     *
+     * A rule's *state* can be finished as well as the rule itself. A one-shot with a moment and a
+     * place — "at nine on Monday, once I reach the office" — has fired and has no next occurrence,
+     * which is how `shouldTrigger` knows it will never fire again; judged on the rule alone its
+     * areas stay watched for ever, and on Android that is a permanent notification and a location
+     * reading every minute for something that can no longer happen.
+     */
+    private fun watchedAreas(tasks: List<Task>, now: Instant): List<GeoArea> = tasks
+        .flatMap { task -> task.recurrenceRules }
+        .filterNot { (rule, state) -> rule.isTerminated(now) || rule.hasNothingLeft() || rule.isSpent(state) }
+        .flatMap { (rule, _) -> rule.locationTrigger?.areas.orEmpty() }
+        .distinctBy { it.key }
+
+    /**
+     * Whether this rule's schedule has run out, as `RecurrenceCalculator.shouldTrigger` reads it:
+     * a rule with a moment of its own that has fired and has no next one.
+     */
+    private fun RecurrenceRule.isSpent(state: RecurrenceState): Boolean =
+        timeRecurrenceTrigger != null && state.nextOccurrenceDate == null && state.occurrenceCount > 0
+
+    /**
+     * Where the device is, against [areas], given [wasInside] from the last run.
+     *
+     * Nothing is asked of the platform when no rule is watching anywhere: positioning costs
+     * battery and, on the phones, a permission prompt, and a database with no such rule in it
+     * should never provoke either. A source that cannot answer — no permission, no hardware, a
+     * desktop — leaves the whereabouts unknown rather than reporting the device outside
+     * everything.
+     */
+    private suspend fun readPlaces(areas: List<GeoArea>, wasInside: Map<String, Boolean>): PlaceReading {
+        if (areas.isEmpty()) return PlaceReading.Unknown
+        val fix = try {
+            locationSource.currentFix()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } ?: return PlaceReading.Unknown
+        return Geofencing.read(areas, fix, wasInside)
     }
 
     /**
@@ -364,12 +471,22 @@ class ScheduledEventEngine(
      * Finally the deadline follows the schedule, because a due date is the task's own field and
      * the repository does not touch it. A task with no deadline keeps none.
      */
-    private suspend fun advance(task: Task, event: ScheduledEvent.Occurrence, now: Instant): Boolean {
+    private suspend fun advance(
+        task: Task,
+        event: ScheduledEvent.Occurrence,
+        now: Instant,
+        standing: PlaceReading,
+    ): Boolean {
         // A rule that names a status as well as a moment wants both. The moment arriving first is
         // the rule becoming ready, not the rule going off: left armed, it fires whenever the status
         // turns up. Rolling the schedule past it instead spent an occurrence for something that
         // never happened, and for a rule with a single occurrence killed it outright.
-        if (!task.recurrenceRules.getOrNull(event.ruleIndex)?.first.acceptsStatusOf(task)) return false
+        val armed = task.recurrenceRules.getOrNull(event.ruleIndex)?.first
+        if (!armed.acceptsStatusOf(task)) return false
+        // And a place named alongside a moment reads the same way: the occurrence waits until the
+        // device is there. It is asked as a state, not a crossing — "every Monday, if I am at the
+        // office" is answered by where the user is on Monday, not by them having just walked in.
+        if (armed?.locationTrigger?.isMetBy(standing) == false) return false
 
         // Stamped with the moment the rule was *due*, not the moment this run noticed, so a late
         // sweep does not drag the whole series later with it.
@@ -379,7 +496,7 @@ class ScheduledEventEngine(
         // still happened, so the schedule still moves; only the status has nothing to change to.
         val fired = repository.processRecurrenceTrigger(
             task.id,
-            RecurrenceTriggerEvent(task.status, event.at),
+            RecurrenceTriggerEvent(task.status, event.at, standing),
         )
         val current = fired ?: repository.getTaskById(task.id) ?: return false
 

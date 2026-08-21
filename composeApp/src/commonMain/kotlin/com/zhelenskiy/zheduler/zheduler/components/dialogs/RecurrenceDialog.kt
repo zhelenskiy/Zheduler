@@ -32,6 +32,8 @@ import com.zhelenskiy.zheduler.zheduler.FixedPointPattern.*
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.*
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.LocationChange
+import androidx.compose.material.icons.filled.LocationOn
 import com.zhelenskiy.zheduler.zheduler.components.common.TimeZoneSelector
 import com.zhelenskiy.zheduler.zheduler.components.common.icon
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.NoData
@@ -225,6 +227,12 @@ fun SingleRecurrenceRuleDialog(
     }
 
     // Reset status (what status to set when recurrence happens)
+    // The places this rule waits for, if any. Saved for the same reason as the rest: none of it
+    // reaches the task until Save.
+    var locationTrigger by rememberSaveable(stateSaver = nullableJsonSaver<LocationChange>()) {
+        mutableStateOf(currentRule?.locationTrigger)
+    }
+
     var resetToStatus by rememberSaveable(stateSaver = jsonSaver { TaskStatus.Open }) {
         mutableStateOf(currentRule?.resetToStatus ?: TaskStatus.Open)
     }
@@ -242,7 +250,7 @@ fun SingleRecurrenceRuleDialog(
     // A rule needs something to fire it. Save used to stay enabled with every trigger cleared and
     // then quietly keep the old rule: the dialog closed, nothing had changed, and nothing said so.
     // Removing a rule is what the list's delete button is for.
-    val hasTrigger = selectedTimeTrigger is Success || statusChangesTrigger != null
+    val hasTrigger = selectedTimeTrigger is Success || statusChangesTrigger != null || locationTrigger != null
     val isFormValid = selectedTimeTrigger !is FormResult.Failure && isTerminationCountValid && hasTrigger
 
     AlertDialog(
@@ -260,10 +268,15 @@ fun SingleRecurrenceRuleDialog(
                     onTimeTriggerSelected = { selectedTimeTrigger = it },
                     terminationCount = termination.afterOccurrences?.count,
                     statusChangesTrigger = statusChangesTrigger,
-                    onStatusChangeChange = { statusChangesTrigger = it }
+                    onStatusChangeChange = { statusChangesTrigger = it },
+                    locationTrigger = locationTrigger,
+                    onLocationTriggerChange = { locationTrigger = it },
                 )
 
-                AnimatedVisibility(visible = selectedTimeTrigger !is NoData || statusChangesTrigger != null) {
+                AnimatedVisibility(
+                    visible = selectedTimeTrigger !is NoData || statusChangesTrigger != null ||
+                        locationTrigger != null
+                ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -293,12 +306,14 @@ fun SingleRecurrenceRuleDialog(
             TextButton(
                 onClick = {
                     val timeTrigger = (selectedTimeTrigger as? Success)?.value
-                    val rule = if (timeTrigger != null || statusChangesTrigger != null) {
+                    val place = locationTrigger?.takeIf { it.areas.isNotEmpty() }
+                    val rule = if (timeTrigger != null || statusChangesTrigger != null || place != null) {
                         RecurrenceRule(
                             timeRecurrenceTrigger = timeTrigger,
                             statusChangeTrigger = statusChangesTrigger,
                             resetToStatus = resetToStatus,
-                            termination = termination
+                            termination = termination,
+                            locationTrigger = place,
                         )
                     } else {
                         null
@@ -1019,7 +1034,9 @@ private fun TriggerSelectors(
     onTimeTriggerSelected: (FormResult<TimeRecurrenceTrigger>) -> Unit,
     terminationCount: Int?,
     statusChangesTrigger: StatusChange?,
-    onStatusChangeChange: (StatusChange?) -> Unit
+    onStatusChangeChange: (StatusChange?) -> Unit,
+    locationTrigger: LocationChange?,
+    onLocationTriggerChange: (LocationChange?) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Triggers", style = MaterialTheme.typography.titleMedium)
@@ -1032,6 +1049,65 @@ private fun TriggerSelectors(
         StatusChangesSelector(
             statusChangeChange = statusChangesTrigger,
             onStatusChangeChange = onStatusChangeChange,
+        )
+        HorizontalDivider()
+        LocationTriggerSelector(
+            trigger = locationTrigger,
+            onTriggerChange = onLocationTriggerChange,
+        )
+    }
+}
+
+/**
+ * Where the rule waits, if it waits anywhere.
+ *
+ * A rule with a place *and* a moment reads as the moment arming it and the place setting it off —
+ * "every Monday, once I get to the office" — which is the same pairing a status makes, and is said
+ * on the screen rather than left to be discovered.
+ */
+@Composable
+private fun LocationTriggerSelector(
+    trigger: LocationChange?,
+    onTriggerChange: (LocationChange?) -> Unit,
+) {
+    var picking by rememberSaveable { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(
+            itemVerticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Where", style = MaterialTheme.typography.titleSmall)
+            FilterChip(
+                selected = trigger == null,
+                onClick = { onTriggerChange(null) },
+                label = { Text("Anywhere", style = MaterialTheme.typography.labelSmall) },
+            )
+            FilterChip(
+                selected = trigger != null,
+                onClick = { picking = true },
+                label = {
+                    Text(
+                        text = trigger?.phrase() ?: "Somewhere in particular",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp))
+                },
+            )
+        }
+    }
+
+    if (picking) {
+        PlaceSelectionDialog(
+            current = trigger,
+            onDismiss = { picking = false },
+            onConfirm = {
+                // An empty choice is no condition at all rather than one nothing can satisfy.
+                onTriggerChange(it?.takeIf { chosen -> chosen.areas.isNotEmpty() })
+                picking = false
+            },
         )
     }
 }

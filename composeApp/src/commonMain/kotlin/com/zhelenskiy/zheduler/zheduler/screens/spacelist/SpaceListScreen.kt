@@ -267,6 +267,7 @@ private fun SpaceListContent(
 private fun SpaceListTopAppBar(
     onEraseAllData: () -> Unit,
     onImport: () -> Unit,
+    onOpenPlaces: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
@@ -282,6 +283,9 @@ private fun SpaceListTopAppBar(
             }
             IconButton(onClick = onImport) {
                 Icon(Icons.Default.Upload, contentDescription = "Import Space")
+            }
+            IconButton(onClick = onOpenPlaces) {
+                Icon(Icons.Default.LocationOn, contentDescription = "Places")
             }
             NotificationSoundsButton()
             ThemeMenuButton(
@@ -303,6 +307,7 @@ fun SpaceListScreen(
     container: SpaceListContainer,
     refreshTrigger: Int,
     onSpaceClick: (String) -> Unit,
+    onOpenPlaces: () -> Unit,
     onRefresh: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -363,6 +368,7 @@ fun SpaceListScreen(
             SpaceListTopAppBar(
                 onEraseAllData = { dialogState.showEraseAllData = true },
                 onImport = { dialogState.showImport = true },
+                onOpenPlaces = onOpenPlaces,
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,

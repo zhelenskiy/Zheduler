@@ -5,6 +5,8 @@ package com.zhelenskiy.zheduler.zheduler.db
 import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import androidx.room3.withWriteTransaction
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
+import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import com.zhelenskiy.zheduler.zheduler.paging.toPage
 import kotlinx.collections.immutable.*
@@ -1328,6 +1330,7 @@ class RoomTaskRepository(
         // observable, and a cache built concurrently from half-deleted data outlives it.
         database.withWriteTransaction {
             dao.getAllSpaces().forEach { space -> dao.deleteSpace(space.id) }
+            dao.deleteAllSavedLocations()
         }
         notifyChanged()
     }
@@ -2647,6 +2650,42 @@ class RoomTaskRepository(
         }
         exists
     }
+
+    // ============ Saved locations ============
+
+    override suspend fun getAllSavedLocations(): List<SavedLocation> =
+        dao.getAllSavedLocations().map { it.toSavedLocationModel() }
+
+    override suspend fun searchSavedLocations(query: String): List<SavedLocation> =
+        dao.searchSavedLocations(query.trim().escapedForLike()).map { it.toSavedLocationModel() }
+
+    override suspend fun getSavedLocationById(id: String): SavedLocation? =
+        dao.getSavedLocationById(id)?.toSavedLocationModel()
+
+    override suspend fun saveLocation(location: SavedLocation): SavedLocation {
+        // Stored as it will be measured against, not as it was typed: a radius outside what a
+        // fence can mean would otherwise read back differently from the one the editor showed.
+        val stored = location.copy(radiusMeters = location.toArea().radius(), point = location.point.sane())
+        dao.insertOrUpdateSavedLocation(
+            id = stored.id,
+            name = stored.name,
+            latitude = stored.point.latitude,
+            longitude = stored.point.longitude,
+            radiusMeters = stored.radiusMeters,
+            address = stored.address,
+        )
+        notifyChanged()
+        return stored
+    }
+
+    override suspend fun deleteSavedLocation(id: String): Boolean = mutex.withLock {
+        val exists = dao.getSavedLocationById(id) != null
+        if (exists) {
+            dao.deleteSavedLocation(id)
+            notifyChanged()
+        }
+        exists
+    }
 }
 
 /**
@@ -2670,6 +2709,19 @@ private fun SavedFilters.toSavedFilterModel(): SavedFilter? {
         viewModeId = viewModeId,
     )
 }
+
+/**
+ * Never null, unlike the saved-filter conversion: every column here is a number or a string the
+ * row already holds, so there is no stored JSON that can fail to parse and no reason a place
+ * should be able to disappear from the book by being unreadable.
+ */
+private fun SavedLocations.toSavedLocationModel() = SavedLocation(
+    id = id,
+    name = name,
+    point = GeoPoint(latitude = latitude, longitude = longitude),
+    radiusMeters = radiusMeters,
+    address = address,
+)
 
 private fun Spaces.toModel() = Space(
     id = id,

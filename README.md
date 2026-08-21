@@ -91,6 +91,72 @@ WorkManager will not wake a dozing device to the second, so a reminder can arriv
 late. The alternative is an exact alarm, which recent Android versions grant only to apps whose
 whole purpose is alarms.
 
+### Rules that wait for a place
+
+A recurrence rule can wait for the user to arrive somewhere or to leave it, alongside the moments
+and statuses it could already wait for. The place is a point and a radius —
+[`GeoArea`](./shared/src/commonMain/kotlin/com/zhelenskiy/zheduler/zheduler/geo/Geo.kt) — and the
+rule is fired by a *crossing* of that edge rather than by being on one side of it.
+
+Areas are **copied into the rule**, not pointed at. The list of places under *Places* on the space
+list is an address book to pick from; deleting an entry there changes no rule, and a task exported
+to a device that has never heard of that book still knows where it is waiting for. It is the same
+trade a chosen sound makes by carrying its own label.
+
+A crossing exists only in the difference between where the device is now and where it was last
+seen, so the last answer is written down beside the scheduler's watermark. An area with nothing
+written down has never been looked at, which is not the same as one known to be outside: a rule
+about home, written at home, must not go off the moment it is saved. Nothing fires on a first
+sighting.
+
+Nothing is asked of the platform unless some rule is actually watching a place — positioning costs
+battery and, on the phones, a permission prompt. And a device that cannot say where it is answers
+*unknown* rather than "outside everything": on a desktop, with the permission refused, or with only
+network positioning and no connectivity. Whereabouts are then left exactly as they were, so the
+crossing that happened meanwhile is found the moment a real fix arrives rather than being lost or
+invented. No network is needed for any of this; positioning is the device's own.
+
+Boundaries are noisy. Getting *in* means being inside the radius; getting *out* means being clear
+of it by a margin — at least a tenth of the radius, and as much as the fix's own stated error where
+that is larger. Without it a fix sitting on the edge reads as arriving and leaving over and over,
+and every one of those is a task being reset.
+
+Paired with a moment or a status, the place is a condition rather than the event: "every Monday,
+once I get to the office" is armed by Monday and fired by arriving. A rule whose *only* trigger is
+a place has nothing else that can set it off, and waits for a crossing and for nothing else.
+
+**Catching a crossing that happens while the app is not running.** A sweep only ever *samples*
+where the device is, so someone who leaves and comes back between two of them has crossed twice and
+a sweep comparing then with now sees neither. On Android
+[`LocationWatchService`](./composeApp/src/androidMain/kotlin/com/zhelenskiy/zheduler/zheduler/geo/LocationWatchService.kt)
+is a foreground service — the one thing the system will not kill — started only while a rule is
+waiting on a place and stopped again by the first sweep that finds none. It is restarted from
+`BOOT_COMPLETED`, which from Android 12 is the only moment a foreground service may be started from
+the background at all. Reading where the device is with nothing of the app on screen also needs the
+"all the time" location permission, which is a prompt of its own; the places screen says so and
+offers it. Elsewhere — the browser, the desktop — there is no such thing to keep alive, and a
+crossing made while the app was shut is found by comparison when it is next opened.
+
+### The map
+
+The map is drawn from OpenStreetMap's own raster tiles: a tile is a 256-pixel PNG named by zoom,
+column and row, so a map is a fetch and some arithmetic
+([`TileMath`](./composeApp/src/commonMain/kotlin/com/zhelenskiy/zheduler/zheduler/geo/TileMath.kt)
+holds the projection). Searching for a place by name goes to Nominatim, OpenStreetMap's own
+geocoder. Both are plain HTTPS and neither needs a key or an account.
+
+There is no map SDK behind it because no one library covers this app's targets. MapLibre Compose is
+the closest — it is the OpenStreetMap-native choice, and the most complete one for Kotlin
+Multiplatform — but it publishes no `wasmJs` artifact, and its desktop target needs Java 25 through
+the foreign-function API. Between them that is two of the six targets here left without a map, plus
+a CocoaPods dependency on iOS. Tiles and arithmetic run identically on all six.
+
+Both services come with a usage policy that is a condition of using them rather than advice. The
+app identifies itself in a `User-Agent`, asks for no more than four tiles at a time, remembers both
+the tiles it has and the ones that were not there, and holds the geocoder to one request a second
+on top of the search box's own debounce. Browsers refuse to let a page set `User-Agent` at all, so
+there the browser's own is what arrives — the ordinary case for a web app.
+
 ### Build and Run Android Application
 
 To build and run the development version of the Android app, use the run configuration from the run widget

@@ -8,7 +8,8 @@ import androidx.room3.RoomDatabaseConstructor
 /**
  * Version 1 was SQLDelight's, and the entities mirrored that schema exactly so Room could adopt
  * existing files untouched. Since then: version 2 drops three indexes that schema carried for
- * nothing, version 3 stores each task's estimate as a total in seconds, version 4 indexes it. Any
+ * nothing, version 3 stores each task's estimate as a total in seconds, version 4 indexes it,
+ * version 5 gives a task its own due-time sound, version 6 adds the address book of places. Any
  * further schema change
  * needs another version bump and a `Migration` added to `withZhedulerMigrations`, so every
  * platform's builder picks it up.
@@ -28,8 +29,9 @@ import androidx.room3.RoomDatabaseConstructor
         CustomViewModes::class,
         ActiveViewModes::class,
         SavedFilters::class,
+        SavedLocations::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @ConstructedBy(ZhedulerDatabaseConstructor::class)
