@@ -42,9 +42,9 @@ import kotlin.time.Instant
  * @param timeZone read afresh on every run rather than captured, because a long-lived process
  *   outlives the zone it started in — a laptop opened in another country, or simply the night the
  *   clocks change.
- * @param defaultSound what everything other than a reminder sounds like — a deadline arriving, a
- *   rule coming round, a status the app changed by itself. Read afresh for the same reason: the
- *   user can change it while the process is running. A reminder brings its own.
+ * @param appSounds what the app sounds like when nothing has asked for anything else. Read afresh
+ *   for the same reason as the zone: the user can change it while the process is running. A
+ *   reminder, and a task's own deadline, may each bring a choice that overrides it.
  * @param onSwept told when the next event falls, after every run. On a platform whose own
  *   scheduler is what wakes this process — Android's — this is what keeps that scheduler in step:
  *   without it the only thing that ever re-books the wake-up is a run of the wake-up itself, so a
@@ -56,7 +56,7 @@ class ScheduledEventEngine(
     private val store: ScheduleStore,
     private val clock: Clock = Clock.System,
     private val timeZone: () -> TimeZone = { TimeZone.currentSystemDefault() },
-    private val defaultSound: () -> NotificationSound = { NotificationSound.Default },
+    private val appSounds: () -> NotificationSettings = { NotificationSettings() },
     private val onSwept: (Instant?) -> Unit = {},
 ) {
 
@@ -284,7 +284,7 @@ class ScheduledEventEngine(
                         title = task.title,
                         body = "${reasonText(change.automaticChangeReason)} — now ${change.newStatus.displayName}",
                         at = change.timestamp,
-                        sound = defaultSound(),
+                        sound = appSounds().announcements,
                     ),
                 )
             )
@@ -538,22 +538,22 @@ class ScheduledEventEngine(
             is ScheduledEvent.Occurrence -> "Came round again"
         },
         at = event.at,
-        // A warning sounds the way it was asked to; everything else is the app speaking for itself.
+        // Each of the three asks the app only where nothing nearer to the user has an answer.
         sound = when (event) {
-            is ScheduledEvent.Reminder -> event.sound.orTheAppsOwn()
-            is ScheduledEvent.Deadline, is ScheduledEvent.Occurrence -> defaultSound()
+            is ScheduledEvent.Reminder -> event.sound.orTheAppsOwn(SoundRole.Reminders)
+            is ScheduledEvent.Deadline -> task.dueSound.orTheAppsOwn(SoundRole.DueTime)
+            is ScheduledEvent.Occurrence -> appSounds().announcements
         },
     )
 
     /**
-     * The sound to use for something that did not name one.
+     * The sound to use for something that named none of its own.
      *
-     * A reminder left alone is not a reminder that asked for the platform's ping — it is one whose
-     * user never went near the picker, and it should sound like the rest of the app. Where the app
-     * has not been given a sound either, the platform's own is what is left.
+     * A reminder left alone is not one that asked for the platform's ping — it is one whose user
+     * never opened the picker, and it should sound like the rest of the app does for its kind.
      */
-    private fun NotificationSound.orTheAppsOwn(): NotificationSound =
-        if (this == NotificationSound.Default) defaultSound() else this
+    private fun ChosenSound.orTheAppsOwn(role: SoundRole): ChosenSound =
+        if (isDeferred) appSounds().forRole(role) else this
 
     /** How a deadline stands against the clock: still ahead, right now, or already gone. */
     private fun standingOf(dueDate: Instant, now: Instant): String {

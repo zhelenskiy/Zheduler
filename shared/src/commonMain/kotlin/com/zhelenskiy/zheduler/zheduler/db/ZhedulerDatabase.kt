@@ -29,7 +29,7 @@ import androidx.room3.RoomDatabaseConstructor
         ActiveViewModes::class,
         SavedFilters::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @ConstructedBy(ZhedulerDatabaseConstructor::class)

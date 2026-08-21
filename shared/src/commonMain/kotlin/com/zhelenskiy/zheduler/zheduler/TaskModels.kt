@@ -2,6 +2,8 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
+import com.zhelenskiy.zheduler.zheduler.events.CustomSound
 import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
@@ -177,7 +179,19 @@ data class TaskConnection(
 data class TaskNotification(
     val timeBeforeDeadline: RecurrencePeriod,
     val sound: NotificationSound = NotificationSound.Default,
-)
+    val customSound: CustomSound? = null,
+) {
+    /**
+     * The two fields as the one thing they mean.
+     *
+     * They are stored apart so that a reminder written before there were sounds of the user's own
+     * still reads: it has a `sound` and no `customSound`, which is exactly what it meant.
+     */
+    val chosen: ChosenSound get() = ChosenSound(sound, customSound)
+
+    constructor(timeBeforeDeadline: RecurrencePeriod, chosen: ChosenSound) :
+        this(timeBeforeDeadline, chosen.builtin, chosen.custom)
+}
 
 /**
  * Reason for an automatic status change
@@ -261,7 +275,8 @@ data class Task(
     val spaceId: String, // ID of the space this task belongs to
     @Serializable(with = PersistentListSerializer::class)
     val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(), // Multiple recurrence rules
-    val autoUpdateStatusFromSubtasks: Boolean = false // Automatically update status based on subtasks
+    val autoUpdateStatusFromSubtasks: Boolean = false, // Automatically update status based on subtasks
+    val dueSound: ChosenSound = ChosenSound.Deferred, // What this task's deadline arriving sounds like
 ) {
     /**
      * Check if this task is recurring

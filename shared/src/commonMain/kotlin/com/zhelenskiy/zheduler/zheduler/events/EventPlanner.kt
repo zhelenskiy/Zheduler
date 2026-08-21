@@ -43,7 +43,7 @@ object EventPlanner {
                             at = at,
                             dueDate = due,
                             lead = notification.timeBeforeDeadline,
-                            sound = notification.sound,
+                            sound = notification.chosen,
                         )
                     )
                 }

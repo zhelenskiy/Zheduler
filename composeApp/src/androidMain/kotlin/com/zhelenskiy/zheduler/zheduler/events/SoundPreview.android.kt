@@ -38,7 +38,7 @@ private var timeLimit: Job? = null
  */
 private val LONG_ENOUGH = 5.seconds
 
-actual suspend fun previewNotificationSound(sound: NotificationSound) = turn.withLock {
+actual suspend fun previewNotificationSound(sound: ChosenSound) = turn.withLock {
     val context = androidApplication()
     withContext(Dispatchers.IO) {
         // Inside, so that a caller cancelled on the way in leaves the last preview as it was,

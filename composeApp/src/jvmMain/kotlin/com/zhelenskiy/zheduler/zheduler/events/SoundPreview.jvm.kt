@@ -15,15 +15,17 @@ import java.awt.Toolkit
 private var playing: Process? = null
 private val turn = Mutex()
 
-actual suspend fun previewNotificationSound(sound: NotificationSound) = turn.withLock {
+actual suspend fun previewNotificationSound(sound: ChosenSound) = turn.withLock {
+    val playable = sound.playable()
     playing?.destroy()
     playing = null
-    if (sound == NotificationSound.Silent) return@withLock
-    if (sound.isBundled) {
-        BundledTones.play(sound)
+    if (playable.builtin == NotificationSound.Silent && playable.custom == null) return@withLock
+    val own = ownToneBytes(playable)
+    if (own != null) {
+        OwnTones.play(own)
         return@withLock
     }
-    val command = previewCommand(sound)
+    val command = previewCommand(playable)
     if (command == null) {
         // The nearest this desktop has: AWT will not name what the balloon plays, and on a Linux
         // desktop with no bell configured this is nothing at all.
@@ -43,7 +45,7 @@ actual suspend fun previewNotificationSound(sound: NotificationSound) = turn.wit
  * macOS keeps the sounds Notification Centre uses as files anyone may play, so a preview is the
  * same sound the notification will make. Separate from playing it, so it can be read in a test.
  */
-internal fun previewCommand(sound: NotificationSound): List<String>? {
+internal fun previewCommand(sound: ChosenSound): List<String>? {
     if (!isMacOs) return null
     val name = macSoundName(sound) ?: return null
     return listOf("afplay", "/System/Library/Sounds/$name.aiff")

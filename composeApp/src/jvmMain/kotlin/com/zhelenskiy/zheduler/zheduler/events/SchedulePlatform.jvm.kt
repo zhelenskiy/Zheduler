@@ -56,9 +56,13 @@ internal val isMacOs: Boolean =
  */
 internal object MacNotificationCentre : EventNotifier {
     override suspend fun post(alert: TaskAlert) {
-        runScript(scriptFor(alert))
-        // A tone of the app's own is played by the app; Notification Centre only knows its own.
-        if (alert.sound.isBundled) BundledTones.play(alert.sound)
+        // Resolved first: a file the user has since deleted leaves nothing for either half to
+        // play, and the notification would arrive in silence.
+        val playable = alert.copy(sound = alert.sound.playable())
+        runScript(scriptFor(playable))
+        // A tone the app has the bytes of is played by the app; Notification Centre knows only
+        // the sounds it keeps itself.
+        OwnTones.play(playable.sound)
     }
 
     /** The AppleScript this alert becomes. Separate from running it, so it can be read in a test. */
@@ -88,11 +92,12 @@ internal object MacNotificationCentre : EventNotifier {
  * One of `/System/Library/Sounds`, or `null` for a sound macOS does not keep: silence, and the
  * tones the app brought with it.
  */
-internal fun macSoundName(sound: NotificationSound): String? = when (sound) {
-    NotificationSound.Default -> "Ping"
-    NotificationSound.Alarm -> "Sosumi"
-    NotificationSound.Silent, NotificationSound.Chime, NotificationSound.Bell -> null
-}
+internal fun macSoundName(sound: ChosenSound): String? =
+    if (sound.custom != null) null else when (sound.builtin) {
+        NotificationSound.Default, NotificationSound.System -> "Ping"
+        NotificationSound.Alarm -> "Sosumi"
+        NotificationSound.Silent, NotificationSound.Chime, NotificationSound.Bell -> null
+    }
 
 /**
  * The tray balloon, where the desktop has a tray at all.
@@ -109,14 +114,19 @@ internal object TrayBalloon : EventNotifier {
         // so a desktop that cannot show it leaves a trace of it instead.
         val tray = zhedulerTrayIcon ?: return println("Zheduler: ${alert.title} - ${alert.body}")
         tray.displayMessage(alert.title, alert.body, TrayIcon.MessageType.INFO)
-        if (alert.sound.isBundled) BundledTones.play(alert.sound)
+        OwnTones.play(alert.sound.playable())
     }
 }
 
-/** Plays the tones that travel with the app, straight through the Java sound system. */
-internal object BundledTones {
-    suspend fun play(sound: NotificationSound) {
-        val bytes = readBundledTone(sound) ?: return
+/**
+ * Plays the sounds the app has the bytes of — its own tones and the user's — through the Java
+ * sound system. A sound belonging to the desktop is left to the desktop and does nothing here.
+ */
+internal object OwnTones {
+    suspend fun play(sound: ChosenSound) = play(ownToneBytes(sound))
+
+    suspend fun play(bytes: ByteArray?) {
+        bytes ?: return
         withContext(Dispatchers.IO) {
             runCatching {
                 // From memory rather than a stream off disk: reading the format needs mark and

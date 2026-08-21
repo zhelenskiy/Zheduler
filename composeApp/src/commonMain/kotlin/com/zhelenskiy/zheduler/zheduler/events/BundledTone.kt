@@ -16,6 +16,15 @@ suspend fun readBundledTone(sound: NotificationSound): ByteArray? {
     return runCatching { Res.readBytes("files/sounds/$name.wav") }.getOrNull()
 }
 
+/**
+ * The bytes of a sound the app plays for itself, or `null` where the platform plays it.
+ *
+ * A sound of the user's own first — that is what they chose — and what it was chosen alongside if
+ * the copy has since gone missing, which for a file the user picked means the platform's own.
+ */
+suspend fun ownToneBytes(sound: ChosenSound): ByteArray? =
+    sound.custom?.let { SoundLibrary.read(it.id) } ?: readBundledTone(sound.builtin)
+
 /** Where the browser can fetch [sound] from, or `null` for a sound the platform owns. */
 @OptIn(ExperimentalResourceApi::class)
 fun bundledToneUri(sound: NotificationSound): String? {

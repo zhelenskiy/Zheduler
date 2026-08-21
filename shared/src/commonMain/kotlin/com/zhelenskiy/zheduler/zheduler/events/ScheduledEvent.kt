@@ -52,7 +52,7 @@ sealed interface ScheduledEvent {
         override val at: Instant,
         val dueDate: Instant,
         val lead: RecurrencePeriod,
-        val sound: NotificationSound,
+        val sound: ChosenSound,
     ) : ScheduledEvent {
         override val key: String
             get() = "reminder:$taskId:${dueDate.toEpochMilliseconds()}:${lead.toBriefString()}"

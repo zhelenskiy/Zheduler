@@ -25,6 +25,21 @@
         </activity>
 
         <!--
+            How the system reaches a sound the user added. The files sit in the app's own storage,
+            which the process that plays a notification cannot read; it is handed a content URI
+            from here instead, one grant at a time.
+        -->
+        <provider
+                android:name="androidx.core.content.FileProvider"
+                android:authorities="${applicationId}.sounds"
+                android:exported="false"
+                android:grantUriPermissions="true">
+            <meta-data
+                    android:name="android.support.FILE_PROVIDER_PATHS"
+                    android:resource="@xml/sound_paths"/>
+        </provider>
+
+        <!--
             Not exported: every action below is a protected system broadcast, so nothing else can
             send them and nothing else needs to reach this.
         -->

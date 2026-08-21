@@ -27,13 +27,12 @@ actual fun createEventNotifier(): EventNotifier {
         // A browser notification has no sound of its own to choose, so a tone the user picked is
         // played by the page. Only the app's own tones can be: the platform sounds are the
         // browser's, and it does not lend them out.
-        val tone = if (alert.sound.isBundled) bundledToneUri(alert.sound).orEmpty() else ""
         showNotification(
             title = alert.title,
             body = alert.body,
             tag = alert.id,
-            tone = tone,
-            silentWithoutTone = alert.sound == NotificationSound.Silent,
+            tone = toneUri(alert.sound).orEmpty(),
+            silentWithoutTone = alert.sound.builtin == NotificationSound.Silent,
         )
     }
 }

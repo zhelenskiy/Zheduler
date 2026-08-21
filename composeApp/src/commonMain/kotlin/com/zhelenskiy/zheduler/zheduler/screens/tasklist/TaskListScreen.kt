@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist
 
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -227,6 +228,7 @@ private fun TaskListTopAppBar(
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
             }
+            NotificationSoundsButton()
             ThemeMenuButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,

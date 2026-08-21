@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter
 
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import kotlin.time.ExperimentalTime
 
 import androidx.compose.animation.AnimatedContent
@@ -157,6 +158,7 @@ private fun SavedFilterManagementTopAppBar(
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
             }
+            NotificationSoundsButton()
             ThemeMenuButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,

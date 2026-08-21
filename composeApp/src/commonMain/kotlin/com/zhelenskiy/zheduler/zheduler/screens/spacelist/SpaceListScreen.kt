@@ -1,5 +1,6 @@
 package com.zhelenskiy.zheduler.zheduler.screens.spacelist
 
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -282,6 +283,7 @@ private fun SpaceListTopAppBar(
             IconButton(onClick = onImport) {
                 Icon(Icons.Default.Upload, contentDescription = "Import Space")
             }
+            NotificationSoundsButton()
             ThemeMenuButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,

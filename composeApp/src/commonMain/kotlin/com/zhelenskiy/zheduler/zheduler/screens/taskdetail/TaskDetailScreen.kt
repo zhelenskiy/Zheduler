@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.taskdetail
 
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -88,6 +89,7 @@ private fun TaskDetailTopAppBar(
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
             }
+            NotificationSoundsButton()
             ThemeMenuButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,

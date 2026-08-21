@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one directory a custom notification sound is copied into. Everything else in the app's
+  storage stays unreachable: this exists so the system process that plays a channel's sound can
+  read the file, and for nothing else.
+-->
+<paths>
+    <files-path name="sounds" path="sounds/" />
+</paths>

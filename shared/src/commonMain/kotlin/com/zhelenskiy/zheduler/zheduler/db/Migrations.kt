@@ -121,6 +121,18 @@ internal val IndexEstimatedTimeSeconds = object : Migration(3, 4) {
 }
 
 /**
+ * Adds the column holding what a task's own deadline sounds like.
+ *
+ * Nullable and left null, which is how a task says it has no sound of its own and takes the app's
+ * — so every task that existed before the column keeps sounding exactly as it did.
+ */
+internal val AddDueSound = object : Migration(4, 5) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE `tasks` ADD COLUMN `dueSoundJson` TEXT")
+    }
+}
+
+/**
  * Every migration the app ships, applied wherever a [ZhedulerDatabase] is opened.
  *
  * Databases in the field were created by SQLDelight at version 1 and carry no `room_master_table`;
@@ -128,4 +140,4 @@ internal val IndexEstimatedTimeSeconds = object : Migration(3, 4) {
  * Version 1 is not one schema but several — see [AdoptLegacySchema].
  */
 internal fun RoomDatabase.Builder<ZhedulerDatabase>.withZhedulerMigrations(): RoomDatabase.Builder<ZhedulerDatabase> =
-    addMigrations(AdoptLegacySchema, AddEstimatedTimeSeconds, IndexEstimatedTimeSeconds)
+    addMigrations(AdoptLegacySchema, AddEstimatedTimeSeconds, IndexEstimatedTimeSeconds, AddDueSound)

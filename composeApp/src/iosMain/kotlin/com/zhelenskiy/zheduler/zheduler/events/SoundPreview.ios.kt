@@ -21,11 +21,11 @@ private var player: AVAudioPlayer? = null
 private val turn = Mutex()
 
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-actual suspend fun previewNotificationSound(sound: NotificationSound) = turn.withLock {
+actual suspend fun previewNotificationSound(sound: ChosenSound) = turn.withLock {
     runCatching { player?.stop() }
     player = null
-    if (sound == NotificationSound.Silent) return@withLock
-    val bytes = readBundledTone(sound)
+    if (sound.builtin == NotificationSound.Silent && sound.custom == null) return@withLock
+    val bytes = ownToneBytes(sound)
     if (bytes == null) {
         // iOS lends out none of the sounds it announces notifications with, so a preview of one is
         // the system's own alert tone: the same idea, and since iOS 17 not the same sound.

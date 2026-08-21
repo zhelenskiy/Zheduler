@@ -82,6 +82,8 @@ data class Tasks(
      * unreadable and impossible to index.
      */
     val estimatedTimeSeconds: Long?,
+    /** What this task's deadline arriving sounds like; null where it sounds like the app does. */
+    val dueSoundJson: String?,
 )
 
 /** Normalized counterpart of [Tasks.tagsJson], used for efficient tag lookups. */

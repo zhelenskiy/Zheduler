@@ -16,4 +16,4 @@ package com.zhelenskiy.zheduler.zheduler.events
  *
  * Returns as soon as the sound is under way; nothing waits for it to end.
  */
-expect suspend fun previewNotificationSound(sound: NotificationSound)
+expect suspend fun previewNotificationSound(sound: ChosenSound)

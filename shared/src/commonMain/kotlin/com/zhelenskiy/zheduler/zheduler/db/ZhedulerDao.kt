@@ -95,10 +95,10 @@ interface ZhedulerDao {
         """
         INSERT INTO tasks(id, title, description, status, dueDate, priority, estimatedTimeJson,
                            tagsJson, notificationsJson, spaceId, recurrenceRulesJson, autoUpdateStatusFromSubtasks,
-                           isRecurring, isBlocked, estimatedTimeSeconds)
+                           isRecurring, isBlocked, estimatedTimeSeconds, dueSoundJson)
         VALUES (:id, :title, :description, :status, :dueDate, :priority, :estimatedTimeJson,
                 :tagsJson, :notificationsJson, :spaceId, :recurrenceRulesJson, :autoUpdateStatusFromSubtasks,
-                :isRecurring, :isBlocked, :estimatedTimeSeconds)
+                :isRecurring, :isBlocked, :estimatedTimeSeconds, :dueSoundJson)
         """
     )
     suspend fun insertTask(
@@ -117,6 +117,7 @@ interface ZhedulerDao {
         isRecurring: Long,
         isBlocked: Long,
         estimatedTimeSeconds: Long?,
+        dueSoundJson: String?,
     )
 
     @Query(
@@ -135,7 +136,8 @@ interface ZhedulerDao {
             autoUpdateStatusFromSubtasks = :autoUpdateStatusFromSubtasks,
             isRecurring = :isRecurring,
             isBlocked = :isBlocked,
-            estimatedTimeSeconds = :estimatedTimeSeconds
+            estimatedTimeSeconds = :estimatedTimeSeconds,
+            dueSoundJson = :dueSoundJson
         WHERE id = :id
         """
     )
@@ -154,6 +156,7 @@ interface ZhedulerDao {
         isRecurring: Long,
         isBlocked: Long,
         estimatedTimeSeconds: Long?,
+        dueSoundJson: String?,
         id: String,
     )
 

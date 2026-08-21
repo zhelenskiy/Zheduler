@@ -50,7 +50,10 @@ class AndroidEventNotifier(private val context: Context) : EventNotifier {
     private val manager = context.getSystemService(NotificationManager::class.java)
 
     override suspend fun post(alert: TaskAlert) {
-        val channel = channelFor(alert.sound)
+        // Resolved before the channel is chosen, or a sound the user has since removed would make
+        // a channel of its own, named after a file that is gone and playing something else — and
+        // a channel is never reused, so it would sit in the system's settings for good.
+        val channel = channelFor(alert.sound.playable())
         val notification = Notification.Builder(context, channel)
             .setContentTitle(alert.title)
             .setContentText(alert.body)
@@ -73,31 +76,36 @@ class AndroidEventNotifier(private val context: Context) : EventNotifier {
      * named for the sound rather than numbered, so the notification settings screen reads as a
      * list of the app's own vocabulary.
      */
-    private fun channelFor(sound: NotificationSound): String {
+    private fun channelFor(sound: ChosenSound): String {
         retireTheOldChannel()
         val id = channelId(sound)
         manager.createNotificationChannel(channelWith(sound, importanceFor(sound)))
         return id
     }
 
-    private fun channelWith(sound: NotificationSound, importance: Int) =
+    private fun channelWith(sound: ChosenSound, importance: Int) =
         NotificationChannel(channelId(sound), channelName(sound), importance).apply {
             setSound(uriFor(context, sound), audioAttributesFor(sound))
         }
 
-    private fun channelId(sound: NotificationSound) = "$CHANNEL_PREFIX.${sound.name.lowercase()}"
+    private fun channelId(sound: ChosenSound) =
+        sound.custom?.let { customChannelId(it.id) }
+            ?: "$CHANNEL_PREFIX.${sound.builtin.name.lowercase()}"
 
-    private fun channelName(sound: NotificationSound) = when (sound) {
-        NotificationSound.Default -> "Task reminders"
-        NotificationSound.Silent -> "Task reminders (silent)"
-        NotificationSound.Alarm -> "Task reminders (alarm)"
-        NotificationSound.Chime -> "Task reminders (chime)"
-        NotificationSound.Bell -> "Task reminders (bell)"
+    private fun channelName(sound: ChosenSound): String {
+        sound.custom?.let { return "Task reminders (${it.label})" }
+        return when (sound.builtin) {
+            NotificationSound.Default, NotificationSound.System -> "Task reminders (system sound)"
+            NotificationSound.Silent -> "Task reminders (silent)"
+            NotificationSound.Alarm -> "Task reminders (alarm)"
+            NotificationSound.Chime -> "Task reminders (chime)"
+            NotificationSound.Bell -> "Task reminders (bell)"
+        }
     }
 
     /** An alarm is meant to interrupt; the rest are ordinary notifications. */
-    private fun importanceFor(sound: NotificationSound) =
-        if (sound == NotificationSound.Alarm) NotificationManager.IMPORTANCE_HIGH
+    private fun importanceFor(sound: ChosenSound) =
+        if (sound.builtin == NotificationSound.Alarm) NotificationManager.IMPORTANCE_HIGH
         else NotificationManager.IMPORTANCE_DEFAULT
 
     /**
@@ -114,9 +122,13 @@ class AndroidEventNotifier(private val context: Context) : EventNotifier {
      * the user's to lift on each, and a channel made later is nobody's business but its own.
      */
     private fun retireTheOldChannel() {
+        // A build between the two made one of these and never posts to it now.
+        manager.deleteNotificationChannel("$CHANNEL_PREFIX.default")
         val old = manager.getNotificationChannel(CHANNEL_PREFIX) ?: return
         val blocked = old.importance == NotificationManager.IMPORTANCE_NONE
-        for (sound in NotificationSound.entries) {
+        // Not Default: it means "whatever the app is set to", which the engine has already
+        // resolved by the time anything is posted, so a channel for it would never be used.
+        for (sound in NotificationSound.appWide.map(ChosenSound::of)) {
             val importance =
                 if (blocked) NotificationManager.IMPORTANCE_NONE else importanceFor(sound)
             manager.createNotificationChannel(channelWith(sound, importance))
@@ -129,29 +141,42 @@ class AndroidEventNotifier(private val context: Context) : EventNotifier {
     }
 }
 
-/** The sound itself, as something that can be played: `null` for silence. */
-internal fun uriFor(context: Context, sound: NotificationSound): Uri? = when (sound) {
-    NotificationSound.Silent -> null
-    NotificationSound.Default -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-    NotificationSound.Alarm -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-    // From `androidApp/src/main/res/raw`, which is a second copy of the tones in
-    // `composeApp/src/commonMain/composeResources/files/sounds`: the system process that plays a
-    // channel's sound cannot read another module's assets, so Android needs its own. Change one
-    // and change the other.
-    NotificationSound.Chime, NotificationSound.Bell ->
-        Uri.parse("android.resource://${context.packageName}/raw/${sound.bundledName}")
+/** The channel a sound of the user's own is posted to, which goes when the sound does. */
+internal fun customChannelId(id: String) = "zheduler.tasks.custom.${id.lowercase()}"
+
+/**
+ * The sound itself, as something that can be played: `null` for silence.
+ *
+ * A sound the user added is looked for first. If its copy has gone the choice falls back on what
+ * it was stored alongside, which for an added sound is the platform's own — a wrong sound being
+ * better than a reminder nobody hears.
+ */
+internal fun uriFor(context: Context, sound: ChosenSound): Uri? {
+    sound.custom?.let { custom -> customSoundUri(context, custom.id)?.let { return it } }
+    return when (sound.builtin) {
+        NotificationSound.Silent -> null
+        NotificationSound.Default, NotificationSound.System ->
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        NotificationSound.Alarm -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        // From `androidApp/src/main/res/raw`, which is a second copy of the tones in
+        // `composeApp/src/commonMain/composeResources/files/sounds`: the system process that plays
+        // a channel's sound cannot read another module's assets, so Android needs its own. Change
+        // one and change the other.
+        NotificationSound.Chime, NotificationSound.Bell ->
+            Uri.parse("android.resource://${context.packageName}/raw/${sound.builtin.bundledName}")
+    }
 }
 
 /**
  * An alarm is routed as one, so it is carried by the alarm volume rather than the notification one
  * and is as loud as the user has alarms set to be.
  */
-internal fun audioAttributesFor(sound: NotificationSound): AudioAttributes? =
-    if (sound == NotificationSound.Silent) null
+internal fun audioAttributesFor(sound: ChosenSound): AudioAttributes? =
+    if (sound.builtin == NotificationSound.Silent && sound.custom == null) null
     else AudioAttributes.Builder()
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .setUsage(
-            if (sound == NotificationSound.Alarm) AudioAttributes.USAGE_ALARM
+            if (sound.builtin == NotificationSound.Alarm) AudioAttributes.USAGE_ALARM
             else AudioAttributes.USAGE_NOTIFICATION
         )
         .build()

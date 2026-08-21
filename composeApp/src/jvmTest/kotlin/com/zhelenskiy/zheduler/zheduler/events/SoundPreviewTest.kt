@@ -21,9 +21,9 @@ class SoundPreviewTest {
     fun theSoundPreviewedIsTheSoundNotified() {
         if (!isMacOs) return
         for (sound in NotificationSound.entries) {
-            val notified = macSoundName(sound) ?: continue
+            val notified = macSoundName(ChosenSound.of(sound)) ?: continue
             val previewed = assertNotNull(
-                previewCommand(sound),
+                previewCommand(ChosenSound.of(sound)),
                 "${sound.name} is notified as $notified but nothing plays it while choosing",
             )
             assertTrue(
@@ -37,8 +37,8 @@ class SoundPreviewTest {
     fun theSoundsThePlatformOwnsAreAllAskedFor() {
         if (!isMacOs) return
         // Otherwise every check below is satisfied by a mapping that names nothing at all.
-        for (sound in listOf(NotificationSound.Default, NotificationSound.Alarm)) {
-            assertNotNull(previewCommand(sound), "${sound.name} is the platform's, and goes unplayed")
+        for (sound in listOf(NotificationSound.System, NotificationSound.Alarm)) {
+            assertNotNull(previewCommand(ChosenSound.of(sound)), "${sound.name} is the platform's, and goes unplayed")
         }
     }
 
@@ -46,7 +46,7 @@ class SoundPreviewTest {
     fun everySystemToneThePreviewNamesIsOnThisMachine() {
         if (!isMacOs) return
         for (sound in NotificationSound.entries) {
-            val file = previewCommand(sound)?.last() ?: continue
+            val file = previewCommand(ChosenSound.of(sound))?.last() ?: continue
             assertTrue(File(file).isFile, "$file is not there, so ${sound.name} previews as silence")
         }
     }
@@ -57,7 +57,7 @@ class SoundPreviewTest {
         // without ever reaching the distinction it is about.
         if (!isMacOs) return
         for (sound in NotificationSound.entries.filter { it.isBundled } + NotificationSound.Silent) {
-            assertNull(previewCommand(sound), "${sound.name} is not the system's to play")
+            assertNull(previewCommand(ChosenSound.of(sound)), "${sound.name} is not the system's to play")
         }
     }
 }

@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.viewmodels
 
+import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import androidx.lifecycle.SavedStateHandle
 import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.*
@@ -46,7 +47,8 @@ sealed interface NewTaskIntent : MVIIntent {
         val connections: PersistentSet<TaskConnection>,
         val notifications: PersistentList<TaskNotification>,
         val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
-        val autoUpdateStatusFromSubtasks: Boolean
+        val autoUpdateStatusFromSubtasks: Boolean,
+        val dueSound: ChosenSound,
     ) : NewTaskIntent
 
     // Search intents
@@ -133,7 +135,8 @@ class NewTaskContainer(
             connections = intent.connections,
             notifications = intent.notifications,
             recurrenceRules = intent.recurrenceRules,
-            autoUpdateStatusFromSubtasks = intent.autoUpdateStatusFromSubtasks
+            autoUpdateStatusFromSubtasks = intent.autoUpdateStatusFromSubtasks,
+            dueSound = intent.dueSound,
         )
         if (task != null) {
             formPersistence.clear()

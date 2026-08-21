@@ -20,8 +20,8 @@ import kotlin.time.ExperimentalTime
  */
 class NotificationSoundTest {
 
-    private fun alert(sound: NotificationSound) = TaskAlert(
-        id = "test:sound:${sound.name}",
+    private fun alert(sound: ChosenSound) = TaskAlert(
+        id = "test:sound:${sound.builtin.name}",
         taskId = "TEST-1",
         spaceId = "space",
         title = "Zheduler test",
@@ -82,11 +82,11 @@ class NotificationSoundTest {
     fun macOsIsAskedForTheSoundTheAlertChose() {
         // What the notifier does with a sound, rather than merely that it survived being handed
         // one: posting swallows every failure, so a test that only posts cannot fail.
-        fun scriptFor(sound: NotificationSound) = MacNotificationCentre.scriptFor(alert(sound))
+        fun scriptFor(sound: NotificationSound) = MacNotificationCentre.scriptFor(alert(ChosenSound.of(sound)))
 
         assertTrue(
-            scriptFor(NotificationSound.Default).endsWith("sound name \"Ping\""),
-            "the default has to name a sound: Notification Centre is silent unless one is named",
+            scriptFor(NotificationSound.System).endsWith("sound name \"Ping\""),
+            "the system sound has to name one: Notification Centre is silent unless one is named",
         )
         assertTrue(
             scriptFor(NotificationSound.Alarm).endsWith("sound name \"Sosumi\""),
@@ -103,7 +103,7 @@ class NotificationSoundTest {
     @Test
     fun theUsersTextCannotEscapeTheScript() {
         val script = MacNotificationCentre.scriptFor(
-            alert(NotificationSound.Default).copy(title = """a " quote""", body = """a \ slash""")
+            alert(ChosenSound.of(NotificationSound.System)).copy(title = """a " quote""", body = """a \ slash""")
         )
 
         // The exact text, because escaping the quote before the backslash also puts both characters

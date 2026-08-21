@@ -17,7 +17,7 @@ import platform.UserNotifications.UNNotificationRequest
 import platform.UserNotifications.UNNotificationSound
 import platform.UserNotifications.UNUserNotificationCenter
 
-private val soundsDirectory get() = "${NSHomeDirectory()}/Library/Sounds"
+internal val soundsDirectory get() = "${NSHomeDirectory()}/Library/Sounds"
 
 actual fun createScheduleStore(): ScheduleStore {
     val dataDir = "${NSHomeDirectory()}/Library/Application Support/Zheduler"
@@ -64,11 +64,21 @@ actual fun createEventNotifier(): EventNotifier {
  * it is asked for. Naming a file that is not there gets the default sound, not silence, so a
  * failed copy is merely the wrong tone.
  */
+private suspend fun soundFor(sound: ChosenSound): UNNotificationSound? {
+    // A sound the user added is already in `Library/Sounds` under its own name — that is where it
+    // was put when it was added, because it is the only place iOS looks.
+    sound.custom?.let { custom ->
+        if (SoundLibrary.has(custom.id)) return UNNotificationSound.soundNamed(custom.id)
+    }
+    return soundFor(sound.builtin)
+}
+
 private suspend fun soundFor(sound: NotificationSound): UNNotificationSound? = when (sound) {
     NotificationSound.Silent -> null
     // iOS offers an app the default notification sound or one of its own files, and nothing that
     // belongs to the system — there is no alarm tone to ask for, so an alarm takes the default.
-    NotificationSound.Default, NotificationSound.Alarm -> UNNotificationSound.defaultSound
+    NotificationSound.Default, NotificationSound.System, NotificationSound.Alarm ->
+        UNNotificationSound.defaultSound
     NotificationSound.Chime, NotificationSound.Bell -> {
         val file = "${sound.bundledName}.wav"
         if (installTone(sound, file)) UNNotificationSound.soundNamed(file) else UNNotificationSound.defaultSound
@@ -96,15 +106,19 @@ private suspend fun installTone(sound: NotificationSound, file: String): Boolean
         installed[sound] = true
         return@withLock true
     }
-    val written = runCatching {
-        val directory = Path(soundsDirectory)
-        if (!SystemFileSystem.exists(directory)) SystemFileSystem.createDirectories(directory)
-        // Written beside the target and moved into place: iOS reads the file when it comes to play
-        // the notification, and a rename has either happened or not.
-        val staging = Path("$soundsDirectory/$file.part")
-        SystemFileSystem.sink(staging).buffered().use { it.write(bytes) }
-        SystemFileSystem.atomicMove(staging, target)
-    }.isSuccess
+    // Written beside the target and moved into place: iOS reads the file when it comes to play the
+    // notification, and a rename has either happened or not.
+    val staging = Path("$soundsDirectory/$file.part")
+    val written = try {
+        runCatching {
+            val directory = Path(soundsDirectory)
+            if (!SystemFileSystem.exists(directory)) SystemFileSystem.createDirectories(directory)
+            SystemFileSystem.sink(staging).buffered().use { it.write(bytes) }
+            SystemFileSystem.atomicMove(staging, target)
+        }.isSuccess
+    } finally {
+        runCatching { SystemFileSystem.delete(staging, mustExist = false) }
+    }
     if (written) installed[sound] = true
     written
 }

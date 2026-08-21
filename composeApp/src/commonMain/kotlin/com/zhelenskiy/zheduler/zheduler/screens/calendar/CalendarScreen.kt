@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.calendar
 
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -215,6 +216,7 @@ fun CalendarScreen(
                     IconButton(onClick = onNavigateToSpaceList) {
                         Icon(Icons.Default.Home, contentDescription = "Spaces")
                     }
+                    NotificationSoundsButton()
                     ThemeMenuButton(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,

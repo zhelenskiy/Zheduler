@@ -36,7 +36,7 @@ class StoredEnumNamesTest {
     fun `notification sounds keep the names written into every task's notifications`() {
         assertKeeps(
             NotificationSound.entries.mapTo(mutableSetOf()) { it.name },
-            listOf("Default", "Silent", "Alarm", "Chime", "Bell"),
+            listOf("Default", "System", "Silent", "Alarm", "Chime", "Bell"),
             "NotificationSound",
         )
     }

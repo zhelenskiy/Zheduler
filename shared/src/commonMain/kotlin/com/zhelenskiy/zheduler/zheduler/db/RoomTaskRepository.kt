@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.db
 
+import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import androidx.room3.withWriteTransaction
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.paging.Page
@@ -537,7 +538,8 @@ class RoomTaskRepository(
         notifications = notificationsJson.toNotificationList(),
         spaceId = spaceId,
         recurrenceRules = recurrenceRulesJson.toRecurrenceRuleList(),
-        autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks != 0L
+        autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks != 0L,
+        dueSound = dueSoundJson.toChosenSound(),
     )
 
     /**
@@ -668,13 +670,15 @@ class RoomTaskRepository(
         notifications: PersistentList<TaskNotification>,
         customId: String?,
         recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
-        autoUpdateStatusFromSubtasks: Boolean
+        autoUpdateStatusFromSubtasks: Boolean,
+        dueSound: ChosenSound,
     ): Task? = mutex.withLock {
         database.withWriteTransaction {
             if (dao.getSpaceById(spaceId) == null) return@withWriteTransaction null
             addTaskUnsafe(
                 spaceId, title, description, status, dueDate, priority, estimatedTime,
-                tags, connections, notifications, customId, recurrenceRules, autoUpdateStatusFromSubtasks
+                tags, connections, notifications, customId, recurrenceRules,
+                autoUpdateStatusFromSubtasks, dueSound
             )
         }.alsoNotifyIf { it != null }
     }
@@ -695,6 +699,7 @@ class RoomTaskRepository(
             isRecurring = if (task.recurrenceRules.isNotEmpty()) 1 else 0,
             isBlocked = if (task.status is TaskStatus.Blocked) 1 else 0,
             estimatedTimeSeconds = task.estimatedTime?.toApproximateSeconds(),
+            dueSoundJson = task.dueSound.toJsonOrNull(),
             id = task.id
         )
     }
@@ -1131,6 +1136,7 @@ class RoomTaskRepository(
                     customId = newTaskId,
                     recurrenceRules = task.recurrenceRules,
                     autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks,
+                    dueSound = task.dueSound,
                     // Its own creation entry would date the task to the moment of the import.
                     recordInitialStatusChange = timeline.isEmpty(),
                     normalizeBlocked = false,
@@ -1204,6 +1210,7 @@ class RoomTaskRepository(
         customId: String?,
         recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
         autoUpdateStatusFromSubtasks: Boolean,
+        dueSound: ChosenSound,
         /** Import writes the task's real history instead; see [importSpaceFromJson]. */
         recordInitialStatusChange: Boolean = true,
         /** Import passes false: blockers may not exist yet. See unblockTasksWithOnlyResolvedBlockers. */
@@ -1234,7 +1241,8 @@ class RoomTaskRepository(
             notifications = notifications,
             spaceId = spaceId,
             recurrenceRules = recurrenceRules,
-            autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
+            autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks,
+            dueSound = dueSound,
         )
 
         dao.insertTask(
@@ -1253,6 +1261,7 @@ class RoomTaskRepository(
             isRecurring = if (recurrenceRules.isNotEmpty()) 1 else 0,
             isBlocked = if (status is TaskStatus.Blocked) 1 else 0,
             estimatedTimeSeconds = estimatedTime?.toApproximateSeconds(),
+            dueSoundJson = dueSound.toJsonOrNull(),
         )
 
         // As in updateTask. A task being created has no id for the picker to reason about, so

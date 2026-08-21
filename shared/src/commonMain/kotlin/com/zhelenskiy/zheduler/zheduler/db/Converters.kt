@@ -3,6 +3,7 @@
 package com.zhelenskiy.zheduler.zheduler.db
 
 import com.zhelenskiy.zheduler.zheduler.*
+import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentListOf
@@ -72,6 +73,20 @@ fun Set<String>.toJson(): String = dbJson.encodeToString(this)
  * Convert JSON string to PersistentSet<String> (tags)
  */
 fun String.toStringSet(): PersistentSet<String> = dbJson.decodeFromString<Set<String>>(this).toPersistentSet()
+
+/**
+ * A task's own choice for its deadline, or `null` where it has none of its own.
+ *
+ * Absent rather than written out when the task defers to the app: every task predating the column
+ * reads back as deferring, which is what those tasks meant.
+ */
+fun ChosenSound.toJsonOrNull(): String? =
+    if (isDeferred) null else dbJson.encodeToString(this)
+
+/** The stored choice, or deferral — including where what was stored no longer decodes. */
+fun String?.toChosenSound(): ChosenSound =
+    this?.let { runCatching { dbJson.decodeFromString<ChosenSound>(it) }.getOrNull() }
+        ?: ChosenSound.Deferred
 
 /**
  * Convert List<TaskNotification> to JSON string for storage

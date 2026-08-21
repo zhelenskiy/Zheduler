@@ -27,6 +27,14 @@ configurations.matching { it.name.startsWith("jsTest") }.configureEach {
     exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-browser")
 }
 
+// The sounds a test adds go under `build`, not into the copy of the app the developer is running:
+// the library is a real directory, and a run that fails partway would otherwise leave its files in
+// it. Set here rather than in a test, because the directory is resolved at first use and any test
+// class may be the one that gets there first.
+tasks.withType<Test>().configureEach {
+    systemProperty("zheduler.data.dir", layout.buildDirectory.dir("test-sounds").get().asFile.path)
+}
+
 kotlin {
     // A `cascadeMain` source set shared by every target cascade-editor publishes for.
     // Extending the template rather than calling dependsOn() by hand is what keeps the

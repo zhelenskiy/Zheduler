@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
 
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -69,6 +70,7 @@ fun ViewModeManagementScreen(
                     IconButton(onClick = onNavigateToSpaceList) {
                         Icon(Icons.Default.Home, contentDescription = "Spaces")
                     }
+                    NotificationSoundsButton()
                     ThemeMenuButton(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,

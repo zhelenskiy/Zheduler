@@ -140,7 +140,7 @@ interface AppGraph {
             notifier = notifier,
             store = store,
             clock = clock,
-            defaultSound = { preferences.defaultSound.value },
+            appSounds = { preferences.settings.value },
             onSwept = ::reschedulePlatformSweep,
         )
 

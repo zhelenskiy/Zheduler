@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
@@ -303,7 +304,8 @@ interface TaskRepository {
         notifications: PersistentList<TaskNotification> = persistentListOf(),
         customId: String? = null,
         recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(),
-        autoUpdateStatusFromSubtasks: Boolean = false
+        autoUpdateStatusFromSubtasks: Boolean = false,
+        dueSound: ChosenSound = ChosenSound.Deferred,
     ): Task?
 
     /**

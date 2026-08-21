@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler
 
+import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import com.zhelenskiy.zheduler.zheduler.paging.toPage
 import kotlinx.collections.immutable.PersistentList
@@ -348,7 +349,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         notifications: PersistentList<TaskNotification>,
         customId: String?,
         recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
-        autoUpdateStatusFromSubtasks: Boolean
+        autoUpdateStatusFromSubtasks: Boolean,
+        dueSound: ChosenSound,
     ): Task? = mutex.withLock {
         if (!spaces.containsKey(spaceId)) return@withLock null
         allOrNothing {
@@ -379,7 +381,8 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             notifications = notifications,
             spaceId = spaceId,
             recurrenceRules = recurrenceRules,
-            autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
+            autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks,
+            dueSound = dueSound,
         )
         tasks[task.id] = task
 

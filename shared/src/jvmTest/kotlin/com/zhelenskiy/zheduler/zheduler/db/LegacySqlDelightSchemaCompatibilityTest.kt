@@ -83,7 +83,7 @@ class LegacySqlDelightSchemaCompatibilityTest {
             assertEquals(1L, hasMasterTable, "Room should have adopted the database")
 
             val version = connection.prepare("PRAGMA user_version").use { it.step(); it.getLong(0) }
-            assertEquals(4L, version, "the adopted database should have been migrated")
+            assertEquals(5L, version, "the adopted database should have been migrated")
 
             // What the migration is for: the legacy file carried these, the current schema does not.
             listOf("idx_tasks_id_search", "idx_tasks_estimatedTimeJson", "idx_tasks_notificationsJson")

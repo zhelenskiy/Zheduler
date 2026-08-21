@@ -23,15 +23,9 @@ import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import com.zhelenskiy.zheduler.zheduler.components.common.displayName
-import com.zhelenskiy.zheduler.zheduler.events.LocalNotificationPreferences
-import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
-import com.zhelenskiy.zheduler.zheduler.events.previewNotificationSound
-import com.zhelenskiy.zheduler.zheduler.events.rememberDefaultNotificationSound
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -282,13 +276,6 @@ fun ThemeMenuButton(
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var soundMenuOpen by remember { mutableStateOf(false) }
-
-    // Read here rather than passed in: every screen's app bar shows this menu, and none of them
-    // has anything else to do with what a notification sounds like.
-    val preferences = LocalNotificationPreferences.current
-    val notificationSound by rememberDefaultNotificationSound()
-    val scope = rememberCoroutineScope()
 
     IconButton(onClick = { expanded = true }) {
         Icon(
@@ -347,31 +334,5 @@ fun ThemeMenuButton(
             )
         }
 
-        if (preferences != null) {
-            HorizontalDivider()
-
-            // The app's own voice: what a deadline arriving, a rule coming round or a status the
-            // app changed by itself sounds like. A reminder the user set carries its own choice.
-            DropdownMenuItem(
-                text = { Text("Notification sound: ${notificationSound.displayName}") },
-                leadingIcon = { Icon(Icons.Default.Notifications, contentDescription = null) },
-                onClick = { soundMenuOpen = true },
-            )
-            DropdownMenu(expanded = soundMenuOpen, onDismissRequest = { soundMenuOpen = false }) {
-                NotificationSound.entries.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.displayName) },
-                        onClick = {
-                            // Two of them, so the sound does not wait for the choice to reach
-                            // disk before it starts.
-                            scope.launch { preferences.setDefaultSound(option) }
-                            scope.launch { previewNotificationSound(option) }
-                            soundMenuOpen = false
-                            expanded = false
-                        },
-                    )
-                }
-            }
-        }
     }
 }

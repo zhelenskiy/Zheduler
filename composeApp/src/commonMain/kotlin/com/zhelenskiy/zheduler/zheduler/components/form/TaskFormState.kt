@@ -3,7 +3,7 @@
 package com.zhelenskiy.zheduler.zheduler.components.form
 
 import androidx.compose.runtime.*
-import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
+import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
 import kotlinx.collections.immutable.PersistentList
@@ -25,9 +25,10 @@ class TaskFormState(
     initialStatus: TaskStatus,
     initialConnections: PersistentSet<TaskConnection>,
     initialNotifications: PersistentList<String>, // Compact time strings (e.g., "1d", "2h 30m")
-    initialNotificationSounds: PersistentList<NotificationSound> = persistentListOf(),
+    initialNotificationSounds: PersistentList<ChosenSound> = persistentListOf(),
     initialRecurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
-    initialAutoUpdateStatusFromSubtasks: Boolean
+    initialAutoUpdateStatusFromSubtasks: Boolean,
+    initialDueSound: ChosenSound = ChosenSound.Deferred,
 ) {
     var title by mutableStateOf(initialTitle)
     var description by mutableStateOf(initialDescription)
@@ -38,6 +39,9 @@ class TaskFormState(
     var status by mutableStateOf(initialStatus)
     var connections by mutableStateOf(initialConnections)
     var autoUpdateStatusFromSubtasks by mutableStateOf(initialAutoUpdateStatusFromSubtasks)
+
+    /** What this task's deadline arriving sounds like, where it asks for something of its own. */
+    var dueSound by mutableStateOf(initialDueSound)
 
     private var nextEntryId = 0L
 
@@ -75,7 +79,7 @@ class TaskFormState(
     fun addNotification() {
         notifications = notifications.adding("")
         notificationIds = notificationIds.adding(nextEntryId++)
-        notificationSounds = notificationSounds.adding(NotificationSound.Default)
+        notificationSounds = notificationSounds.adding(ChosenSound.Deferred)
     }
 
     fun updateNotification(index: Int, value: String) {
@@ -88,13 +92,13 @@ class TaskFormState(
         notificationSounds = notificationSounds.removingAt(index)
     }
 
-    fun updateNotificationSound(index: Int, sound: NotificationSound) {
+    fun updateNotificationSound(index: Int, sound: ChosenSound) {
         notificationSounds = notificationSounds.replacingAt(index, sound)
     }
 
     /** The sound chosen for the reminder at [index], or the default if the lists ever disagree. */
-    fun notificationSound(index: Int): NotificationSound =
-        notificationSounds.getOrNull(index) ?: NotificationSound.Default
+    fun notificationSound(index: Int): ChosenSound =
+        notificationSounds.getOrNull(index) ?: ChosenSound.Deferred
 
     /** Replaces the rule at [index], or appends it when [index] is past the end. */
     fun setRecurrenceRule(index: Int, entry: Pair<RecurrenceRule, RecurrenceState>) {
@@ -114,7 +118,7 @@ class TaskFormState(
      */
     fun restoreEntries(
         notifications: PersistentList<String>,
-        notificationSounds: PersistentList<NotificationSound>,
+        notificationSounds: PersistentList<ChosenSound>,
         recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>>,
     ) {
         this.notifications = notifications
@@ -165,7 +169,8 @@ class TaskFormState(
                 }
                 ?: persistentListOf(),
             recurrenceRules = recurrenceRules,
-            autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks
+            autoUpdateStatusFromSubtasks = autoUpdateStatusFromSubtasks,
+            dueSound = if (dueDate != null) dueSound else ChosenSound.Deferred,
         )
     }
 
@@ -179,11 +184,12 @@ class TaskFormState(
         status = task.status
         connections = task.connections
         notifications = task.notifications.mapToPersistentList { it.timeBeforeDeadline.toBriefString() }
-        notificationSounds = task.notifications.mapToPersistentList { it.sound }
+        notificationSounds = task.notifications.mapToPersistentList { it.chosen }
         recurrenceRules = task.recurrenceRules
         notificationIds = freshIds(notifications.size)
         recurrenceRuleIds = freshIds(recurrenceRules.size)
         autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
+        dueSound = task.dueSound
     }
 
     fun hasUnsavedChanges(task: Task): Boolean {
@@ -200,9 +206,10 @@ class TaskFormState(
                 status != task.status ||
                 connections != task.connections ||
                 notifications != expectedNotifications ||
-                notificationSounds != task.notifications.map { it.sound } ||
+                notificationSounds != task.notifications.map { it.chosen } ||
                 recurrenceRules != task.recurrenceRules ||
-                autoUpdateStatusFromSubtasks != task.autoUpdateStatusFromSubtasks
+                autoUpdateStatusFromSubtasks != task.autoUpdateStatusFromSubtasks ||
+                dueSound != task.dueSound
     }
 
     fun hasAnyContent(initialConnections: Set<TaskConnection> = emptySet()): Boolean {
@@ -231,7 +238,8 @@ data class ParsedTaskValues(
     val connections: PersistentSet<TaskConnection>,
     val notifications: PersistentList<TaskNotification> = persistentListOf(),
     val recurrenceRules: PersistentList<Pair<RecurrenceRule, RecurrenceState>> = persistentListOf(),
-    val autoUpdateStatusFromSubtasks: Boolean = false
+    val autoUpdateStatusFromSubtasks: Boolean = false,
+    val dueSound: ChosenSound = ChosenSound.Deferred,
 )
 
 @Composable
@@ -304,7 +312,8 @@ fun taskFormState(task: Task): TaskFormState = TaskFormState(
     initialStatus = task.status,
     initialConnections = task.connections,
     initialNotifications = task.notifications.mapToPersistentList { it.timeBeforeDeadline.toBriefString() },
-    initialNotificationSounds = task.notifications.mapToPersistentList { it.sound },
+    initialNotificationSounds = task.notifications.mapToPersistentList { it.chosen },
+    initialDueSound = task.dueSound,
     initialRecurrenceRules = task.recurrenceRules,
     initialAutoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks
 )
@@ -317,7 +326,7 @@ fun taskFormState(task: Task): TaskFormState = TaskFormState(
  * wherever the list is set.
  */
 private fun alignedSounds(
-    sounds: List<NotificationSound>,
+    sounds: List<ChosenSound>,
     size: Int,
-): PersistentList<NotificationSound> =
-    List(size) { index -> sounds.getOrElse(index) { NotificationSound.Default } }.toPersistentList()
+): PersistentList<ChosenSound> =
+    List(size) { index -> sounds.getOrElse(index) { ChosenSound.Deferred } }.toPersistentList()

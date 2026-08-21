@@ -115,7 +115,8 @@ fun NewTaskScreen(
                 connections = parsed.connections,
                 notifications = parsed.notifications,
                 recurrenceRules = parsed.recurrenceRules,
-                autoUpdateStatusFromSubtasks = parsed.autoUpdateStatusFromSubtasks
+                autoUpdateStatusFromSubtasks = parsed.autoUpdateStatusFromSubtasks,
+                dueSound = parsed.dueSound,
             )
         )
     }

@@ -30,6 +30,7 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.*
 import com.zhelenskiy.zheduler.zheduler.components.markdown.SimpleMarkdownText
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundPicker
+import com.zhelenskiy.zheduler.zheduler.events.rememberAppSounds
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import kotlin.time.ExperimentalTime
 
@@ -191,6 +192,7 @@ private fun EstimatedTimeField(formState: TaskFormState) {
 @Composable
 private fun DueDatePicker(formState: TaskFormState) {
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    val appSounds by rememberAppSounds()
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -206,8 +208,16 @@ private fun DueDatePicker(formState: TaskFormState) {
             Text(formState.dueDate?.let { formatDueDate(it) } ?: "Set due time")
         }
         AnimatedVisibility(formState.dueDate != null) {
-            IconButton(onClick = { formState.dueDate = null }) {
-                Icon(Icons.Default.Clear, contentDescription = "Clear date")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NotificationSoundPicker(
+                    sound = formState.dueSound,
+                    onSoundSelected = { formState.dueSound = it },
+                    title = "Sound when this is due",
+                    deferring = appSounds.dueTime,
+                )
+                IconButton(onClick = { formState.dueDate = null }) {
+                    Icon(Icons.Default.Clear, contentDescription = "Clear date")
+                }
             }
         }
     }
@@ -490,6 +500,7 @@ private fun RecurrenceTrigger.AtFixedPoints.timezoneSuffix(): String = when (val
 
 @Composable
 private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
+    val appSounds by rememberAppSounds()
     AnimatedVisibility(visible = formState.dueDate != null) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -564,6 +575,8 @@ private fun ColumnScope.NotificationsSection(formState: TaskFormState) {
                                 NotificationSoundPicker(
                                     sound = formState.notificationSound(index),
                                     onSoundSelected = { formState.updateNotificationSound(index, it) },
+                                    title = "Sound for this reminder",
+                                    deferring = appSounds.reminders,
                                 )
                                 IconButton(onClick = {
                                     formState.removeNotification(index)

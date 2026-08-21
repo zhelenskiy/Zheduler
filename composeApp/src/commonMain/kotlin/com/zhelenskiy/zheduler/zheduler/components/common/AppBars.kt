@@ -68,6 +68,7 @@ fun TaskFormTopAppBar(
             ) {
                 Icon(Icons.Default.Check, contentDescription = "Save")
             }
+            NotificationSoundsButton()
             ThemeMenuButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,

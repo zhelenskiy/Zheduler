@@ -2,6 +2,7 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
 
+import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.expandVertically
@@ -165,6 +166,7 @@ fun ViewModeEditorScreen(
                     ) {
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
+                    NotificationSoundsButton()
                     ThemeMenuButton(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
