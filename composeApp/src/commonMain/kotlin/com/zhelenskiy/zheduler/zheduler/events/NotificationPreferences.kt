@@ -1,6 +1,10 @@
 package com.zhelenskiy.zheduler.zheduler.events
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +57,21 @@ class NotificationPreferences(private val store: KStore<NotificationSettings>) {
             runCatching { store.set(NotificationSettings(sound)) }
         }
     }
+}
+
+/**
+ * What the app is set to sound like, or the platform's own where nobody provided preferences.
+ *
+ * Wanted in two places — the menu that sets it, and the reminder picker, where "App default" has
+ * to be resolved before it can be played.
+ */
+@Composable
+fun rememberDefaultNotificationSound(): State<NotificationSound> {
+    val preferences = LocalNotificationPreferences.current
+    val sounds = remember(preferences) {
+        preferences?.defaultSound ?: MutableStateFlow(NotificationSound.Default)
+    }
+    return sounds.collectAsState()
 }
 
 /**

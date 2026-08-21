@@ -30,7 +30,8 @@ import androidx.compose.runtime.*
 import com.zhelenskiy.zheduler.zheduler.components.common.displayName
 import com.zhelenskiy.zheduler.zheduler.events.LocalNotificationPreferences
 import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.zhelenskiy.zheduler.zheduler.events.previewNotificationSound
+import com.zhelenskiy.zheduler.zheduler.events.rememberDefaultNotificationSound
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -286,10 +287,7 @@ fun ThemeMenuButton(
     // Read here rather than passed in: every screen's app bar shows this menu, and none of them
     // has anything else to do with what a notification sounds like.
     val preferences = LocalNotificationPreferences.current
-    val soundInUse = remember(preferences) {
-        preferences?.defaultSound ?: MutableStateFlow(NotificationSound.Default)
-    }
-    val notificationSound by soundInUse.collectAsState()
+    val notificationSound by rememberDefaultNotificationSound()
     val scope = rememberCoroutineScope()
 
     IconButton(onClick = { expanded = true }) {
@@ -364,7 +362,10 @@ fun ThemeMenuButton(
                     DropdownMenuItem(
                         text = { Text(option.displayName) },
                         onClick = {
+                            // Two of them, so the sound does not wait for the choice to reach
+                            // disk before it starts.
                             scope.launch { preferences.setDefaultSound(option) }
+                            scope.launch { previewNotificationSound(option) }
                             soundMenuOpen = false
                             expanded = false
                         },

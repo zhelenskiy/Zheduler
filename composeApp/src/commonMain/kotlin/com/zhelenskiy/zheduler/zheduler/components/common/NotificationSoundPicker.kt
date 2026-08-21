@@ -14,12 +14,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.zhelenskiy.zheduler.zheduler.events.NotificationSound
+import com.zhelenskiy.zheduler.zheduler.events.previewNotificationSound
+import com.zhelenskiy.zheduler.zheduler.events.rememberDefaultNotificationSound
+import kotlinx.coroutines.launch
 
 /** What each sound is called where a person has to choose one. */
 val NotificationSound.displayName: String
@@ -59,6 +63,8 @@ fun NotificationSoundPicker(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val appDefault by rememberDefaultNotificationSound()
 
     Box(modifier = modifier) {
         IconButton(
@@ -73,6 +79,12 @@ fun NotificationSoundPicker(
                     text = { Text(option.nameOnAReminder) },
                     leadingIcon = { Icon(option.icon, contentDescription = null) },
                     onClick = {
+                        // Heard as well as read, where the platform has a sound to lend: the names
+                        // say what the app means, not what this device will make of it. What
+                        // "App default" will make of it is whatever the app is set to, so that is
+                        // what gets played rather than the platform's own.
+                        val played = if (option == NotificationSound.Default) appDefault else option
+                        scope.launch { previewNotificationSound(played) }
                         onSoundSelected(option)
                         open = false
                     },

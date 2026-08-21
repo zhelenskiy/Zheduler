@@ -68,13 +68,6 @@ internal object MacNotificationCentre : EventNotifier {
         macSoundName(alert.sound)?.let { append(" sound name ${it.quoted()}") }
     }
 
-    /** One of `/System/Library/Sounds`, or `null` to leave the notification silent. */
-    private fun macSoundName(sound: NotificationSound): String? = when (sound) {
-        NotificationSound.Default -> "Ping"
-        NotificationSound.Alarm -> "Sosumi"
-        NotificationSound.Silent, NotificationSound.Chime, NotificationSound.Bell -> null
-    }
-
     private suspend fun runScript(script: String) {
         withContext(Dispatchers.IO) {
             runCatching {
@@ -89,6 +82,16 @@ internal object MacNotificationCentre : EventNotifier {
     /** An AppleScript literal: the text is the user's, and a stray quote would end the statement. */
     private fun String.quoted(): String =
         "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+}
+
+/**
+ * One of `/System/Library/Sounds`, or `null` for a sound macOS does not keep: silence, and the
+ * tones the app brought with it.
+ */
+internal fun macSoundName(sound: NotificationSound): String? = when (sound) {
+    NotificationSound.Default -> "Ping"
+    NotificationSound.Alarm -> "Sosumi"
+    NotificationSound.Silent, NotificationSound.Chime, NotificationSound.Bell -> null
 }
 
 /**

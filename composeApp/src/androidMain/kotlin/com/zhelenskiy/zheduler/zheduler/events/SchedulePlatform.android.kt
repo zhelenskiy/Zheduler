@@ -82,7 +82,7 @@ class AndroidEventNotifier(private val context: Context) : EventNotifier {
 
     private fun channelWith(sound: NotificationSound, importance: Int) =
         NotificationChannel(channelId(sound), channelName(sound), importance).apply {
-            setSound(uriFor(sound), audioAttributesFor(sound))
+            setSound(uriFor(context, sound), audioAttributesFor(sound))
         }
 
     private fun channelId(sound: NotificationSound) = "$CHANNEL_PREFIX.${sound.name.lowercase()}"
@@ -99,32 +99,6 @@ class AndroidEventNotifier(private val context: Context) : EventNotifier {
     private fun importanceFor(sound: NotificationSound) =
         if (sound == NotificationSound.Alarm) NotificationManager.IMPORTANCE_HIGH
         else NotificationManager.IMPORTANCE_DEFAULT
-
-    private fun uriFor(sound: NotificationSound): Uri? = when (sound) {
-        NotificationSound.Silent -> null
-        NotificationSound.Default -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        NotificationSound.Alarm -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-        // From `androidApp/src/main/res/raw`, which is a second copy of the tones in
-        // `composeApp/src/commonMain/composeResources/files/sounds`: the system process that plays
-        // a channel's sound cannot read another module's assets, so Android needs its own. Change
-        // one and change the other.
-        NotificationSound.Chime, NotificationSound.Bell ->
-            Uri.parse("android.resource://${context.packageName}/raw/${sound.bundledName}")
-    }
-
-    /**
-     * An alarm is routed as one, so it is carried by the alarm volume rather than the notification
-     * one and is as loud as the user has alarms set to be.
-     */
-    private fun audioAttributesFor(sound: NotificationSound): AudioAttributes? =
-        if (sound == NotificationSound.Silent) null
-        else AudioAttributes.Builder()
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .setUsage(
-                if (sound == NotificationSound.Alarm) AudioAttributes.USAGE_ALARM
-                else AudioAttributes.USAGE_NOTIFICATION
-            )
-            .build()
 
     /**
      * Removes the single channel this app posted to before a notification could choose its sound.
@@ -154,3 +128,30 @@ class AndroidEventNotifier(private val context: Context) : EventNotifier {
         const val CHANNEL_PREFIX = "zheduler.tasks"
     }
 }
+
+/** The sound itself, as something that can be played: `null` for silence. */
+internal fun uriFor(context: Context, sound: NotificationSound): Uri? = when (sound) {
+    NotificationSound.Silent -> null
+    NotificationSound.Default -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    NotificationSound.Alarm -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+    // From `androidApp/src/main/res/raw`, which is a second copy of the tones in
+    // `composeApp/src/commonMain/composeResources/files/sounds`: the system process that plays a
+    // channel's sound cannot read another module's assets, so Android needs its own. Change one
+    // and change the other.
+    NotificationSound.Chime, NotificationSound.Bell ->
+        Uri.parse("android.resource://${context.packageName}/raw/${sound.bundledName}")
+}
+
+/**
+ * An alarm is routed as one, so it is carried by the alarm volume rather than the notification one
+ * and is as loud as the user has alarms set to be.
+ */
+internal fun audioAttributesFor(sound: NotificationSound): AudioAttributes? =
+    if (sound == NotificationSound.Silent) null
+    else AudioAttributes.Builder()
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .setUsage(
+            if (sound == NotificationSound.Alarm) AudioAttributes.USAGE_ALARM
+            else AudioAttributes.USAGE_NOTIFICATION
+        )
+        .build()
