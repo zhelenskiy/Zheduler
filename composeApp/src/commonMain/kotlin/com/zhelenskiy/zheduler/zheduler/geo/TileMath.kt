@@ -60,8 +60,17 @@ object TileMath {
         return longitudeToX(sane.longitude, zoom) to latitudeToY(sane.latitude, zoom)
     }
 
+    /**
+     * The point at a world pixel, brought back into range.
+     *
+     * The pixel need not be inside the world square: dragging the map east goes on for as long as
+     * the finger does, and asking for the point at pixel −40,000 is how "round the back" is
+     * spelled. Left unwrapped, the answer is a longitude of −430 — which every drawing path here
+     * would wrap for itself, but which would also be handed to a tap and saved as the coordinates
+     * of a place that is nowhere.
+     */
     fun toPoint(x: Double, y: Double, zoom: Int): GeoPoint =
-        GeoPoint(latitude = yToLatitude(y, zoom), longitude = xToLongitude(x, zoom))
+        GeoPoint(latitude = yToLatitude(y, zoom), longitude = xToLongitude(x, zoom)).sane()
 
     /** The index of the tile containing pixel [value], as a whole number of tiles. */
     fun tileIndex(value: Double): Int = floor(value / TILE_SIZE).toInt()

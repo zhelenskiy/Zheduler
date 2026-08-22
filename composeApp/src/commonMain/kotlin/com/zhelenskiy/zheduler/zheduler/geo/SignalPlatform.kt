@@ -13,14 +13,30 @@ import androidx.compose.runtime.Composable
 expect fun createSignalSource(): SignalSource
 
 /**
+ * Something the user could pick, and whether it is here at the moment.
+ *
+ * The two go together because the picker wants both: a bluetooth device is worth offering whether
+ * or not it is switched on right now — a rule about the car is written indoors — but which ones
+ * are *connected* is exactly what tells the user they have found the right one.
+ */
+data class OfferedSignal(
+    val signal: NearbySignal,
+    /** Whether the device is connected, or the network joined, as things stand. */
+    val present: Boolean,
+)
+
+/**
  * What this platform can offer the user to choose from.
  *
  * Not the same question as [SignalSource.nearby]: this is for the picker, and wants everything
  * worth listing — the network currently joined, every bluetooth device already paired — rather
  * than only what is present this second. Empty where the platform cannot enumerate anything, in
  * which case the picker falls back to typing a network name by hand.
+ *
+ * Asked for one kind at a time, because asking costs: on a phone, listing the bluetooth devices
+ * binds a system service per profile, which is not something the wifi picker should be doing.
  */
-expect suspend fun offerableSignals(): List<NearbySignal>
+expect suspend fun offerableSignals(kind: SignalKind): List<OfferedSignal>
 
 /**
  * Whether the app may look at all, and how to ask.
@@ -49,4 +65,4 @@ expect val supportedSignalKinds: Set<SignalKind>
  * that is on none until you ask it, and a rule written in that state would never fire and never
  * say why. Asked when the picker opens, so the answer arrives before the rule is written.
  */
-expect suspend fun signalTrouble(): String?
+expect suspend fun signalTrouble(kind: SignalKind): String?

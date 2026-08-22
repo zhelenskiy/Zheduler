@@ -24,10 +24,10 @@ actual fun createSignalSource(): SignalSource = NoSignalSource
 
 actual val supportedSignalKinds: Set<SignalKind> = emptySet()
 
-actual suspend fun offerableSignals(): List<NearbySignal> = emptyList()
+actual suspend fun offerableSignals(kind: SignalKind): List<OfferedSignal> = emptyList()
 
 /** Nothing to add: neither kind is offered here at all, which the picker already says. */
-actual suspend fun signalTrouble(): String? = null
+actual suspend fun signalTrouble(kind: SignalKind): String? = null
 
 @Composable
 actual fun rememberSignalPermission(): LocationPermissionState =

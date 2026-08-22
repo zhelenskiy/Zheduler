@@ -35,6 +35,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -46,6 +47,8 @@ import com.zhelenskiy.zheduler.zheduler.geo.OpenStreetMap
 import com.zhelenskiy.zheduler.zheduler.geo.TileKey
 import com.zhelenskiy.zheduler.zheduler.geo.TileMath
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 
 /**
  * Where the map is looking.
@@ -72,6 +75,34 @@ class MapCamera(center: GeoPoint, zoom: Int) {
 
     fun zoomBy(steps: Int) = zoomTo(zoom + steps)
 
+    /**
+     * Zooms while keeping whatever is under [focus] where it is.
+     *
+     * What makes a map feel like a map: zooming towards the pointer rather than towards the middle
+     * of the window, so the street being looked at stays under the cursor instead of sliding away.
+     */
+    internal fun zoomAbout(steps: Int, focus: Offset, viewport: Size) {
+        val under = pointAt(focus, viewport)
+        val was = zoom
+        zoomTo(zoom + steps)
+        if (zoom == was) return
+        // Where that spot has landed now, and how far the centre has to move to put it back.
+        val (wantedX, wantedY) = TileMath.toPixels(under, zoom)
+        val (isX, isY) = TileMath.toPixels(pointAt(focus, viewport), zoom)
+        val (centreX, centreY) = TileMath.toPixels(center, zoom)
+        moveWithin(centreX + (wantedX - isX), centreY + (wantedY - isY), viewport)
+    }
+
+    /** The point under [offset], for a viewport of [viewport]. */
+    internal fun pointAt(offset: Offset, viewport: Size): GeoPoint {
+        val (x, y) = TileMath.toPixels(center, zoom)
+        return TileMath.toPoint(
+            x = x - viewport.width / 2 + offset.x,
+            y = y - viewport.height / 2 + offset.y,
+            zoom = zoom,
+        )
+    }
+
     fun show(point: GeoPoint, zoom: Int) {
         moveTo(point)
         zoomTo(zoom)
@@ -84,14 +115,22 @@ class MapCamera(center: GeoPoint, zoom: Int) {
      * into the grey above the north pole; the horizontal is not, because longitude goes round.
      */
     internal fun panBy(pan: Offset, viewport: Size) {
-        val world = TileMath.worldSize(zoom)
         val (x, y) = TileMath.toPixels(center, zoom)
-        val movedX = x - pan.x
-        val movedY = y - pan.y
+        moveWithin(x - pan.x, y - pan.y, viewport)
+    }
+
+    /**
+     * Puts the centre at a world pixel, kept inside the projection.
+     *
+     * The vertical is bounded by the edges of the map so nothing can fling it off into the grey
+     * above the north pole; the horizontal is not, because longitude goes round.
+     */
+    private fun moveWithin(x: Double, y: Double, viewport: Size) {
+        val world = TileMath.worldSize(zoom)
         val halfHeight = viewport.height / 2
         val boundedY = if (world <= viewport.height) world / 2
-        else movedY.coerceIn(halfHeight.toDouble(), world - halfHeight)
-        center = TileMath.toPoint(movedX, boundedY, zoom)
+        else y.coerceIn(halfHeight.toDouble(), world - halfHeight)
+        center = TileMath.toPoint(x, boundedY, zoom)
     }
 
     companion object {
@@ -169,6 +208,40 @@ fun OsmMap(
                         }
                     }
                 }
+                .pointerInput(camera) {
+                    // The wheel, which on a desktop is *the* way to zoom a map — and the only one
+                    // there was none of: a pinch wants two fingers and a double-tap only ever
+                    // zooms in, so before this the buttons were the whole story.
+                    var rolled = 0f
+                    var lastStep = TimeSource.Monotonic.markNow() - BETWEEN_STEPS
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.type != PointerEventType.Scroll) continue
+                            val change = event.changes.firstOrNull() ?: continue
+                            // Taken whether or not it moves the map, so the dialog this sits in
+                            // never scrolls underneath the pointer instead.
+                            event.changes.forEach { it.consume() }
+                            rolled += change.scrollDelta.y
+                            // A trackpad reports a stream of small amounts where a wheel reports
+                            // one notch, so they are added up rather than rounded away. One step
+                            // at a time and no faster than the eye can follow: a flick with
+                            // momentum behind it is worth dozens of notches, and spending them all
+                            // would cross the whole range of zoom before the finger had lifted.
+                            if (rolled <= -WHEEL_NOTCH || rolled >= WHEEL_NOTCH) {
+                                if (lastStep.elapsedNow() >= BETWEEN_STEPS) {
+                                    camera.zoomAbout(
+                                        steps = if (rolled < 0) 1 else -1,
+                                        focus = change.position,
+                                        viewport = size.toSize(),
+                                    )
+                                    lastStep = TimeSource.Monotonic.markNow()
+                                }
+                                rolled = 0f
+                            }
+                        }
+                    }
+                }
                 .pointerInput(camera, onTap) {
                     detectTapGestures(
                         onDoubleTap = { camera.zoomBy(1) },
@@ -205,16 +278,6 @@ fun OsmMap(
                 .padding(horizontal = 4.dp, vertical = 1.dp),
         )
     }
-}
-
-/** The point under [offset], for a viewport of [viewport]. */
-private fun MapCamera.pointAt(offset: Offset, viewport: Size): GeoPoint {
-    val (x, y) = TileMath.toPixels(center, zoom)
-    return TileMath.toPoint(
-        x = x - viewport.width / 2 + offset.x,
-        y = y - viewport.height / 2 + offset.y,
-        zoom = zoom,
-    )
 }
 
 private fun DrawScope.drawMap(
@@ -324,6 +387,22 @@ private fun DrawScope.drawMap(
         }
     }
 }
+
+/**
+ * How much wheel or trackpad is worth one step of zoom.
+ *
+ * One notch of a mouse wheel, which is what most of them report; a trackpad's smaller amounts add
+ * up to it.
+ */
+private const val WHEEL_NOTCH = 1f
+
+/**
+ * The shortest time between two steps of zoom.
+ *
+ * What keeps a flick of a trackpad — which arrives as a long tail of events with momentum behind
+ * it — from spending the whole range of zoom in the time it takes to lift a finger.
+ */
+private val BETWEEN_STEPS = 120.milliseconds
 
 /** How far beyond the edge a bare pin is still worth drawing: its own size. */
 private const val PIN_REACH = 16.0

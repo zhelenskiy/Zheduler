@@ -8,30 +8,165 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * A desktop knows which wifi network it is on, and nothing about bluetooth.
+ * What a desktop can say about what is around it: which wifi network it is on, and which bluetooth
+ * devices it is paired and connected with.
  *
- * The network is worth having: it is the one thing a desktop can say about where it is, and for a
- * machine that moves between home and an office it says it well. There is no portable API for it,
- * so each system is asked in its own words — and any system not answered for here simply leaves
- * wifi unmeasured, which fires nothing.
+ * There is no portable API for either, so each system is asked in its own words. That sounds worse
+ * than the alternative and is not: the Kotlin bluetooth libraries that publish a JVM target —
+ * Kable, Blue Falcon — are *low-energy* libraries, and a car stereo or a pair of headphones speaks
+ * classic bluetooth, which they do not see at all. What they offer is scanning for nearby
+ * peripherals, which is a different question from "is my car connected". The systems' own tools
+ * answer the question actually being asked, and answer it for classic devices too.
  *
- * Bluetooth is not attempted. The JVM has no bluetooth of its own, every route to it is a native
- * library per platform, and a desktop is rarely the thing a rule about a car or a pair of
- * headphones is written on.
+ * Any system not answered for here leaves that kind unmeasured, which fires nothing.
  */
 actual fun createSignalSource(): SignalSource = DesktopSignalSource
 
-actual val supportedSignalKinds: Set<SignalKind> = setOf(SignalKind.Wifi)
+actual val supportedSignalKinds: Set<SignalKind> = buildSet {
+    add(SignalKind.Wifi)
+    // Only where there is a tool that answers. Claiming it on Windows would put the picker's
+    // "nothing is paired yet" in front of a user who can pair all day and never be offered
+    // anything, instead of the plain "a rule about one cannot fire here".
+    if (isMac() || isLinux()) add(SignalKind.Bluetooth)
+}
 
 private object DesktopSignalSource : SignalSource {
     override suspend fun nearby(): NearbySignals {
-        val ssid = joinedNetwork() ?: return NearbySignals.Unknown
-        return NearbySignals(
-            kinds = setOf(SignalKind.Wifi),
-            present = if (ssid.isEmpty()) emptySet() else setOf(NearbySignal.Wifi(ssid).key),
+        val kinds = mutableSetOf<SignalKind>()
+        val present = mutableSetOf<String>()
+
+        joinedNetwork()?.let { ssid ->
+            kinds += SignalKind.Wifi
+            if (ssid.isNotEmpty()) present += NearbySignal.Wifi(ssid).key
+        }
+        pairedDevices()?.let { devices ->
+            kinds += SignalKind.Bluetooth
+            devices.filter { it.present }.forEach { present += it.signal.key }
+        }
+        return NearbySignals(kinds = kinds, present = present)
+    }
+}
+
+/**
+ * The bluetooth devices this machine is paired with, and which of them are connected — or null
+ * where it cannot be told.
+ *
+ * Paired rather than in range, which is the question a rule asks: "the car" means the one this
+ * machine knows, and whether it is connected right now is the thing that changes.
+ */
+internal suspend fun pairedDevices(): List<OfferedSignal>? = withContext(Dispatchers.IO) {
+    when {
+        isMac() -> run("system_profiler", "SPBluetoothDataType")?.let(::parseMacBluetooth)
+        isLinux() -> linuxBluetooth()
+        // Nothing tried on Windows. Its own tool reports bluetooth through the device manager,
+        // where a paired-but-idle device and a device that is not there look much alike, and this
+        // was written on a machine where that could not be checked. Guessing wrong here does not
+        // give a wrong list, it gives a rule that fires while the user is in the car.
+        else -> null
+    }
+}
+
+/**
+ * `system_profiler` groups paired devices under "Connected" and "Not Connected", each with its
+ * name and address.
+ *
+ * Parsed by indentation rather than by matching names: the two group headings sit at one depth,
+ * each device's name one deeper, and its fields deeper still. That is what tells a device called
+ * "Address" — people name things anything — from the field of the same name.
+ */
+internal fun parseMacBluetooth(output: String): List<OfferedSignal>? {
+    var connectedGroup: Boolean? = null
+    var groupIndent = -1
+    var deviceName: String? = null
+    var deviceIndent = -1
+    val found = mutableListOf<OfferedSignal>()
+    var sawAGroup = false
+
+    output.lineSequence().forEach { line ->
+        if (line.isBlank()) return@forEach
+        val indent = line.indexOfFirst { !it.isWhitespace() }
+        val text = line.trim()
+        when {
+            // A heading only at the depth headings sit at, never deeper. Otherwise a pair of
+            // headphones somebody has named "Connected" starts a group of its own and every device
+            // after it is reported under the wrong heading.
+            (text == "Connected:" || text == "Not Connected:") &&
+                (groupIndent < 0 || indent <= groupIndent) -> {
+                connectedGroup = text == "Connected:"
+                groupIndent = indent
+                sawAGroup = true
+                deviceName = null
+            }
+            // Back out to a shallower heading — "Bluetooth Controller:" and the like.
+            connectedGroup != null && indent <= groupIndent -> {
+                connectedGroup = null
+                deviceName = null
+            }
+            connectedGroup != null && deviceName == null && text.endsWith(":") -> {
+                deviceName = text.dropLast(1)
+                deviceIndent = indent
+            }
+            connectedGroup != null && deviceName != null && indent <= deviceIndent -> {
+                // A sibling of the device: the next device in the same group.
+                deviceName = if (text.endsWith(":")) text.dropLast(1) else null
+            }
+            connectedGroup != null && deviceName != null && text.startsWith("Address:") -> {
+                val address = text.substringAfter("Address:").trim()
+                if (address.isNotEmpty()) {
+                    found += OfferedSignal(
+                        signal = NearbySignal.Bluetooth(address = address, name = deviceName.orEmpty()),
+                        present = connectedGroup == true,
+                    )
+                }
+            }
+        }
+    }
+    // No headings at all means the output was not what this expects — a machine with no bluetooth
+    // hardware, or a format that has moved on. Either way it is not "nothing is connected".
+    return if (sawAGroup) found else null
+}
+
+/**
+ * `bluetoothctl` lists what is paired and what is connected, each as "Device <address> <name>".
+ *
+ * Both are asked for, because a device can be either, and the pairing list is the one a rule is
+ * written from.
+ */
+private suspend fun linuxBluetooth(): List<OfferedSignal>? {
+    val paired = run("bluetoothctl", "devices", "Paired")
+        ?: run("bluetoothctl", "paired-devices")
+        ?: return null
+    // No `orEmpty()` here, deliberately. `devices Connected` only arrived in BlueZ 5.65, and on
+    // the older releases where the paired fallback above is what worked, this is not a command at
+    // all. Read as "nothing is connected", every paired device is reported gone and a rule about
+    // the car disconnecting fires while the user is driving it. Not knowing is the honest answer.
+    val connected = run("bluetoothctl", "devices", "Connected") ?: return null
+    val connectedAddresses = parseBluetoothctl(connected).mapTo(mutableSetOf()) { it.address.uppercase() }
+    return parseBluetoothctl(paired).map { device ->
+        OfferedSignal(
+            signal = NearbySignal.Bluetooth(address = device.address, name = device.name),
+            present = device.address.uppercase() in connectedAddresses,
         )
     }
 }
+
+/** One line of `bluetoothctl devices`, which is "Device AA:BB:CC:DD:EE:FF Some name". */
+internal data class BluetoothctlDevice(val address: String, val name: String)
+
+internal fun parseBluetoothctl(output: String): List<BluetoothctlDevice> = output.lineSequence()
+    .map { it.trim() }
+    .filter { it.startsWith("Device ") }
+    .mapNotNull { line ->
+        val rest = line.removePrefix("Device ").trim()
+        val address = rest.substringBefore(' ').trim()
+        if (!address.looksLikeAnAddress()) return@mapNotNull null
+        BluetoothctlDevice(address = address, name = rest.substringAfter(' ', "").trim())
+    }
+    .toList()
+
+/** Six pairs of hex, colon-separated — what every one of these tools calls an address. */
+private fun String.looksLikeAnAddress(): Boolean =
+    length == 17 && split(':').let { it.size == 6 && it.all { part -> part.length == 2 } }
 
 /**
  * The joined network's name, `""` for "on none", or null for "cannot tell".
@@ -47,7 +182,7 @@ internal suspend fun joinedNetwork(): String? = withContext(Dispatchers.IO) {
     val answer = when {
         isWindows() -> windowsNetwork()
         isMac() -> macNetwork()
-        "nux" in osName() || "nix" in osName() -> linuxNetwork()
+        isLinux() -> linuxNetwork()
         else -> null
     }
     // "" is a real answer — on no network — and only a name can be mangled.
@@ -59,6 +194,7 @@ internal suspend fun joinedNetwork(): String? = withContext(Dispatchers.IO) {
 private fun osName(): String = System.getProperty("os.name").orEmpty().lowercase()
 private fun isWindows(): Boolean = "win" in osName()
 private fun isMac(): Boolean = "mac" in osName() || "darwin" in osName()
+private fun isLinux(): Boolean = "nux" in osName() || "nix" in osName()
 
 /**
  * The last answer, for as long as it is worth reusing.
@@ -287,17 +423,38 @@ private val UNESCAPED = Regex("""\\(.)""")
  * nothing else in the app would ever say so. A desktop JVM application does not appear in the
  * system's location list to be authorised, so this is not something the user can simply grant.
  */
-actual suspend fun signalTrouble(): String? {
-    val os = System.getProperty("os.name").orEmpty().lowercase()
-    if ("mac" !in os && "darwin" !in os) return null
-    // Null means it would not say; "" means it really is on nothing, which is a working answer.
-    if (joinedNetwork() != null) return null
-    return "This Mac will not tell an app which wifi network it is on, so a rule about one " +
-        "cannot fire here. It still works on your phone."
+actual suspend fun signalTrouble(kind: SignalKind): String? = when (kind) {
+    SignalKind.Wifi -> {
+        // Null means it would not say; "" means it really is on nothing, which is a working answer.
+        if (isMac() && joinedNetwork() == null) {
+            "This Mac will not tell an app which wifi network it is on, so a rule about one " +
+                "cannot fire here. It still works on your phone."
+        } else {
+            null
+        }
+    }
+
+    // Asked rather than assumed: the tool can be missing, refused, or simply slower than the few
+    // seconds a sweep will wait, and each of those is a rule that would never fire with nothing on
+    // the screen to say why.
+    SignalKind.Bluetooth -> {
+        if (SignalKind.Bluetooth in supportedSignalKinds && pairedDevices() == null) {
+            "This computer would not say which bluetooth devices it is paired with, so a rule " +
+                "about one cannot fire here. It still works on your phone."
+        } else {
+            null
+        }
+    }
 }
 
-actual suspend fun offerableSignals(): List<NearbySignal> =
-    listOfNotNull(joinedNetwork()?.takeIf { it.isNotEmpty() }?.let { NearbySignal.Wifi(it) })
+actual suspend fun offerableSignals(kind: SignalKind): List<OfferedSignal> = when (kind) {
+    SignalKind.Wifi -> listOfNotNull(
+        joinedNetwork()?.takeIf { it.isNotEmpty() }
+            ?.let { OfferedSignal(NearbySignal.Wifi(it), present = true) }
+    )
+
+    SignalKind.Bluetooth -> pairedDevices().orEmpty()
+}
 
 @Composable
 actual fun rememberSignalPermission(): LocationPermissionState =

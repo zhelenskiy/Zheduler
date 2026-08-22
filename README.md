@@ -138,7 +138,13 @@ once I get to the office" is armed by Monday and fired by arriving. A rule whose
 a place has nothing else that can set it off, and waits for a crossing and for nothing else.
 
 **Wifi and bluetooth.** A rule can also wait on a network being joined or a bluetooth device being
-connected, and that is often the better question: being on the office network says you are *in* the
+connected — two conditions, not one, because they are not picked the same way and may each want
+their own direction ("on the office wifi, once the car has disconnected"). A network is chosen by
+name: the one you are on, or one typed from memory, since a rule about the office is written at
+home. A device is chosen from the ones the machine is already paired with, marked with which are
+connected at this moment, because nobody knows a bluetooth address by heart.
+
+That is often the better question to ask: being on the office network says you are *in* the
 office in a way that a hundred metres of GPS never quite does, and it works in a basement. These are
 matched by the same machinery as an area — present or absent, appearing or going away — and a rule
 may carry both, in which case both must hold. Where an area has a margin around its edge, a signal
@@ -152,8 +158,18 @@ also declines to answer where it *cannot* answer — the SSID is withheld while 
 off, and reporting that as "on no network" would fire a rule about leaving the office wifi while the
 user sat in the office.
 
-The desktop asks the system for the name of its network (`networksetup` and `ipconfig` on macOS,
-`nmcli`, `netsh`) and knows nothing of bluetooth. Every one of those is a small trap in the same
+The desktop asks its own system, in its own words, for both: the network name (`networksetup` and
+`ipconfig` on macOS, `nmcli`, `netsh`) and the paired bluetooth devices with their connection state
+(`system_profiler` on macOS, `bluetoothctl` on Linux; nothing on Windows, where the device manager
+makes a paired-but-idle device look much like one that is not there and this could not be checked).
+
+Shelling out sounds worse than the alternative and is not. The Kotlin bluetooth libraries that
+publish a JVM target — [Kable](https://github.com/JuulLabs/kable),
+[Blue Falcon](https://github.com/Reedyuk/blue-falcon) — are *low-energy* libraries, and a car stereo
+or a pair of headphones speaks classic bluetooth, which they cannot see at all; what they offer is
+scanning for nearby peripherals, which is a different question from "is my car connected". For the
+wifi name there is no library at all. The systems' own tools answer the question actually being
+asked. Every one of those is a small trap in the same
 direction: the tools localise their output, so they are run under `LC_ALL=C`; Windows writes to a
 pipe in the console's own code page, so it is asked for UTF-8 first and a name that still will not
 decode is treated as unknown rather than as a name that matches nothing; and a modern Mac tells an
@@ -187,6 +203,10 @@ column and row, so a map is a fetch and some arithmetic
 ([`TileMath`](./composeApp/src/commonMain/kotlin/com/zhelenskiy/zheduler/zheduler/geo/TileMath.kt)
 holds the projection). Searching for a place by name goes to Nominatim, OpenStreetMap's own
 geocoder. Both are plain HTTPS and neither needs a key or an account.
+
+It is driven with a drag to pan and the wheel to zoom — towards the pointer, so the street being
+looked at stays under it — plus buttons, a double-tap and a pinch where there are fingers to pinch
+with.
 
 There is no map SDK behind it because no one library covers this app's targets. MapLibre Compose is
 the closest — it is the OpenStreetMap-native choice, and the most complete one for Kotlin

@@ -132,6 +132,104 @@ class StoredVocabularyTest {
     }
 
     @Test
+    fun `a rule written when wifi and bluetooth were one condition still watches both`() {
+        // The two were split apart after this shipped. A rule saved by the old build carries the
+        // combined field, and dropping it would not merely stop that rule working — it would
+        // decode it with no condition at all, which is a rule that fires anywhere.
+        val stored = """
+            {
+              "timeRecurrenceTrigger": null,
+              "statusChangeTrigger": null,
+              "resetToStatus": {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"},
+              "nearbyTrigger": {
+                "signals": [
+                  {"type":"com.zhelenskiy.zheduler.zheduler.geo.NearbySignal.Wifi","ssid":"Office"},
+                  {"type":"com.zhelenskiy.zheduler.zheduler.geo.NearbySignal.Bluetooth","address":"AA:BB:CC:DD:EE:FF","name":"Car"}
+                ],
+                "direction": "Appearing"
+              }
+            }
+        """.trimIndent()
+
+        val rule = json.decodeFromString<RecurrenceRule>(stored)
+
+        assertEquals(null, rule.wifiTrigger)
+        assertEquals(null, rule.bluetoothTrigger)
+        assertNotNull(rule.nearbyTrigger)
+        assertEquals(
+            1,
+            rule.presenceTriggers.size,
+            "the old condition is still one of the rule's conditions, so the rule still fires",
+        )
+        assertEquals(2, assertNotNull(rule.nearbyTrigger).signals.size)
+    }
+
+    @Test
+    fun `a rule saved now writes the two apart and nothing under the old name`() {
+        val rule = RecurrenceRule(
+            timeRecurrenceTrigger = null,
+            statusChangeTrigger = null,
+            resetToStatus = TaskStatus.Open,
+            wifiTrigger = RecurrenceTrigger.NearbyChange(
+                persistentSetOf(NearbySignal.Wifi("Office")),
+                SignalDirection.Appearing,
+            ),
+            bluetoothTrigger = RecurrenceTrigger.NearbyChange(
+                persistentSetOf(NearbySignal.Bluetooth("AA:BB:CC:DD:EE:FF", "Car")),
+                SignalDirection.Disappearing,
+            ),
+        )
+
+        val restored = json.decodeFromString<RecurrenceRule>(json.encodeToString(rule))
+
+        assertEquals(rule, restored)
+        assertEquals(null, restored.nearbyTrigger)
+        assertEquals(
+            2,
+            restored.presenceTriggers.size,
+            "each kind is a condition of its own, so each can want its own direction",
+        )
+        assertEquals(
+            SignalDirection.Disappearing,
+            assertNotNull(restored.bluetoothTrigger).direction,
+            "which is the whole point of splitting them",
+        )
+    }
+
+    @Test
+    fun `the two new conditions are stored under the names they were given`() {
+        // Round-tripping a rule through this build proves nothing about a rule saved by it and
+        // read by the next one: rename either property and every stored rule decodes with that
+        // condition missing, which is a rule that fires anywhere rather than one that stops.
+        val stored = """
+            {
+              "timeRecurrenceTrigger": null,
+              "statusChangeTrigger": null,
+              "resetToStatus": {"type":"com.zhelenskiy.zheduler.zheduler.TaskStatus.Open"},
+              "wifiTrigger": {
+                "signals": [{"type":"com.zhelenskiy.zheduler.zheduler.geo.NearbySignal.Wifi","ssid":"Office"}],
+                "direction": "Appearing"
+              },
+              "bluetoothTrigger": {
+                "signals": [{"type":"com.zhelenskiy.zheduler.zheduler.geo.NearbySignal.Bluetooth","address":"AA:BB:CC:DD:EE:FF","name":"Car"}],
+                "direction": "Disappearing"
+              }
+            }
+        """.trimIndent()
+
+        val rule = json.decodeFromString<RecurrenceRule>(stored)
+
+        assertEquals(
+            listOf(NearbySignal.Wifi("Office")),
+            assertNotNull(rule.wifiTrigger).signals.toList(),
+        )
+        assertEquals(
+            SignalDirection.Disappearing,
+            assertNotNull(rule.bluetoothTrigger).direction,
+        )
+    }
+
+    @Test
     fun `a rule written before there were signals still reads back`() {
         // Both fields live in the same JSON column and neither was there when most rules were
         // written, so both have to decode from their absence.

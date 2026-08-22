@@ -7,6 +7,7 @@ import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccu
 import com.zhelenskiy.zheduler.zheduler.RecurrenceRule
 import com.zhelenskiy.zheduler.zheduler.RecurrenceService
 import com.zhelenskiy.zheduler.zheduler.RecurrenceState
+import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTriggerEvent
 import com.zhelenskiy.zheduler.zheduler.StatusChange
 import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
@@ -491,9 +492,19 @@ class ScheduledEventEngine(
     private fun watchedAreas(tasks: List<Task>, now: Instant): List<GeoArea> =
         liveRules(tasks, now).flatMap { rule -> rule.locationTrigger?.areas.orEmpty() }.distinctBy { it.key }
 
-    /** Every wifi network and bluetooth device some rule of [tasks] is still watching. */
+    /**
+     * Every wifi network and bluetooth device some rule of [tasks] is still watching.
+     *
+     * Gathered from the rule's presence conditions rather than from the fields by name, so that a
+     * kind added or split off later is watched without this having to be remembered — which it was
+     * not, the one time wifi and bluetooth were split apart.
+     */
     private fun watchedSignals(tasks: List<Task>, now: Instant): List<NearbySignal> =
-        liveRules(tasks, now).flatMap { rule -> rule.nearbyTrigger?.signals.orEmpty() }.distinctBy { it.key }
+        liveRules(tasks, now)
+            .flatMap { rule -> rule.presenceTriggers }
+            .filterIsInstance<RecurrenceTrigger.NearbyChange>()
+            .flatMap { it.signals }
+            .distinctBy { it.key }
 
     /** The rules of [tasks] that can still come round. */
     private fun liveRules(tasks: List<Task>, now: Instant): List<RecurrenceRule> = tasks

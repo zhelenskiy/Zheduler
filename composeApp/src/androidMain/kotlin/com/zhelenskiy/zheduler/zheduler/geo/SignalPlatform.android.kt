@@ -27,7 +27,16 @@ import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
-actual fun createSignalSource(): SignalSource = AndroidSignalSource(androidApplication())
+actual fun createSignalSource(): SignalSource = androidSignals
+
+/**
+ * One for the whole app.
+ *
+ * [AndroidSignalSource] remembers which bluetooth profiles would not answer and leaves them alone
+ * for a while — and a fresh one per question has nothing to remember, so a wedged bluetooth service
+ * would be waited on for ten seconds every time a picker opened.
+ */
+private val androidSignals: AndroidSignalSource by lazy { AndroidSignalSource(androidApplication()) }
 
 actual val supportedSignalKinds: Set<SignalKind> = setOf(SignalKind.Wifi, SignalKind.Bluetooth)
 
@@ -40,7 +49,7 @@ actual val supportedSignalKinds: Set<SignalKind> = setOf(SignalKind.Wifi, Signal
  * every sweep — and neither is what people mean. "The office wifi" means the one being used, and
  * "the car" means the one the phone is talking to.
  */
-private class AndroidSignalSource(private val context: Context) : SignalSource {
+internal class AndroidSignalSource(private val context: Context) : SignalSource {
 
     override suspend fun nearby(): NearbySignals {
         val kinds = mutableSetOf<SignalKind>()
@@ -204,31 +213,37 @@ internal fun Context.hasBluetoothPermission(): Boolean =
     else checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
 /** Nothing that is not already said by the permission notices in the picker. */
-actual suspend fun signalTrouble(): String? = null
+actual suspend fun signalTrouble(kind: SignalKind): String? = null
 
-actual suspend fun offerableSignals(): List<NearbySignal> {
+actual suspend fun offerableSignals(kind: SignalKind): List<OfferedSignal> {
     val context = androidApplication()
-    val offers = mutableListOf<NearbySignal>()
+    val offers = mutableListOf<OfferedSignal>()
 
-    // The network already joined, which is nearly always the one a rule is about.
-    if (context.hasLocationPermission()) {
+    // The network already joined, which is nearly always the one a rule is about — and joined is
+    // what present means, so there is nothing further to ask.
+    if (kind == SignalKind.Wifi && context.hasLocationPermission()) {
         val wifi = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         @Suppress("DEPRECATION")
         val ssid = runCatching { wifi?.connectionInfo?.ssid?.trim('"') }.getOrNull().orEmpty()
         if (ssid.isNotEmpty() && ssid != WifiManager.UNKNOWN_SSID.trim('"')) {
-            offers += NearbySignal.Wifi(ssid)
+            offers += OfferedSignal(NearbySignal.Wifi(ssid), present = true)
         }
     }
 
     // Everything already paired, whether or not it is switched on at this moment — a rule about
     // the car is written indoors.
-    if (context.hasBluetoothPermission()) {
+    if (kind == SignalKind.Bluetooth && context.hasBluetoothPermission()) {
+        // Asked once and only here, because it is what costs: it binds a system service per
+        // profile. Worth it for this list, which is how a user picks the right pair of headphones
+        // out of three, and pure waste for the wifi picker.
+        val here = androidSignals.nearby().present
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
         runCatching { adapter?.bondedDevices }.getOrNull()?.forEach { device ->
-            offers += NearbySignal.Bluetooth(
+            val signal = NearbySignal.Bluetooth(
                 address = device.address,
                 name = runCatching { device.name }.getOrNull().orEmpty(),
             )
+            offers += OfferedSignal(signal, present = signal.key in here)
         }
     }
     return offers

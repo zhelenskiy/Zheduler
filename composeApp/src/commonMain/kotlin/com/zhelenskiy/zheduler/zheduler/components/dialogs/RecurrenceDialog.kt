@@ -35,7 +35,10 @@ import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.StatusChange
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.LocationChange
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger.NearbyChange
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Wifi
+import com.zhelenskiy.zheduler.zheduler.geo.SignalKind
+import kotlinx.collections.immutable.toPersistentSet
 import com.zhelenskiy.zheduler.zheduler.components.common.TimeZoneSelector
 import com.zhelenskiy.zheduler.zheduler.components.common.icon
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.FormResult.NoData
@@ -235,9 +238,18 @@ fun SingleRecurrenceRuleDialog(
         mutableStateOf(currentRule?.locationTrigger)
     }
 
-    /** The wifi and bluetooth this rule waits on, saved for the same reason as everything else. */
-    var nearbyTrigger by rememberSaveable(stateSaver = nullableJsonSaver<NearbyChange>()) {
-        mutableStateOf(currentRule?.nearbyTrigger)
+    // Apart, because they are picked differently and may each want their own direction — "on the
+    // office wifi, once the car has disconnected". Saved for the same reason as everything else.
+    var wifiTrigger by rememberSaveable(stateSaver = nullableJsonSaver<NearbyChange>()) {
+        mutableStateOf(currentRule?.wifiTrigger ?: currentRule?.legacyNearbyOf(SignalKind.Wifi))
+    }
+    var bluetoothTrigger by rememberSaveable(stateSaver = nullableJsonSaver<NearbyChange>()) {
+        mutableStateOf(currentRule?.bluetoothTrigger ?: currentRule?.legacyNearbyOf(SignalKind.Bluetooth))
+    }
+    // Saveable, not derived: dropping the old condition is an edit like any other in this dialog
+    // and must survive a recreation part way through.
+    var keepLegacyNearby by rememberSaveable {
+        mutableStateOf(currentRule?.hasMixedLegacyNearby() == true)
     }
 
     var resetToStatus by rememberSaveable(stateSaver = jsonSaver { TaskStatus.Open }) {
@@ -258,7 +270,8 @@ fun SingleRecurrenceRuleDialog(
     // then quietly keep the old rule: the dialog closed, nothing had changed, and nothing said so.
     // Removing a rule is what the list's delete button is for.
     val hasTrigger = selectedTimeTrigger is Success || statusChangesTrigger != null ||
-        locationTrigger != null || nearbyTrigger != null
+        locationTrigger != null || wifiTrigger != null || bluetoothTrigger != null ||
+        keepLegacyNearby
     val isFormValid = selectedTimeTrigger !is FormResult.Failure && isTerminationCountValid && hasTrigger
 
     AlertDialog(
@@ -279,13 +292,18 @@ fun SingleRecurrenceRuleDialog(
                     onStatusChangeChange = { statusChangesTrigger = it },
                     locationTrigger = locationTrigger,
                     onLocationTriggerChange = { locationTrigger = it },
-                    nearbyTrigger = nearbyTrigger,
-                    onNearbyTriggerChange = { nearbyTrigger = it },
+                    wifiTrigger = wifiTrigger,
+                    onWifiTriggerChange = { wifiTrigger = it },
+                    bluetoothTrigger = bluetoothTrigger,
+                    onBluetoothTriggerChange = { bluetoothTrigger = it },
+                    legacyNearby = currentRule?.nearbyTrigger?.takeIf { keepLegacyNearby },
+                    onDropLegacyNearby = { keepLegacyNearby = false },
                 )
 
                 AnimatedVisibility(
                     visible = selectedTimeTrigger !is NoData || statusChangesTrigger != null ||
-                        locationTrigger != null || nearbyTrigger != null
+                        locationTrigger != null || wifiTrigger != null || bluetoothTrigger != null ||
+                        keepLegacyNearby
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -317,9 +335,10 @@ fun SingleRecurrenceRuleDialog(
                 onClick = {
                     val timeTrigger = (selectedTimeTrigger as? Success)?.value
                     val place = locationTrigger?.takeIf { it.areas.isNotEmpty() }
-                    val nearby = nearbyTrigger?.takeIf { it.signals.isNotEmpty() }
+                    val wifi = wifiTrigger?.takeIf { it.signals.isNotEmpty() }
+                    val bluetooth = bluetoothTrigger?.takeIf { it.signals.isNotEmpty() }
                     val rule = if (timeTrigger != null || statusChangesTrigger != null ||
-                        place != null || nearby != null
+                        place != null || wifi != null || bluetooth != null || keepLegacyNearby
                     ) {
                         RecurrenceRule(
                             timeRecurrenceTrigger = timeTrigger,
@@ -327,7 +346,13 @@ fun SingleRecurrenceRuleDialog(
                             resetToStatus = resetToStatus,
                             termination = termination,
                             locationTrigger = place,
-                            nearbyTrigger = nearby,
+                            wifiTrigger = wifi,
+                            bluetoothTrigger = bluetooth,
+                            // Carried through only when it names both kinds, which is the one case
+                            // the two chips above cannot say without changing its meaning. Where
+                            // it named one kind it has been read into that chip, and writing it as
+                            // well would watch the same thing twice.
+                            nearbyTrigger = currentRule?.nearbyTrigger?.takeIf { keepLegacyNearby },
                         )
                     } else {
                         null
@@ -1051,8 +1076,12 @@ private fun TriggerSelectors(
     onStatusChangeChange: (StatusChange?) -> Unit,
     locationTrigger: LocationChange?,
     onLocationTriggerChange: (LocationChange?) -> Unit,
-    nearbyTrigger: NearbyChange?,
-    onNearbyTriggerChange: (NearbyChange?) -> Unit,
+    wifiTrigger: NearbyChange?,
+    onWifiTriggerChange: (NearbyChange?) -> Unit,
+    bluetoothTrigger: NearbyChange?,
+    onBluetoothTriggerChange: (NearbyChange?) -> Unit,
+    legacyNearby: NearbyChange?,
+    onDropLegacyNearby: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Triggers", style = MaterialTheme.typography.titleMedium)
@@ -1072,10 +1101,58 @@ private fun TriggerSelectors(
             onTriggerChange = onLocationTriggerChange,
         )
         NearbyTriggerSelector(
-            trigger = nearbyTrigger,
-            onTriggerChange = onNearbyTriggerChange,
+            kind = SignalKind.Wifi,
+            trigger = wifiTrigger,
+            onTriggerChange = onWifiTriggerChange,
         )
+        NearbyTriggerSelector(
+            kind = SignalKind.Bluetooth,
+            trigger = bluetoothTrigger,
+            onTriggerChange = onBluetoothTriggerChange,
+        )
+        legacyNearby?.let { legacy ->
+            // Said rather than silently kept. It names a network *or* a device, which is not
+            // something the two chips above can express, so it is left exactly as it was and the
+            // user is told it is there rather than wondering why the rule fires for something
+            // neither chip mentions. Removing it is a button and not a consequence of filling in
+            // the chips: the chips are read alongside it, not instead of it, so a user who set
+            // both and expected a replacement would have got a rule with three conditions to
+            // satisfy at once — quite possibly one that can never fire.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Also, from an earlier version: ${legacy.phrase()}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onDropLegacyNearby) { Text("Remove") }
+            }
+        }
     }
+}
+
+/**
+ * An old combined condition, read as one of the two it should always have been.
+ *
+ * Only where every signal in it is of one kind — then splitting changes nothing, because a
+ * condition matches *any* of the things it names and all of them are now in the same chip.
+ *
+ * A condition naming both kinds is left alone by this and carried through untouched, because
+ * splitting *that* would change what the rule means: the one condition fired when either the
+ * network or the device turned up, and two conditions have to both hold. A user opening such a
+ * rule to change its reset status and pressing Save would have been handed a stricter rule than
+ * they wrote — possibly one that can never fire — with nothing on screen having changed.
+ */
+private fun RecurrenceRule.legacyNearbyOf(kind: SignalKind): NearbyChange? {
+    val legacy = nearbyTrigger ?: return null
+    if (legacy.signals.any { it.kind != kind }) return null
+    return legacy.takeIf { it.signals.isNotEmpty() }
+}
+
+/** Whether the old combined condition names both kinds, and so must be kept as it is. */
+private fun RecurrenceRule.hasMixedLegacyNearby(): Boolean {
+    val signals = nearbyTrigger?.signals ?: return false
+    return signals.any { it.kind == SignalKind.Wifi } && signals.any { it.kind == SignalKind.Bluetooth }
 }
 
 /**
@@ -1087,38 +1164,49 @@ private fun TriggerSelectors(
  */
 @Composable
 private fun NearbyTriggerSelector(
+    kind: SignalKind,
     trigger: NearbyChange?,
     onTriggerChange: (NearbyChange?) -> Unit,
 ) {
-    var picking by rememberSaveable { mutableStateOf(false) }
+    var picking by rememberSaveable(key = "nearby:picking:$kind") { mutableStateOf(false) }
 
     FlowRow(
         itemVerticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Nearby", style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = if (kind == SignalKind.Wifi) "Wifi" else "Bluetooth",
+            style = MaterialTheme.typography.titleSmall,
+        )
         FilterChip(
             selected = trigger == null,
             onClick = { onTriggerChange(null) },
-            label = { Text("Anything", style = MaterialTheme.typography.labelSmall) },
+            label = { Text("Any", style = MaterialTheme.typography.labelSmall) },
         )
         FilterChip(
             selected = trigger != null,
             onClick = { picking = true },
             label = {
                 Text(
-                    text = trigger?.phrase() ?: "Wifi or bluetooth",
+                    text = trigger?.phrase()
+                        ?: if (kind == SignalKind.Wifi) "A network" else "A device",
                     style = MaterialTheme.typography.labelSmall,
                 )
             },
             leadingIcon = {
-                Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(
+                    imageVector = if (kind == SignalKind.Wifi) Icons.Default.Wifi
+                    else Icons.Default.Bluetooth,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
             },
         )
     }
 
     if (picking) {
         SignalSelectionDialog(
+            kind = kind,
             current = trigger,
             onDismiss = { picking = false },
             onConfirm = {

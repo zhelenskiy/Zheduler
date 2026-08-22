@@ -802,13 +802,32 @@ data class RecurrenceRule(
      * lives in a JSON column and a missing field is simply the default.
      */
     val locationTrigger: RecurrenceTrigger.LocationChange? = null,
-    /** Defaulted for the same reason, and read alongside [locationTrigger] as one condition. */
+    /**
+     * A wifi network being joined or left.
+     *
+     * Apart from [bluetoothTrigger] rather than one condition covering both, because they are not
+     * the same question and cannot share an answer: a network is picked by name and a device is
+     * picked from what the machine is paired with, and a rule may perfectly well want the office
+     * wifi to be *there* while the car is *gone*.
+     */
+    val wifiTrigger: RecurrenceTrigger.NearbyChange? = null,
+    /** A bluetooth device connecting or dropping. Read alongside the rest as one condition. */
+    val bluetoothTrigger: RecurrenceTrigger.NearbyChange? = null,
+    /**
+     * What the two above were once one of.
+     *
+     * Never written any more. Kept so that a rule saved by the build that had a single combined
+     * condition still reads back and still fires — dropping the field would decode those rules
+     * with no condition at all, which is not a rule that stopped working but one that quietly
+     * started firing anywhere.
+     */
     val nearbyTrigger: RecurrenceTrigger.NearbyChange? = null,
 ) {
     init {
         require(
             timeRecurrenceTrigger != null || statusChangeTrigger != null ||
-                locationTrigger != null || nearbyTrigger != null
+                locationTrigger != null || wifiTrigger != null || bluetoothTrigger != null ||
+                nearbyTrigger != null
         ) {
             "At least one trigger must be specified"
         }
@@ -821,7 +840,7 @@ data class RecurrenceRule(
      * `satisfiedBy` — so nothing below here needs to know which of the two it is holding.
      */
     val presenceTriggers: List<PresenceTrigger>
-        get() = listOfNotNull(locationTrigger, nearbyTrigger)
+        get() = listOfNotNull(locationTrigger, wifiTrigger, bluetoothTrigger, nearbyTrigger)
     fun toBriefString(): String {
         val timeRecurrenceTriggerString = timeRecurrenceTrigger?.let {
             when (it) {
@@ -834,7 +853,12 @@ data class RecurrenceRule(
         val timeAndStatus = statusChangeTrigger?.requiredStatuses
             ?.joinToString(prefix = statusChangePrefix) { it.toBriefString() }
             ?: timeRecurrenceTriggerString
-        val around = listOfNotNull(locationTrigger?.phrase(), nearbyTrigger?.phrase())
+        val around = listOfNotNull(
+            locationTrigger?.phrase(),
+            wifiTrigger?.phrase(),
+            bluetoothTrigger?.phrase(),
+            nearbyTrigger?.phrase(),
+        )
             .takeIf { it.isNotEmpty() }
             ?.joinToString(" and ")
         return when {

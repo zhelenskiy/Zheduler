@@ -1694,7 +1694,7 @@ class ScheduledEventEngineTest {
         locationTrigger = area?.let {
             RecurrenceTrigger.LocationChange(persistentSetOf(it), GeofenceDirection.Entering)
         },
-        nearbyTrigger = RecurrenceTrigger.NearbyChange(persistentSetOf(signal), direction),
+        wifiTrigger = RecurrenceTrigger.NearbyChange(persistentSetOf(signal), direction),
     ) to RecurrenceState()
 
     @Test
@@ -2041,6 +2041,56 @@ class ScheduledEventEngineTest {
         f.engine().sweep()
 
         assertEquals(TaskStatus.Done, assertNotNull(f.repository.getTaskById(task.id)).status)
+    }
+
+    @Test
+    fun `a rule is watched whichever kind of condition it carries`() = runTest {
+        // Wifi and bluetooth are separate conditions on a rule, and the engine gathers what to
+        // watch from the rule's conditions rather than from the fields by name. Gathered by name,
+        // splitting the two left every rule using the new ones watching nothing at all: the radios
+        // were never read and nothing ever fired.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        var needs: ScheduledEventEngine.WatchNeeds? = null
+        f.onWatchingPlaces = { needs = it }
+
+        val car = NearbySignal.Bluetooth("AA:BB:CC:DD:EE:FF", "Car")
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Two conditions",
+            status = TaskStatus.Done,
+            recurrenceRules = persistentListOf(
+                RecurrenceRule(
+                    timeRecurrenceTrigger = null,
+                    statusChangeTrigger = null,
+                    resetToStatus = TaskStatus.Open,
+                    wifiTrigger = RecurrenceTrigger.NearbyChange(
+                        persistentSetOf(officeWifi),
+                        SignalDirection.Appearing,
+                    ),
+                    bluetoothTrigger = RecurrenceTrigger.NearbyChange(
+                        persistentSetOf(car),
+                        SignalDirection.Disappearing,
+                    ),
+                ) to RecurrenceState()
+            ),
+        )
+
+        f.nearby = NearbySignals(
+            kinds = setOf(SignalKind.Wifi, SignalKind.Bluetooth),
+            present = emptySet(),
+        )
+        f.engine().sweep()
+
+        assertEquals(
+            ScheduledEventEngine.WatchNeeds(
+                places = false,
+                signals = setOf(SignalKind.Wifi, SignalKind.Bluetooth),
+            ),
+            needs,
+            "both conditions are watched, and each is named for what it needs",
+        )
+        assertTrue(f.timesAskedNearby > 0, "and the radios were actually read")
     }
 
     @Test
