@@ -418,21 +418,13 @@ private val UNESCAPED = Regex("""\\(.)""")
 /**
  * Whether this machine will actually name the network it is on.
  *
- * A Mac without location authorisation answers "cannot tell" to every reading — which is the safe
- * answer and fires nothing, but it also means a wifi rule written here can never come true, and
- * nothing else in the app would ever say so. A desktop JVM application does not appear in the
- * system's location list to be authorised, so this is not something the user can simply grant.
+ * Asked of every desktop, not only the Mac that prompted it. A machine answering "cannot tell" is
+ * giving the safe answer and fires nothing — but it also means a wifi rule written here can never
+ * come true, and without this nothing in the app would ever say so. Windows with no wireless
+ * hardware and a Linux box with no NetworkManager are as silent as an unauthorised Mac.
  */
 actual suspend fun signalTrouble(kind: SignalKind): String? = when (kind) {
-    SignalKind.Wifi -> {
-        // Null means it would not say; "" means it really is on nothing, which is a working answer.
-        if (isMac() && joinedNetwork() == null) {
-            "This Mac will not tell an app which wifi network it is on, so a rule about one " +
-                "cannot fire here. It still works on your phone."
-        } else {
-            null
-        }
-    }
+    SignalKind.Wifi -> wifiTrouble(joined = joinedNetwork(), isMac = isMac())
 
     // Asked rather than assumed: the tool can be missing, refused, or simply slower than the few
     // seconds a sweep will wait, and each of those is a rule that would never fire with nothing on
@@ -445,6 +437,23 @@ actual suspend fun signalTrouble(kind: SignalKind): String? = when (kind) {
             null
         }
     }
+}
+
+/**
+ * What to say about a desktop that would not name the network it is on.
+ *
+ * [joined] is null for "cannot tell" and "" for "really on nothing", which is a working answer and
+ * no trouble at all — the difference the whole feature turns on.
+ */
+internal fun wifiTrouble(joined: String?, isMac: Boolean): String? = when {
+    joined != null -> null
+    // Named, because it looks like something the user could put right and is not: a desktop
+    // application does not appear in the system's location list to be authorised.
+    isMac -> "This Mac will not tell an app which wifi network it is on, so a rule about one " +
+        "cannot fire here. It still works on your phone."
+
+    else -> "This computer would not say which wifi network it is on, so a rule about one cannot " +
+        "fire here. It still works on your phone."
 }
 
 actual suspend fun offerableSignals(kind: SignalKind): List<OfferedSignal> = when (kind) {

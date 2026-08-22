@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,8 +46,9 @@ import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.DefaultSeedColor
 
+/** The picture that stands for a theme: what the settings list shows beside the row. */
 @Composable
-private fun getThemeIcon(themeMode: ThemeMode): ImageVector {
+fun themeIcon(themeMode: ThemeMode): ImageVector {
     return when (themeMode) {
         ThemeMode.Light -> Icons.Default.LightMode
         ThemeMode.Dark -> Icons.Default.DarkMode
@@ -112,7 +114,9 @@ private fun CustomColorMenuItem(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    var showColorPicker by remember { mutableStateOf(false) }
+    // Saved: choosing a colour is the longest thing in the settings, and a rotation part way
+    // through used to land back on the theme page with the picker shut.
+    var showColorPicker by rememberSaveable { mutableStateOf(false) }
 
     Column {
         HorizontalDivider()
@@ -266,8 +270,15 @@ private fun ColorPickerDialog(
     )
 }
 
+/**
+ * What the app looks like, opened from the settings list rather than laid out inside it.
+ *
+ * Three theme choices, a checkbox and a colour swatch that opens a picker: enough to be its own
+ * page, and laid out flat under the other settings it pushed them off the screen.
+ */
 @Composable
-fun ThemeMenuButton(
+fun ThemeSettingsDialog(
+    onDismiss: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
@@ -275,45 +286,57 @@ fun ThemeMenuButton(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Theme") },
+        text = {
+            ThemeSettingsSection(
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                useDynamicColors = useDynamicColors,
+                onDynamicColorsChange = onDynamicColorsChange,
+                colorSettings = colorSettings,
+                onColorSettingsChange = onColorSettingsChange,
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+}
 
-    IconButton(onClick = { expanded = true }) {
-        Icon(
-            imageVector = getThemeIcon(themeMode),
-            contentDescription = "Settings"
-        )
-    }
-
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false }
-    ) {
+/**
+ * The rows themselves.
+ *
+ * Menu items composed straight into a column rather than into a menu: they are the same three
+ * choices however they are reached, and the tick that marks the one in use is what a reader needs
+ * either way.
+ */
+@Composable
+private fun ThemeSettingsSection(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    useDynamicColors: Boolean,
+    onDynamicColorsChange: (Boolean) -> Unit,
+    colorSettings: ColorSettings,
+    onColorSettingsChange: (ColorSettings) -> Unit
+) {
+    Column {
         ThemeModeMenuItem(
             label = "Light",
             mode = ThemeMode.Light,
             currentMode = themeMode,
-            onSelect = {
-                onThemeModeChange(ThemeMode.Light)
-                expanded = false
-            }
+            onSelect = { onThemeModeChange(ThemeMode.Light) }
         )
         ThemeModeMenuItem(
             label = "Dark",
             mode = ThemeMode.Dark,
             currentMode = themeMode,
-            onSelect = {
-                onThemeModeChange(ThemeMode.Dark)
-                expanded = false
-            }
+            onSelect = { onThemeModeChange(ThemeMode.Dark) }
         )
         ThemeModeMenuItem(
             label = "System",
             mode = ThemeMode.System,
             currentMode = themeMode,
-            onSelect = {
-                onThemeModeChange(ThemeMode.System)
-                expanded = false
-            }
+            onSelect = { onThemeModeChange(ThemeMode.System) }
         )
 
         DynamicColorsMenuItem(
@@ -333,6 +356,5 @@ fun ThemeMenuButton(
                 onColorSettingsChange = onColorSettingsChange
             )
         }
-
     }
 }

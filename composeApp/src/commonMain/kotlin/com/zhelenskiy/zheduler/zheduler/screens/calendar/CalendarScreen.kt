@@ -2,7 +2,6 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.calendar
 
-import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -55,7 +54,7 @@ import com.zhelenskiy.zheduler.zheduler.Task
 import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.StatusChangeEvent
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatusChange
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
@@ -216,8 +215,7 @@ fun CalendarScreen(
                     IconButton(onClick = onNavigateToSpaceList) {
                         Icon(Icons.Default.Home, contentDescription = "Spaces")
                     }
-                    NotificationSoundsButton()
-                    ThemeMenuButton(
+                    SettingsButton(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
                         useDynamicColors = useDynamicColors,

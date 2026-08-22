@@ -4,6 +4,7 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
+import com.zhelenskiy.zheduler.zheduler.geo.SavedSignal
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentSet
@@ -776,4 +777,39 @@ interface TaskRepository {
 
     /** Removes a place from the book. Rules that copied it are untouched. */
     suspend fun deleteSavedLocation(id: String): Boolean
+
+    // ============ Saved signals ============
+
+    /**
+     * The user's address book of networks and bluetooth devices.
+     *
+     * Unscoped like the places, and for the same reason: the office wifi is the office wifi in
+     * every space. A rule keeps its own copy of what it watches, so this is only somewhere to
+     * pick from.
+     */
+    suspend fun getAllSavedSignals(): List<SavedSignal>
+
+    /** The entries whose name, device name or SSID/address contain [query]; all when blank. */
+    suspend fun searchSavedSignals(query: String): List<SavedSignal>
+
+    /** An entry by its ID, or null if there is no such entry. */
+    suspend fun getSavedSignalById(id: String): SavedSignal?
+
+    /** Creates or renames an entry, and returns it as stored. */
+    suspend fun saveSignal(signal: SavedSignal): SavedSignal
+
+    /**
+     * Files [signal] unless the book already holds what it matches, in which case the entry
+     * already there is returned untouched and nothing is written.
+     *
+     * By key rather than by id, because this is asked from a list of what is around, where the
+     * user has no id in mind. Asked twice before that list catches up — a double tap, two devices
+     * of the same address offered by two sources — it must still be one entry. Deciding that where
+     * the state is authoritative is the only place it can be decided: a caller holding a snapshot
+     * of the book cannot see a save that has not landed yet.
+     */
+    suspend fun keepSignal(signal: SavedSignal): SavedSignal
+
+    /** Removes an entry from the book. Rules that copied it are untouched. */
+    suspend fun deleteSavedSignal(id: String): Boolean
 }

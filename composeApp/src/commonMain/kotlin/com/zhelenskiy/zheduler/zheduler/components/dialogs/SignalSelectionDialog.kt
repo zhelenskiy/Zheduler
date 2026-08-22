@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -40,9 +41,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTrigger
 import com.zhelenskiy.zheduler.zheduler.components.common.jsonSaver
+import com.zhelenskiy.zheduler.zheduler.geo.LocalSignalBook
 import com.zhelenskiy.zheduler.zheduler.geo.LocationPermissionStatus
 import com.zhelenskiy.zheduler.zheduler.geo.NearbySignal
 import com.zhelenskiy.zheduler.zheduler.geo.OfferedSignal
+import com.zhelenskiy.zheduler.zheduler.geo.SavedSignal
 import com.zhelenskiy.zheduler.zheduler.geo.SignalDirection
 import com.zhelenskiy.zheduler.zheduler.geo.SignalKind
 import com.zhelenskiy.zheduler.zheduler.geo.offerableSignals
@@ -72,6 +75,7 @@ fun SignalSelectionDialog(
     onDismiss: () -> Unit,
     onConfirm: (RecurrenceTrigger.NearbyChange?) -> Unit,
 ) {
+    val book = LocalSignalBook.current
     val permission = rememberSignalPermission()
     // Wifi is answered for by the location permission rather than by one of its own, so both are
     // needed here — and a user who has granted neither must be told which is missing.
@@ -104,9 +108,21 @@ fun SignalSelectionDialog(
         trouble = signalTrouble(kind)
     }
 
-    // Anything already on the rule that this device cannot offer — paired elsewhere, or a network
-    // that is simply not in range now. Shown so it cannot be lost by opening the dialog.
-    val alsoChosen = chosen.filterNot { signal -> offered.any { it.key == signal.key } }
+    val saved = book.signals.filter { it.kind == kind }
+
+    val measured = presenceIsMeasurable(
+        kind = kind,
+        supported = supportedSignalKinds,
+        trouble = trouble,
+        // Wifi is answered for by the location permission rather than one of its own.
+        permission = if (kind == SignalKind.Wifi) locationPermission.status else permission.status,
+    )
+
+    // Anything already on the rule that neither the book nor this device can name — paired
+    // elsewhere, or a network that is simply not in range now. Shown so it cannot be lost by
+    // opening the dialog.
+    val named = saved.mapTo(mutableSetOf()) { it.signal.key } + offered.mapTo(mutableSetOf()) { it.key }
+    val alsoChosen = chosen.filterNot { it.key in named }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -156,7 +172,38 @@ fun SignalSelectionDialog(
                     )
                 }
 
-                if (offered.isNotEmpty()) {
+                if (saved.isNotEmpty()) {
+                    Text(
+                        text = "Saved",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    saved.forEach { entry ->
+                        val isChosen = chosen.any { it.key == entry.signal.key }
+                        SignalRow(
+                            signal = entry.signal,
+                            // The name the user gave it, which is the whole point of keeping it:
+                            // an address means nothing in a list of rules.
+                            label = entry.displayName,
+                            selected = isChosen,
+                            connected = entry.signal.key in connected,
+                            measured = measured,
+                            onToggle = {
+                                editing = editing.copy(
+                                    signals = if (isChosen) {
+                                        chosen.filterNot { it.key == entry.signal.key }.toPersistentSet()
+                                    } else {
+                                        chosen.add(entry.signal)
+                                    }
+                                )
+                            },
+                        )
+                    }
+                }
+
+                // What the machine can see that is not in the book yet.
+                val unsaved = offered.filterNot { signal -> saved.any { it.signal.key == signal.key } }
+                if (unsaved.isNotEmpty()) {
                     Text(
                         text = when (kind) {
                             SignalKind.Wifi -> "The network you are on"
@@ -166,12 +213,13 @@ fun SignalSelectionDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
-                        items(offered, key = { it.key }) { signal ->
+                        items(unsaved, key = { it.key }) { signal ->
                             val isChosen = chosen.any { it.key == signal.key }
                             SignalRow(
                                 signal = signal,
                                 selected = isChosen,
                                 connected = signal.key in connected,
+                                measured = measured,
                                 onToggle = {
                                     editing = editing.copy(
                                         signals = if (isChosen) {
@@ -181,6 +229,15 @@ fun SignalSelectionDialog(
                                         }
                                     )
                                 },
+                                // Kept under a name of its own, so the next rule can say "the car"
+                                // rather than picking an address out of a list again. `keep` and
+                                // not `save`: the row only leaves this list once the store has
+                                // round-tripped, and nothing here can see a save still in flight.
+                                onKeep = {
+                                    book.keep(
+                                        SavedSignal(id = book.newId(), name = "", signal = signal)
+                                    )
+                                },
                             )
                         }
                     }
@@ -188,7 +245,9 @@ fun SignalSelectionDialog(
 
                 if (alsoChosen.isNotEmpty()) {
                     Text(
-                        text = "Watched by this rule, but not here now",
+                        // The heading makes the same claim the rows do, and has to be as careful.
+                        text = if (measured) "Watched by this rule, but not here now"
+                        else "Watched by this rule",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -197,6 +256,7 @@ fun SignalSelectionDialog(
                             signal = signal,
                             selected = true,
                             connected = false,
+                            measured = measured,
                             onToggle = {
                                 editing = editing.copy(
                                     signals = chosen.filterNot { it.key == signal.key }.toPersistentSet()
@@ -278,6 +338,43 @@ fun SignalSelectionDialog(
     )
 }
 
+/**
+ * Whether "not here now" is something this machine is entitled to say about [kind].
+ *
+ * Three things have to hold: the build must be able to ask at all, the machine must have answered
+ * when asked, and the app must have been allowed to ask. [supported] alone covers only the first —
+ * a Mac that will not name the network it is on, and a phone with the permission refused, both
+ * support wifi and measured nothing.
+ *
+ * [LocationPermissionStatus.Unavailable] is not a refusal: it is a desktop saying there is no such
+ * permission to hold, on a platform that answers the question anyway.
+ */
+internal fun presenceIsMeasurable(
+    kind: SignalKind,
+    supported: Set<SignalKind>,
+    trouble: String?,
+    permission: LocationPermissionStatus,
+): Boolean = kind in supported &&
+    trouble == null &&
+    permission != LocationPermissionStatus.Denied
+
+/**
+ * What a row says about whether the thing it names is here.
+ *
+ * Where presence was not measured it says so, rather than reporting an absence nothing
+ * established: "not here now" beside a device sitting on the desk reads as a rule that has
+ * stopped working, and this picker is where a user goes to find out why one never fires.
+ */
+internal fun presenceLine(signal: NearbySignal, connected: Boolean, measured: Boolean): String =
+    when {
+        connected && signal is NearbySignal.Wifi -> "Joined now"
+        connected -> "Connected now"
+        signal is NearbySignal.Bluetooth && !measured -> signal.address
+        !measured -> "Not known on this device"
+        signal is NearbySignal.Bluetooth -> "Paired · ${signal.address}"
+        else -> "Not here now"
+    }
+
 /** The same three cases, in the words that fit what is being waited for. */
 private fun SignalDirection.displayNameFor(kind: SignalKind): String = when (kind) {
     SignalKind.Wifi -> when (this) {
@@ -314,7 +411,10 @@ private fun SignalRow(
     signal: NearbySignal,
     selected: Boolean,
     connected: Boolean,
+    measured: Boolean,
     onToggle: () -> Unit,
+    label: String = signal.label,
+    onKeep: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 2.dp),
@@ -332,25 +432,29 @@ private fun SignalRow(
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = signal.label,
+                text = label,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 // What tells one pair of headphones from the other two: which is switched on.
-                text = when {
-                    connected && signal is NearbySignal.Wifi -> "Joined now"
-                    connected -> "Connected now"
-                    signal is NearbySignal.Bluetooth -> "Paired · ${signal.address}"
-                    else -> "Not here now"
-                },
+                text = presenceLine(signal, connected, measured),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (connected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        onKeep?.let {
+            IconButton(onClick = it) {
+                Icon(
+                    Icons.Default.BookmarkAdd,
+                    contentDescription = "Keep ${signal.label}",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

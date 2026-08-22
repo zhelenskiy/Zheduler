@@ -83,14 +83,16 @@ class LegacySqlDelightSchemaCompatibilityTest {
             assertEquals(1L, hasMasterTable, "Room should have adopted the database")
 
             val version = connection.prepare("PRAGMA user_version").use { it.step(); it.getLong(0) }
-            assertEquals(6L, version, "the adopted database should have been migrated")
+            assertEquals(7L, version, "the adopted database should have been migrated")
 
-            // A table added long after the legacy file was written: the whole chain of migrations
-            // ran, not just the one that adopts the schema.
-            val hasLocations = connection
-                .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'saved_locations'")
-                .use { it.step(); it.getLong(0) }
-            assertEquals(1L, hasLocations, "saved_locations should have been created")
+            // Tables added long after the legacy file was written, and the last of them: the whole
+            // chain of migrations ran, not just the one that adopts the schema.
+            listOf("saved_locations", "saved_signals").forEach { table ->
+                val present = connection
+                    .prepare("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'")
+                    .use { it.step(); it.getLong(0) }
+                assertEquals(1L, present, "$table should have been created")
+            }
 
             // What the migration is for: the legacy file carried these, the current schema does not.
             listOf("idx_tasks_id_search", "idx_tasks_estimatedTimeJson", "idx_tasks_notificationsJson")

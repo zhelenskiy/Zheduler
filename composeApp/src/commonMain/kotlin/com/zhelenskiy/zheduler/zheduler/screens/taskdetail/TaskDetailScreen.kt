@@ -2,7 +2,6 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.taskdetail
 
-import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,7 +34,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.TagChip
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.form.RecurrenceRuleItem
 import com.zhelenskiy.zheduler.zheduler.components.markdown.TaskDescriptionView
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.LocalNow
 import com.zhelenskiy.zheduler.zheduler.util.TaskStatus
@@ -89,8 +88,7 @@ private fun TaskDetailTopAppBar(
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
             }
-            NotificationSoundsButton()
-            ThemeMenuButton(
+            SettingsButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,

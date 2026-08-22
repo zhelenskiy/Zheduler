@@ -1,6 +1,5 @@
 package com.zhelenskiy.zheduler.zheduler.screens.spacelist
 
-import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -44,7 +43,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.settings.LocalEditorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ExportResult
@@ -267,7 +266,6 @@ private fun SpaceListContent(
 private fun SpaceListTopAppBar(
     onEraseAllData: () -> Unit,
     onImport: () -> Unit,
-    onOpenPlaces: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     useDynamicColors: Boolean,
@@ -278,17 +276,15 @@ private fun SpaceListTopAppBar(
     TopAppBar(
         title = { Text("Zheduler - Spaces") },
         actions = {
+            // The space list's own work, so it stays here rather than behind a cog that reads the
+            // same on every screen.
             IconButton(onClick = onEraseAllData) {
                 Icon(Icons.Default.DeleteForever, contentDescription = "Erase All Data")
             }
             IconButton(onClick = onImport) {
                 Icon(Icons.Default.Upload, contentDescription = "Import Space")
             }
-            IconButton(onClick = onOpenPlaces) {
-                Icon(Icons.Default.LocationOn, contentDescription = "Places")
-            }
-            NotificationSoundsButton()
-            ThemeMenuButton(
+            SettingsButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
@@ -307,7 +303,6 @@ fun SpaceListScreen(
     container: SpaceListContainer,
     refreshTrigger: Int,
     onSpaceClick: (String) -> Unit,
-    onOpenPlaces: () -> Unit,
     onRefresh: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -368,7 +363,6 @@ fun SpaceListScreen(
             SpaceListTopAppBar(
                 onEraseAllData = { dialogState.showEraseAllData = true },
                 onImport = { dialogState.showImport = true },
-                onOpenPlaces = onOpenPlaces,
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,

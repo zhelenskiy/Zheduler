@@ -901,6 +901,52 @@ interface ZhedulerDao {
      */
     @Query("DELETE FROM saved_locations")
     suspend fun deleteAllSavedLocations()
+
+    // ============ Saved signals ============
+
+    @Query("SELECT * FROM saved_signals ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getAllSavedSignals(): List<SavedSignals>
+
+    @Query("SELECT * FROM saved_signals WHERE id = :id")
+    suspend fun getSavedSignalById(id: String): SavedSignals?
+
+    /**
+     * Matched on all three of the things a user might search by: the name they gave it, the name
+     * the device gives itself, and the SSID or address underneath. As with the places, the caller
+     * passes the query through `escapedForLike`.
+     */
+    @Query(
+        """
+        SELECT * FROM saved_signals
+        WHERE :query = ''
+           OR name LIKE '%' || :query || '%' ESCAPE '\'
+           OR deviceName LIKE '%' || :query || '%' ESCAPE '\'
+           OR value LIKE '%' || :query || '%' ESCAPE '\'
+        ORDER BY name COLLATE NOCASE ASC
+        """
+    )
+    suspend fun searchSavedSignals(query: String): List<SavedSignals>
+
+    @Query(
+        """
+        INSERT OR REPLACE INTO saved_signals(id, name, kind, value, deviceName)
+        VALUES (:id, :name, :kind, :value, :deviceName)
+        """
+    )
+    suspend fun insertOrUpdateSavedSignal(
+        id: String,
+        name: String,
+        kind: String,
+        value: String,
+        deviceName: String,
+    )
+
+    @Query("DELETE FROM saved_signals WHERE id = :id")
+    suspend fun deleteSavedSignal(id: String)
+
+    /** For "clear all data", which nothing else reaches — see [deleteAllSavedLocations]. */
+    @Query("DELETE FROM saved_signals")
+    suspend fun deleteAllSavedSignals()
 }
 
 

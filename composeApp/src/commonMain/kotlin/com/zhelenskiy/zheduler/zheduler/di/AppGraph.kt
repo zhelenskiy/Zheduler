@@ -25,6 +25,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedLocationContainer
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedSignalContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SpaceListContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailContainerFactory
@@ -79,6 +80,11 @@ interface AppGraph {
      * The address book of places, which belongs to no space and so needs no factory.
      */
     val savedLocationContainer: SavedLocationContainer
+
+    /**
+     * The address book of networks and devices, which belongs to no space either.
+     */
+    val savedSignalContainer: SavedSignalContainer
 
     /**
      * Factory for creating TaskListContainer instances with runtime parameters.
@@ -177,6 +183,11 @@ interface AppGraph {
         @SingleIn(AppScope::class)
         fun provideSavedLocationContainer(repository: RoomTaskRepository): SavedLocationContainer =
             SavedLocationContainer(repository)
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideSavedSignalContainer(repository: RoomTaskRepository): SavedSignalContainer =
+            SavedSignalContainer(repository)
 
         @Provides
         fun provideTaskListContainerFactory(repository: RoomTaskRepository): TaskListContainerFactory =

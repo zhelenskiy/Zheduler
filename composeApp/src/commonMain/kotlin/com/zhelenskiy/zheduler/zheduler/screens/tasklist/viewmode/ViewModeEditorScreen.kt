@@ -2,7 +2,6 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
 
-import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.expandVertically
@@ -32,7 +31,7 @@ import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.TagSelectionDialog
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
@@ -166,8 +165,7 @@ fun ViewModeEditorScreen(
                     ) {
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
-                    NotificationSoundsButton()
-                    ThemeMenuButton(
+                    SettingsButton(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
                         useDynamicColors = useDynamicColors,

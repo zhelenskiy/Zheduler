@@ -325,3 +325,23 @@ data class SavedLocations(
     val radiusMeters: Double,
     val address: String,
 )
+
+/**
+ * The user's address book of networks and bluetooth devices, the counterpart of [SavedLocations].
+ *
+ * Unscoped and uncascaded for the same reasons: the office wifi is the office wifi in every space,
+ * a rule keeps its own copy of what it watches, and so an entry removed here changes no rule.
+ *
+ * [value] is what identity is made of — the SSID for a network, the address for a device — and
+ * [deviceName] only what to show. Splitting them keeps a device that has been renamed the same
+ * device, which is the whole reason a bluetooth rule matches on the address.
+ */
+@Entity(tableName = "saved_signals")
+data class SavedSignals(
+    @PrimaryKey val id: String,
+    val name: String,
+    /** [SignalKind] by name, as it is written into a task's rules; see `StoredEnumNamesTest`. */
+    val kind: String,
+    val value: String,
+    val deviceName: String,
+)

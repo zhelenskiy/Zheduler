@@ -2,7 +2,6 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist
 
-import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -20,8 +19,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.Wifi
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter.SaveFilterDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.rotate
@@ -54,7 +54,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import com.zhelenskiy.zheduler.zheduler.components.common.dataOrNull
 import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.settings.LocalEditorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
@@ -181,8 +181,6 @@ private fun TaskListTopAppBar(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    var settingsMenuExpanded by remember { mutableStateOf(false) }
-
     TopAppBar(
         title = {
             Column {
@@ -193,35 +191,13 @@ private fun TaskListTopAppBar(
             }
         },
         actions = {
-            Box {
-                IconButton(onClick = { settingsMenuExpanded = true }) {
-                    Icon(Icons.Default.Bookmarks, contentDescription = "Settings menu")
-                }
-                DropdownMenu(
-                    expanded = settingsMenuExpanded,
-                    onDismissRequest = { settingsMenuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("View Modes") },
-                        onClick = {
-                            settingsMenuExpanded = false
-                            onNavigateToViewModeManagement()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.ViewAgenda, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Saved Filters") },
-                        onClick = {
-                            settingsMenuExpanded = false
-                            onNavigateToSavedFilterManagement()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.FilterList, contentDescription = null)
-                        }
-                    )
-                }
+            // This space's own, so they stay on this space's screen. Only what the *user* has set
+            // — and is the same wherever it is read — lives behind the cog.
+            IconButton(onClick = onNavigateToViewModeManagement) {
+                Icon(Icons.Default.ViewAgenda, contentDescription = "View modes")
+            }
+            IconButton(onClick = onNavigateToSavedFilterManagement) {
+                Icon(Icons.Default.FilterList, contentDescription = "Saved filters")
             }
             IconButton(onClick = onNavigateToCalendar) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = "Calendar")
@@ -229,8 +205,7 @@ private fun TaskListTopAppBar(
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
             }
-            NotificationSoundsButton()
-            ThemeMenuButton(
+            SettingsButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,

@@ -118,6 +118,18 @@ data class SavedLocation(
     val address: String = "",
 ) {
     fun toArea(): GeoArea = GeoArea(name = name, point = point, radiusMeters = radiusMeters)
+
+    /**
+     * Whether a search for [needle] should turn this up. Blank finds everything.
+     *
+     * Beside the thing it matches so that the list a user narrows and the list the repository
+     * returns cannot drift apart.
+     */
+    fun matches(needle: String): Boolean = needle.trim().let { query ->
+        query.isEmpty() ||
+            name.contains(query, ignoreCase = true) ||
+            address.contains(query, ignoreCase = true)
+    }
 }
 
 /**

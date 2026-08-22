@@ -144,3 +144,64 @@ fun interface SignalSource {
 object NoSignalSource : SignalSource {
     override suspend fun nearby(): NearbySignals = NearbySignals.Unknown
 }
+
+/**
+ * A network or a device the user has kept, to pick from when writing a rule.
+ *
+ * The counterpart of `SavedLocation`, and kept for the same reason: what a rule watches is copied
+ * into it, so the book is somewhere to pick from rather than the rules' own storage, and an entry
+ * deleted here leaves every rule alone.
+ *
+ * [name] is the user's word for it and is only ever shown; [signal] is the whole of what is
+ * matched. The two differ more often than they do for a place — a network broadcasts
+ * "acme-corp-5G" and the user thinks of it as the office.
+ */
+@Serializable
+data class SavedSignal(
+    val id: String,
+    val name: String,
+    val signal: NearbySignal,
+) {
+    val kind: SignalKind get() = signal.kind
+
+    /** The user's word for it, falling back to whatever the system calls it. */
+    val displayName: String get() = name.ifBlank { signal.label }
+
+    /** The SSID or the address: the column the book is matched and stored by. */
+    val storedValue: String
+        get() = when (signal) {
+            is NearbySignal.Wifi -> signal.ssid
+            is NearbySignal.Bluetooth -> signal.address
+        }
+
+    /** What the device calls itself, which only a bluetooth device has. */
+    val storedDeviceName: String
+        get() = when (signal) {
+            is NearbySignal.Wifi -> ""
+            is NearbySignal.Bluetooth -> signal.name
+        }
+
+    /**
+     * As it is kept, whichever repository keeps it.
+     *
+     * The address in upper case because that is what [NearbySignal.Bluetooth.key] matches on, and
+     * a book holding one casing while a rule holds another would offer the same device twice. The
+     * SSID is left exactly as typed — trailing spaces and all are part of a network's name.
+     */
+    fun normalised(): SavedSignal = copy(
+        name = name.trim(),
+        signal = when (signal) {
+            is NearbySignal.Wifi -> signal
+            is NearbySignal.Bluetooth -> signal.copy(
+                address = signal.address.uppercase(),
+                name = signal.name.trim(),
+            )
+        },
+    )
+
+    /** Whether a search for [needle] should turn this up. Blank finds everything. */
+    fun matches(needle: String): Boolean = needle.isEmpty() ||
+        name.contains(needle, ignoreCase = true) ||
+        storedDeviceName.contains(needle, ignoreCase = true) ||
+        storedValue.contains(needle, ignoreCase = true)
+}

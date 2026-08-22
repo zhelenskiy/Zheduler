@@ -91,6 +91,30 @@ WorkManager will not wake a dozing device to the second, so a reminder can arriv
 late. The alternative is an exact alarm, which recent Android versions grant only to apps whose
 whole purpose is alarms.
 
+### One button for everything settable
+
+Every screen's header used to carry its own row of pictures — a bell, a paintbrush, a pin — and
+which of them held the thing you wanted differed from screen to screen. They are one cog now, and
+the same cog everywhere: the places, the networks, the devices, the notification sounds, the theme.
+All of it is what the *user* has set, so someone who has learnt where a sound lives has learnt it
+on every screen. (A browser tab, which has no notification preferences to set, is offered no row
+for them — a row leading to an empty page is worse than no row.)
+
+What one screen *does* is not in there. A space's view modes and saved filters are buttons on that
+space's list, erasing everything is the space list's own, and the calendar and the spaces are
+places to go rather than things to set. Mixed in, the cog would read differently from screen to
+screen again, which is the thing it was for.
+
+Every row is a page rather than controls laid out in place — each is a page's worth, and flat in
+the list they buried it. They open on top of the list and close back to it, and none of them
+navigates: naming a network or picking a colour is a two-second job, and being sent off to another
+screen and back through it made it feel like leaving the app.
+
+Networks and devices have a row each, not one between them. It is the same separation the
+conditions make and for the same reason: a network is picked by a name read off a router, a device
+from what the machine is already paired with, and one list holding both asks a question that cannot
+be answered in one language.
+
 ### Rules that wait for a place
 
 A recurrence rule can wait for the user to arrive somewhere or to leave it, alongside the moments
@@ -98,10 +122,16 @@ and statuses it could already wait for. The place is a point and a radius —
 [`GeoArea`](./shared/src/commonMain/kotlin/com/zhelenskiy/zheduler/zheduler/geo/Geo.kt) — and the
 rule is fired by a *crossing* of that edge rather than by being on one side of it.
 
-Areas are **copied into the rule**, not pointed at. The list of places under *Places* on the space
-list is an address book to pick from; deleting an entry there changes no rule, and a task exported
-to a device that has never heard of that book still knows where it is waiting for. It is the same
-trade a chosen sound makes by carrying its own label.
+Areas are **copied into the rule**, not pointed at. *Places*, under the settings button, is an
+address book to pick from; deleting an entry there changes no rule, and a task exported to a device
+that has never heard of that book still knows where it is waiting for. It is the same trade a
+chosen sound makes by carrying its own label.
+
+Networks and bluetooth devices have books of their own — *Wi-Fi networks* and *Bluetooth devices*,
+one each — on the same terms and for a sharper reason: an SSID is rarely what its owner calls the
+place, and a bluetooth address is not something anyone recognises in a list of rules. Named once, it is picked by that name
+afterwards. What a rule stores is still the signal, never the entry, so renaming one cannot rewrite
+a rule and an entry cannot be repointed at something else under a name rules already use.
 
 A crossing exists only in the difference between where the device is now and where it was last
 seen, so the last answer is written down beside the scheduler's watermark. An area with nothing

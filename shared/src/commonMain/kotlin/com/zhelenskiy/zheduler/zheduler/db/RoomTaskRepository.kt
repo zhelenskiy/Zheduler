@@ -6,7 +6,10 @@ import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import androidx.room3.withWriteTransaction
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
+import com.zhelenskiy.zheduler.zheduler.geo.NearbySignal
 import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
+import com.zhelenskiy.zheduler.zheduler.geo.SavedSignal
+import com.zhelenskiy.zheduler.zheduler.geo.SignalKind
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import com.zhelenskiy.zheduler.zheduler.paging.toPage
 import kotlinx.collections.immutable.*
@@ -1331,6 +1334,7 @@ class RoomTaskRepository(
         database.withWriteTransaction {
             dao.getAllSpaces().forEach { space -> dao.deleteSpace(space.id) }
             dao.deleteAllSavedLocations()
+            dao.deleteAllSavedSignals()
         }
         notifyChanged()
     }
@@ -2686,6 +2690,47 @@ class RoomTaskRepository(
         }
         exists
     }
+
+    // ============ Saved signals ============
+
+    override suspend fun getAllSavedSignals(): List<SavedSignal> =
+        dao.getAllSavedSignals().mapNotNull { it.toSavedSignalModel() }
+
+    override suspend fun searchSavedSignals(query: String): List<SavedSignal> =
+        dao.searchSavedSignals(query.trim().escapedForLike()).mapNotNull { it.toSavedSignalModel() }
+
+    override suspend fun getSavedSignalById(id: String): SavedSignal? =
+        dao.getSavedSignalById(id)?.toSavedSignalModel()
+
+    override suspend fun saveSignal(signal: SavedSignal): SavedSignal {
+        val stored = signal.normalised()
+        dao.insertOrUpdateSavedSignal(
+            id = stored.id,
+            name = stored.name,
+            kind = stored.kind.name,
+            value = stored.storedValue,
+            deviceName = stored.storedDeviceName,
+        )
+        notifyChanged()
+        return stored
+    }
+
+    override suspend fun keepSignal(signal: SavedSignal): SavedSignal = mutex.withLock {
+        val wanted = signal.normalised()
+        val already = dao.getAllSavedSignals()
+            .mapNotNull { it.toSavedSignalModel() }
+            .firstOrNull { it.signal.key == wanted.signal.key }
+        already ?: saveSignal(wanted)
+    }
+
+    override suspend fun deleteSavedSignal(id: String): Boolean = mutex.withLock {
+        val exists = dao.getSavedSignalById(id) != null
+        if (exists) {
+            dao.deleteSavedSignal(id)
+            notifyChanged()
+        }
+        exists
+    }
 }
 
 /**
@@ -2722,6 +2767,22 @@ private fun SavedLocations.toSavedLocationModel() = SavedLocation(
     radiusMeters = radiusMeters,
     address = address,
 )
+
+/**
+ * Null where [kind] is a word this build does not know.
+ *
+ * Which only happens reading a database a later version wrote. Dropping the row from the picker
+ * loses nothing — it is still in the table, and no rule depends on it, because every rule holds
+ * its own copy of what it watches.
+ */
+private fun SavedSignals.toSavedSignalModel(): SavedSignal? {
+    val signal = when (kind) {
+        SignalKind.Wifi.name -> NearbySignal.Wifi(ssid = value)
+        SignalKind.Bluetooth.name -> NearbySignal.Bluetooth(address = value, name = deviceName)
+        else -> return null
+    }
+    return SavedSignal(id = id, name = name, signal = signal)
+}
 
 private fun Spaces.toModel() = Space(
     id = id,

@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontFamily
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 
 /**
@@ -68,8 +67,7 @@ fun TaskFormTopAppBar(
             ) {
                 Icon(Icons.Default.Check, contentDescription = "Save")
             }
-            NotificationSoundsButton()
-            ThemeMenuButton(
+            SettingsButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,

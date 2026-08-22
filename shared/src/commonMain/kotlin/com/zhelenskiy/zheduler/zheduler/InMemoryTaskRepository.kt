@@ -4,6 +4,7 @@ package com.zhelenskiy.zheduler.zheduler
 
 import com.zhelenskiy.zheduler.zheduler.events.ChosenSound
 import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
+import com.zhelenskiy.zheduler.zheduler.geo.SavedSignal
 import com.zhelenskiy.zheduler.zheduler.paging.Page
 import com.zhelenskiy.zheduler.zheduler.paging.toPage
 import kotlinx.collections.immutable.PersistentList
@@ -67,6 +68,9 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     /** Not keyed by space: the address book belongs to the user, not to one workspace. */
     private val savedLocations = mutableMapOf<String, SavedLocation>()
+
+    /** The same, for networks and devices. */
+    private val savedSignals = mutableMapOf<String, SavedSignal>()
 
     override suspend fun hasSpaces(): Boolean = mutex.withLock { spaces.isNotEmpty() }
 
@@ -885,6 +889,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
         activeViewModeBySpaceId.clear()
         savedFilters.clear()
         savedLocations.clear()
+        savedSignals.clear()
         notifyChanged()
     }
 
@@ -1063,6 +1068,45 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
     override suspend fun deleteSavedLocation(id: String): Boolean = mutex.withLock {
         val removed = savedLocations.remove(id) != null
+        if (removed) notifyChanged()
+        removed
+    }
+
+    // ============ Saved signals ============
+
+    override suspend fun getAllSavedSignals(): List<SavedSignal> = mutex.withLock {
+        savedSignals.values.sortedBy { it.name.lowercase() }
+    }
+
+    override suspend fun searchSavedSignals(query: String): List<SavedSignal> {
+        val needle = query.trim()
+        return getAllSavedSignals().filter { it.matches(needle) }
+    }
+
+    override suspend fun getSavedSignalById(id: String): SavedSignal? = mutex.withLock {
+        savedSignals[id]
+    }
+
+    override suspend fun saveSignal(signal: SavedSignal): SavedSignal = mutex.withLock {
+        // Normalised on the way in exactly as the Room repository normalises it, so the two answer
+        // alike — the address casing especially, which is what identity is made of.
+        val stored = signal.normalised()
+        savedSignals[stored.id] = stored
+        notifyChanged()
+        stored
+    }
+
+    override suspend fun keepSignal(signal: SavedSignal): SavedSignal = mutex.withLock {
+        val wanted = signal.normalised()
+        val already = savedSignals.values.firstOrNull { it.signal.key == wanted.signal.key }
+        if (already != null) return@withLock already
+        savedSignals[wanted.id] = wanted
+        notifyChanged()
+        wanted
+    }
+
+    override suspend fun deleteSavedSignal(id: String): Boolean = mutex.withLock {
+        val removed = savedSignals.remove(id) != null
         if (removed) notifyChanged()
         removed
     }

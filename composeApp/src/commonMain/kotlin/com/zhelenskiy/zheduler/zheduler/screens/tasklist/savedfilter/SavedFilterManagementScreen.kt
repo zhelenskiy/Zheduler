@@ -2,7 +2,6 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.savedfilter
 
-import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import kotlin.time.ExperimentalTime
 
 import androidx.compose.animation.AnimatedContent
@@ -34,7 +33,7 @@ import com.zhelenskiy.zheduler.zheduler.SavedFilterWithViewMode
 import com.zhelenskiy.zheduler.zheduler.ViewMode
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterIntent
@@ -158,8 +157,7 @@ private fun SavedFilterManagementTopAppBar(
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
             }
-            NotificationSoundsButton()
-            ThemeMenuButton(
+            SettingsButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,

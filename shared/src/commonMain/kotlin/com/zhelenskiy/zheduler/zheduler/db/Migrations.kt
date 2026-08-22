@@ -151,6 +151,23 @@ internal val AddSavedLocations = object : Migration(5, 6) {
 }
 
 /**
+ * Adds the address book of networks and bluetooth devices.
+ *
+ * Alongside `saved_locations` rather than in it: the two are picked from in different dialogs and
+ * share no column but a name. The statement is Room's own, from the version-7 schema it exported.
+ */
+internal val AddSavedSignals = object : Migration(6, 7) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `saved_signals` (" +
+                "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                "`value` TEXT NOT NULL, `deviceName` TEXT NOT NULL, " +
+                "PRIMARY KEY(`id`))"
+        )
+    }
+}
+
+/**
  * Every migration the app ships, applied wherever a [ZhedulerDatabase] is opened.
  *
  * Databases in the field were created by SQLDelight at version 1 and carry no `room_master_table`;
@@ -164,4 +181,5 @@ internal fun RoomDatabase.Builder<ZhedulerDatabase>.withZhedulerMigrations(): Ro
         IndexEstimatedTimeSeconds,
         AddDueSound,
         AddSavedLocations,
+        AddSavedSignals,
     )

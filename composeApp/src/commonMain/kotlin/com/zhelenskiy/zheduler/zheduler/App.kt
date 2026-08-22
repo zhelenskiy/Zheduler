@@ -45,8 +45,6 @@ import com.zhelenskiy.zheduler.zheduler.navigation.TaskListRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.ViewModeEditorRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.ViewModeManagementRoute
 import com.zhelenskiy.zheduler.zheduler.navigation.SavedFilterManagementRoute
-import com.zhelenskiy.zheduler.zheduler.navigation.SavedLocationsRoute
-import com.zhelenskiy.zheduler.zheduler.screens.locations.SavedLocationsScreen
 import com.zhelenskiy.zheduler.zheduler.screens.calendar.CalendarScreen
 import com.zhelenskiy.zheduler.zheduler.screens.newtask.NewTaskScreen
 import com.zhelenskiy.zheduler.zheduler.screens.spacelist.SpaceListScreen
@@ -63,6 +61,7 @@ import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
 import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
 import com.zhelenskiy.zheduler.zheduler.events.LocalNotificationPreferences
 import com.zhelenskiy.zheduler.zheduler.components.map.PlaceBookProvider
+import com.zhelenskiy.zheduler.zheduler.geo.SignalBookProvider
 import com.zhelenskiy.zheduler.zheduler.util.ProvideCurrentTime
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.getDynamicColorScheme
@@ -217,11 +216,17 @@ fun App(themeState: ThemeState = rememberThemeState()) {
               // Above the navigation graph, because the rule editor is several screens down from
               // anything that knows the address book exists.
               PlaceBookProvider(graph.savedLocationContainer) {
+              SignalBookProvider(graph.savedSignalContainer) {
               ProvideCurrentTime {
                 // One host above the whole navigation graph: a screen does not need a snackbar of
                 // its own for its store to be able to say that something went wrong.
                 val failureSnackbar = remember { SnackbarHostState() }
                 CompositionLocalProvider(LocalFailureSnackbar provides failureSnackbar) {
+                    // Here rather than on a screen: the two books are reached from a dialog that
+                    // every screen carries, so there is no one screen left to report for them —
+                    // and a save that quietly did nothing is worse than an error.
+                    ReportFailures(graph.savedLocationContainer)
+                    ReportFailures(graph.savedSignalContainer)
                     Box(modifier = Modifier.fillMaxSize()) {
                         AppContent(
                             themeState.themeMode, onThemeModeChange,
@@ -231,6 +236,7 @@ fun App(themeState: ThemeState = rememberThemeState()) {
                         SnackbarHost(failureSnackbar, modifier = Modifier.align(Alignment.BottomCenter))
                     }
                 }
+              }
               }
               }
               }
@@ -351,22 +357,7 @@ private fun AppContent(
                 onSpaceClick = { spaceId ->
                     navController.navigate(TaskListRoute(spaceId))
                 },
-                onOpenPlaces = { navController.navigate(SavedLocationsRoute) },
                 onRefresh = { refreshTrigger++ },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
-        }
-
-        composable<SavedLocationsRoute> {
-            ReportFailures(appGraph.savedLocationContainer)
-            SavedLocationsScreen(
-                container = appGraph.savedLocationContainer,
-                onBack = { navController.popBackStack() },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,

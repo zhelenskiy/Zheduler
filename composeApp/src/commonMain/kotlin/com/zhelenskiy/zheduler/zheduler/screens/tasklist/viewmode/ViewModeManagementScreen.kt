@@ -2,7 +2,6 @@
 
 package com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode
 
-import com.zhelenskiy.zheduler.zheduler.components.common.NotificationSoundsButton
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -28,7 +27,7 @@ import com.zhelenskiy.zheduler.zheduler.OrderDirection
 import com.zhelenskiy.zheduler.zheduler.ViewMode
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
-import com.zhelenskiy.zheduler.zheduler.theme.ThemeMenuButton
+import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeIntent
@@ -70,8 +69,7 @@ fun ViewModeManagementScreen(
                     IconButton(onClick = onNavigateToSpaceList) {
                         Icon(Icons.Default.Home, contentDescription = "Spaces")
                     }
-                    NotificationSoundsButton()
-                    ThemeMenuButton(
+                    SettingsButton(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
                         useDynamicColors = useDynamicColors,

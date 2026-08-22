@@ -19,6 +19,9 @@ import pro.respawn.flowmvi.compose.dsl.subscribe
 interface PlaceBook {
     val places: List<SavedLocation>
     fun save(location: SavedLocation)
+
+    /** Removes one. Rules that copied it keep working — they hold their own copy of the area. */
+    fun delete(id: String)
     fun newId(): String
 
     companion object {
@@ -26,6 +29,7 @@ interface PlaceBook {
         val Empty: PlaceBook = object : PlaceBook {
             override val places: List<SavedLocation> = emptyList()
             override fun save(location: SavedLocation) = Unit
+            override fun delete(id: String) = Unit
             override fun newId(): String = ""
         }
     }
@@ -51,6 +55,9 @@ fun PlaceBookProvider(container: SavedLocationContainer, content: @Composable ()
             override val places: List<SavedLocation> = state.locations
             override fun save(location: SavedLocation) =
                 container.store.intent(SavedLocationIntent.Save(location))
+
+            override fun delete(id: String) =
+                container.store.intent(SavedLocationIntent.Delete(id))
 
             override fun newId(): String = container.generateId()
         }

@@ -13,29 +13,18 @@ import pro.respawn.flowmvi.plugins.reduce
 import pro.respawn.flowmvi.plugins.whileSubscribed
 
 /**
- * @param locations the address book, as it stands.
- * @param query what is in the screen's search box, which narrows the book. Searching the *world*
- *   is a different thing and belongs to the dialog that adds a place — see `PlaceSearchState`.
+ * @param locations the address book, as it stands. Narrowing it is the dialog's own business —
+ *   see `SavedLocation.matches` — because a search box is what the reader typed, not something
+ *   the book knows about itself.
  */
 data class SavedLocationState(
     val locations: List<SavedLocation> = emptyList(),
-    val query: String = "",
-) : MVIState {
-    /** The kept places [query] names, matched the way the repository matches them. */
-    val matching: List<SavedLocation>
-        get() = query.trim().let { needle ->
-            if (needle.isEmpty()) locations
-            else locations.filter {
-                it.name.contains(needle, ignoreCase = true) || it.address.contains(needle, ignoreCase = true)
-            }
-        }
-}
+) : MVIState
 
 sealed interface SavedLocationIntent : MVIIntent {
     data object Load : SavedLocationIntent
     data class Save(val location: SavedLocation) : SavedLocationIntent
     data class Delete(val id: String) : SavedLocationIntent
-    data class Filter(val query: String) : SavedLocationIntent
 }
 
 sealed interface SavedLocationAction : MVIAction
@@ -65,7 +54,6 @@ class SavedLocationContainer(
                 is SavedLocationIntent.Load -> load()
                 is SavedLocationIntent.Save -> save(intent.location)
                 is SavedLocationIntent.Delete -> delete(intent.id)
-                is SavedLocationIntent.Filter -> updateState { copy(query = intent.query) }
             }
         }
     }

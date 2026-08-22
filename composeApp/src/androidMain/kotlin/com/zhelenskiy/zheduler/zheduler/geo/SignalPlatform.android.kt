@@ -107,14 +107,7 @@ internal class AndroidSignalSource(private val context: Context) : SignalSource 
     private fun android.net.wifi.WifiInfo.isJoined(): Boolean =
         supplicantState == SupplicantState.COMPLETED || networkId != -1
 
-    private fun locationServicesOn(): Boolean {
-        val manager = context.getSystemService(LocationManager::class.java) ?: return false
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) manager.isLocationEnabled
-        else runCatching {
-            manager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-        }.getOrDefault(false)
-    }
+    private fun locationServicesOn(): Boolean = context.locationServicesOn()
 
     /**
      * The addresses of the bluetooth devices currently connected, or null for "cannot tell".
@@ -212,8 +205,31 @@ internal fun Context.hasBluetoothPermission(): Boolean =
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) true
     else checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
-/** Nothing that is not already said by the permission notices in the picker. */
-actual suspend fun signalTrouble(kind: SignalKind): String? = null
+/**
+ * Whether the system is switched off in a way the permission notices do not cover.
+ *
+ * Since API 27 the name of the network is withheld whenever location is switched off at the system
+ * level, permission or not — so a phone that has been granted everything still answers "cannot
+ * tell", and a wifi rule written here never fires with nothing on screen to say why. The permission
+ * rows in the picker do not cover it, because there is nothing left to grant.
+ */
+actual suspend fun signalTrouble(kind: SignalKind): String? {
+    if (kind != SignalKind.Wifi) return null
+    val context = androidApplication()
+    if (!context.hasLocationPermission() || context.locationServicesOn()) return null
+    return "Location is switched off, so this phone will not say which wifi network it is on and " +
+        "a rule about one cannot fire until it is switched back on."
+}
+
+/** Whether the system's location switch is on, which gates the name of the network. */
+internal fun Context.locationServicesOn(): Boolean {
+    val manager = getSystemService(LocationManager::class.java) ?: return false
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) manager.isLocationEnabled
+    else runCatching {
+        manager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }.getOrDefault(false)
+}
 
 actual suspend fun offerableSignals(kind: SignalKind): List<OfferedSignal> {
     val context = androidApplication()
