@@ -1,6 +1,7 @@
 package com.zhelenskiy.zheduler.zheduler.geo
 
 import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
+import com.zhelenskiy.zheduler.zheduler.settings.LocationCheckRate
 
 /**
  * Not answered here.
@@ -14,3 +15,6 @@ import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
  * Until then the iOS build catches a crossing on its next sweep, the same way the web build does.
  */
 actual fun updatePlaceWatch(needs: ScheduledEventEngine.WatchNeeds) = Unit
+
+/** Nothing here ever asks where the device is, so there is no rate to set. */
+actual fun updateLocationCheckRate(rate: LocationCheckRate) = Unit

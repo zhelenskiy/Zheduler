@@ -6,6 +6,7 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -58,6 +59,74 @@ class GeofencingTest {
     fun `a different radius over the same point is a different fence`() {
         val point = GeoPoint(48.858370, 2.294481)
         assertTrue(area(point, 200.0).key != area(point, 400.0).key)
+    }
+
+    @Test
+    fun `a reading says how far the nearest edge was`() {
+        // What lets the rate follow the user rather than the clock. Without it a phone in another
+        // county is asked where it is as often as one at the corner of the fence.
+        val here = GeoPoint(51.5, -0.12)
+        // Outside it, or the distance to the edge is zero and the test proves only the clamp.
+        val nearby = area(GeoPoint(51.5, -0.118), 100.0)
+        val faraway = area(GeoPoint(52.5, -0.12), 100.0)
+
+        val reading = Geofencing.read(
+            areas = listOf(nearby, faraway),
+            fix = GeoFix(here),
+            wasInside = emptyMap(),
+        )
+
+        val edge = assertNotNull(reading.nearestEdgeMeters)
+        assertTrue(edge in 1.0..200.0, "the near fence is tens of metres away, not $edge m")
+    }
+
+    @Test
+    fun `the middle of a fence is a whole radius from its boundary`() {
+        // Measured as the depth past the edge instead, this would be zero — the most urgent
+        // reading there is — and someone at home all night, inside a fence they watch, would have
+        // their phone asked where it is every fifteen seconds until morning.
+        val here = GeoPoint(51.5, -0.12)
+        val reading = Geofencing.read(
+            areas = listOf(area(here, 100.0)),
+            fix = GeoFix(here),
+            wasInside = emptyMap(),
+        )
+
+        assertEquals(100.0, assertNotNull(reading.nearestEdgeMeters), absoluteTolerance = 1.0)
+    }
+
+    @Test
+    fun `the boundary is as near from inside as from out`() {
+        // Which is the point of measuring to the line: a crossing happens there, and the two sides
+        // of it are equally close to one.
+        val centre = GeoPoint(51.5, -0.12)
+        val fence = area(centre, 500.0)
+
+        // Roughly 140 m east of the centre, so 360 m inside the boundary.
+        val inside = Geofencing.read(
+            areas = listOf(fence),
+            fix = GeoFix(GeoPoint(51.5, -0.118)),
+            wasInside = emptyMap(),
+        )
+        // Roughly 860 m east, so 360 m outside it.
+        val outside = Geofencing.read(
+            areas = listOf(fence),
+            fix = GeoFix(GeoPoint(51.5, -0.1076)),
+            wasInside = emptyMap(),
+        )
+
+        assertEquals(
+            assertNotNull(inside.nearestEdgeMeters),
+            assertNotNull(outside.nearestEdgeMeters),
+            absoluteTolerance = 20.0,
+        )
+    }
+
+    @Test
+    fun `a reading that looked at nothing reports no distance`() {
+        // Not zero, which would ask for the fastest rate there is on a device that has never been
+        // able to say where it is.
+        assertEquals(null, PlaceReading.Unknown.nearestEdgeMeters)
     }
 
     @Test

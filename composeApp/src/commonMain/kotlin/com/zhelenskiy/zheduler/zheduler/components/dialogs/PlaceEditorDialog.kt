@@ -95,8 +95,16 @@ fun PlaceEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Add a place" else "Edit place") },
         text = {
+            // Stopped while a finger is on the map. A pinch and a pan are mostly vertical
+            // movement, and a scrolling column claims that the moment it passes touch slop — so on
+            // a phone the map moved only when the fingers happened to travel level, which reads as
+            // a map whose gestures do not work. The scroll comes back the instant the map is let
+            // go, so the rest of the form still scrolls.
+            var mapHeld by remember { mutableStateOf(false) }
             Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState(), enabled = !mapHeld),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedTextField(
@@ -134,6 +142,7 @@ fun PlaceEditorDialog(
                         address = ""
                         placed = true
                     },
+                    onHeldChange = { mapHeld = it },
                 )
 
                 Text(

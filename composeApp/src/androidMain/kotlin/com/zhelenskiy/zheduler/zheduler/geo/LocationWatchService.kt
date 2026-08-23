@@ -22,6 +22,9 @@ import android.os.Looper
 import com.zhelenskiy.zheduler.zheduler.di.androidApplication
 import com.zhelenskiy.zheduler.zheduler.di.obtainAppGraph
 import com.zhelenskiy.zheduler.zheduler.events.ScheduledEventEngine
+import com.zhelenskiy.zheduler.zheduler.settings.LocationCheckRate
+import com.zhelenskiy.zheduler.zheduler.settings.createLocationSettingsStore
+import com.zhelenskiy.zheduler.zheduler.settings.intervalFor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -73,6 +76,12 @@ class LocationWatchService : Service() {
 
     private var listening = false
 
+    /** The cadence the current registration was made with, so a change to it takes effect. */
+    private var listeningWith: Pair<Long, Float>? = null
+
+    /** Whether the rate has been read off disk yet in this process. */
+    private var rateLoaded = false
+
     private val manager: LocationManager? by lazy {
         getSystemService(Context.LOCATION_SERVICE) as? LocationManager
     }
@@ -120,7 +129,9 @@ class LocationWatchService : Service() {
         }
         startForeground()
         startedWith = 1 or (if (hasLocationPermission()) 2 else 0) or
-            (if (hasBluetoothPermission()) 4 else 0)
+            (if (hasBluetoothPermission()) 4 else 0) or
+            (cadenceBucket(intervalFor(checkRate, nearestMeters)) shl 3) or
+            (displacementFor(tightestMeters).toInt() shl 8)
         listen()
         listenToRadios()
         // Also what stops the service again: the sweep reports whether anything is still waiting
@@ -155,10 +166,19 @@ class LocationWatchService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun listen() {
-        if (listening) return
         val manager = manager ?: return
         if (!hasLocationPermission()) return
+        val wanted = intervalFor(checkRate, nearestMeters) to displacementFor(tightestMeters)
+        // Already asking for exactly this. Registering again would be harmless but pointless.
+        if (listening && listeningWith == wanted) return
+        // The cadence has changed — a tighter fence has been saved, or the last one deleted. The
+        // old registration has to go first: `requestLocationUpdates` with the same listener
+        // replaces it per provider, but a provider that has since been switched off would keep the
+        // stale one forever.
+        if (listening) runCatching { manager.removeUpdates(listener) }
+
         val providers = runCatching { manager.getProviders(true) }.getOrDefault(emptyList())
+        listening = false
         // Both, where both are on. The network provider answers indoors and costs almost nothing;
         // GPS is what has any hope of a boundary a hundred metres across. Whichever speaks first
         // is a sweep, and a sweep is idempotent.
@@ -166,10 +186,11 @@ class LocationWatchService : Service() {
             .filter { it in providers }
             .forEach { provider ->
                 runCatching {
-                    manager.requestLocationUpdates(provider, MIN_INTERVAL_MS, MIN_DISTANCE_M, listener)
+                    manager.requestLocationUpdates(provider, wanted.first, wanted.second, listener)
                     listening = true
                 }
             }
+        listeningWith = wanted.takeIf { listening }
     }
 
     /**
@@ -220,6 +241,7 @@ class LocationWatchService : Service() {
             do {
                 pendingSweep = false
                 try {
+                    loadCheckRate()
                     val graph = obtainAppGraph()
                     graph.notificationPreferences.load()
                     graph.scheduledEventEngine.sweep()
@@ -240,7 +262,28 @@ class LocationWatchService : Service() {
         }
     }
 
+    /**
+     * Reads the user's chosen rate off disk, once per process.
+     *
+     * The service can be up before any of the app is — a boot starts it directly — and the rate is
+     * a static that came back as the default with the process. Left at that, someone who chose the
+     * cheapest rate for their battery got the automatic one until they next opened the app.
+     */
+    private suspend fun loadCheckRate() {
+        if (rateLoaded) return
+        rateLoaded = true
+        val stored = runCatching { createLocationSettingsStore().get() }.getOrNull() ?: return
+        if (stored.checkRate != checkRate) {
+            checkRate = stored.checkRate
+            // Registered with the old rate; clearing what identifies the watch is what makes the
+            // sweep about to run register it again.
+            forget()
+        }
+    }
+
     /** Whether there is anything this service could still watch with. */
+    // No third clause for wifi: reading the name of a network needs *precise* location, which is
+    // already one of the two this accepts. Adding it would be a longer way of saying the same thing.
     private fun canWatch(): Boolean = hasLocationPermission() || hasBluetoothPermission()
 
     private fun startForeground() {
@@ -291,6 +334,25 @@ class LocationWatchService : Service() {
         var startedWith: Int = 0
             private set
 
+        /**
+         * The radius of the smallest area being watched, as the last sweep saw it.
+         *
+         * Static for the reason [startedWith] is: a service restarted for memory comes back with a
+         * null intent, so there is nowhere to have put it. Lost with the process, which leaves the
+         * ordinary cadence until the next sweep says otherwise — slower than asked for, never
+         * faster, and corrected within one sweep.
+         */
+        @Volatile
+        var tightestMeters: Double? = null
+
+        /** How far the device was from the nearest watched edge, as the last sweep saw it. */
+        @Volatile
+        var nearestMeters: Double? = null
+
+        /** What the user asked for. Lost with the process, and re-told the moment the app starts. */
+        @Volatile
+        var checkRate: LocationCheckRate = LocationCheckRate.Automatic
+
         /** Says the service is on its way out, before it has got there. See [updatePlaceWatch]. */
         internal fun forget() {
             startedWith = 0
@@ -300,18 +362,84 @@ class LocationWatchService : Service() {
         const val NOTIFICATION_ID = 0x21E0
 
         /**
-         * How often, and how far, before the device is asked again.
+         * How far the device must move before a fix is worth delivering, for a fence of ordinary
+         * size.
          *
-         * Both have to be satisfied, so the minute is what bounds the cost: a smaller distance
-         * cannot ask for readings more often than that, it only stops a device sitting still from
-         * producing any. Ten metres rather than a hundred because a fence may now be a few metres
-         * across and a hundred-metre stride walks straight over one — though nothing sampled once
-         * a minute can promise to catch a fence that small, which is why a tiny one is better
-         * paired with a wifi or bluetooth condition.
+         * Both bounds have to be satisfied, so this one can silence the other: asking every few
+         * seconds while still demanding ten metres of movement delivers nothing at all. Which is
+         * why it moves with the tightest fence — see [displacementFor].
          */
-        const val MIN_INTERVAL_MS = 60_000L
         const val MIN_DISTANCE_M = 10f
+
+        /**
+         * The unit the cadence is counted in when deciding whether a watch has really changed.
+         *
+         * Not a rate anything is asked at — what the fixes are asked at is the user's setting, see
+         * `LocationCheckRate`. This is only the base of the doubling buckets in [cadenceBucket].
+         */
+        const val FAST_INTERVAL_MS = 5_000L
+
+        /**
+         * How much of the smallest radius the device may cross between fixes.
+         *
+         * A third, so a fence is not walked through between two updates. Both bounds move together
+         * — asking often but only after ten metres of movement is the same silence, since it is
+         * the displacement filter that suppresses the delivery.
+         */
+        const val TIGHT_FRACTION = 1.0 / 3.0
+
+        /**
+         * How far a fix is worth reporting at all, however tight the fence.
+         *
+         * Zero would deliver the noise of a phone sitting on a table as movement, and every one of
+         * those is a sweep.
+         */
+        const val MIN_TIGHT_DISTANCE_M = 2f
+
+        /**
+         * How often to ask, which is the user's setting applied to what the last look found.
+         *
+         * The distance does the work on [LocationCheckRate.Automatic] and is ignored on the rest —
+         * someone who has asked for every fifteen minutes has said what they want.
+         */
+        fun intervalFor(rate: LocationCheckRate, nearestMeters: Double?): Long =
+            rate.intervalFor(nearestMeters).inWholeMilliseconds
+
+        /**
+         * The interval as a handful of buckets, for deciding whether the watch has really changed.
+         *
+         * On [LocationCheckRate.Automatic] the interval moves with every step the user takes, and
+         * compared exactly it would restart the foreground service on every sweep. Doubling
+         * buckets: the watch is re-registered when the rate has changed by a factor of two, which
+         * is the point at which it is worth paying for.
+         */
+        fun cadenceBucket(intervalMs: Long): Int {
+            var bucket = 0
+            var value = intervalMs / FAST_INTERVAL_MS
+            while (value > 1) {
+                value /= 2
+                bucket++
+            }
+            return bucket
+        }
+
+        /** How far the device must move before a fix is delivered, given the smallest fence. */
+        fun displacementFor(tightestMeters: Double?): Float {
+            val radius = tightestMeters?.takeIf { it.isFinite() && it > 0 } ?: return MIN_DISTANCE_M
+            val scaled = (radius * TIGHT_FRACTION).toFloat()
+            return scaled.coerceIn(MIN_TIGHT_DISTANCE_M, MIN_DISTANCE_M)
+        }
+
+
     }
+}
+
+actual fun updateLocationCheckRate(rate: LocationCheckRate) {
+    if (LocationWatchService.checkRate == rate) return
+    LocationWatchService.checkRate = rate
+    // The watch is registered with the old rate and will not notice on its own: what identifies a
+    // running watch includes its cadence, so clearing that is what makes the next sweep re-register.
+    LocationWatchService.forget()
 }
 
 /**
@@ -332,15 +460,40 @@ actual fun updatePlaceWatch(needs: ScheduledEventEngine.WatchNeeds) {
     // is joined needs the location permission; bluetooth needs its own. Lumped together, a phone
     // holding only one of them keeps a permanent notification for a watch that can never fire.
     val wanted = (needs.places && context.hasLocationPermission()) ||
-        (SignalKind.Wifi in needs.signals && context.hasLocationPermission()) ||
+        (SignalKind.Wifi in needs.signals && context.hasWifiNamePermission()) ||
         (SignalKind.Bluetooth in needs.signals && context.hasBluetoothPermission())
     // Compared on the *capabilities* as well as the answer: granting location to a service already
     // running for bluetooth has to reach onStartCommand, which is the only place that registers
     // for location updates and settles what kind of foreground service this is.
+    LocationWatchService.tightestMeters = needs.tightestMeters
+    LocationWatchService.nearestMeters = needs.nearestMeters
+    // The cadence is part of what identifies a running watch, not just the permissions: saving a
+    // fence tighter than any before it has to reach onStartCommand, which is where the location
+    // updates are registered. Compared as the cadence rather than as the radius, so redrawing a
+    // fence by a metre does not restart the service.
+    // Both halves of what the watch was registered with. The interval is bucketed because on the
+    // automatic rate it moves with every step the user takes; the filter is not, because it only
+    // changes when a fence is drawn or deleted — and it was left out entirely at first, so saving
+    // a fence tighter than any before it kept the old filter and the third-of-a-radius promise
+    // quietly went unhonoured until something unrelated restarted the service.
+    val cadence = LocationWatchService.cadenceBucket(
+        LocationWatchService.intervalFor(LocationWatchService.checkRate, needs.nearestMeters)
+    )
+    val filter = LocationWatchService.displacementFor(needs.tightestMeters).toInt()
     val signature = if (!wanted) 0
     else 1 or (if (context.hasLocationPermission()) 2 else 0) or
-        (if (context.hasBluetoothPermission()) 4 else 0)
-    if (signature == LocationWatchService.startedWith) return
+        (if (context.hasBluetoothPermission()) 4 else 0) or (cadence shl 3) or (filter shl 8)
+    when (
+        watchAction(
+            wanted = wanted,
+            running = LocationWatchService.running,
+            signature = signature,
+            startedWith = LocationWatchService.startedWith,
+        )
+    ) {
+        WatchAction.LeaveAlone -> return
+        WatchAction.Start, WatchAction.Stop -> Unit
+    }
     runCatching {
         // From Android 12 a foreground service cannot be started from the background at all, and
         // the refusal is an exception. Most sweeps that turn the watch on are the app's own, made

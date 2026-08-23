@@ -474,6 +474,13 @@ fun RecurrenceRuleDetails(
                 }
             }
         }
+        // What fires the rule when nothing above does. Left out, a rule that waits for a place or
+        // a network showed nothing but the status it resets to — which reads as a rule with no
+        // trigger at all, and is exactly the rule whose trigger is hardest to guess.
+        rule.presencePhrases().forEach { phrase ->
+            Text(phrase.replaceFirstChar(Char::uppercaseChar), style = style)
+        }
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.horizontalScroll(rememberScrollState())
@@ -492,6 +499,19 @@ fun RecurrenceRuleDetails(
         Text(rule.termination.toFullString(), style = style)
     }
 }
+
+/**
+ * Every condition on what is around the device, in the words the rule editor uses for them.
+ *
+ * One line each rather than one joined sentence: they are read down a narrow card beside the
+ * status and the termination, and three conditions joined with "and" scroll off the side.
+ */
+private fun RecurrenceRule.presencePhrases(): List<String> = listOfNotNull(
+    locationTrigger?.phrase(),
+    wifiTrigger?.phrase(),
+    bluetoothTrigger?.phrase(),
+    nearbyTrigger?.phrase(),
+)
 
 private fun RecurrenceTrigger.AtFixedPoints.timezoneSuffix(): String = when (val tz = timezone) {
     is RecurrenceTimeZone.SystemDefault -> ""

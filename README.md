@@ -146,13 +146,31 @@ network positioning and no connectivity. Whereabouts are then left exactly as th
 crossing that happened meanwhile is found the moment a real fix arrives rather than being lost or
 invented. No network is needed for any of this; positioning is the device's own.
 
-A radius can be anything from a metre to a few thousand kilometres. A metre is finer than any
-consumer fix, so a fence that small will seldom be entered by positioning alone — but it is a
-reasonable thing to ask for beside a condition that *is* exact, and a rule wanting a point on the
-map and the office wifi is not relying on the metre.
+A radius runs from a metre to a few thousand kilometres. Below about twenty metres the editor says
+plainly what it is asking of the hardware: a phone knows itself to roughly that outdoors and worse
+indoors, and the margin a fence must be left by before it counts as departed grows to whatever the
+fix says its own error is. A smaller fence is still worth allowing — beside a wifi or bluetooth
+condition, which *are* exact, a metre is a reasonable thing to ask for — but on its own it does not
+fail cleanly. It fires late, or now and then, which looks like a broken app rather than a limit of
+physics, so the number is warned about at the moment it is chosen.
+
+How often the device is asked where it is decides both what a location rule costs and whether it
+fires at all: someone walking past the edge of a fence is in and out again between two questions.
+*Location checks*, under the settings button, is where that is set. Left on **Automatic** it
+follows the device rather than the clock — the time it would take to walk to the nearest edge,
+bounded either side — so a phone in another county is asked rarely and one at the corner of a fence
+often. A fixed rate is there for anyone who would rather decide. And the refresh button in the task
+list and on a task runs every check at once, for the moment you are standing where the rule is
+about and want to know now.
 
 Signals are noisier still, and have no distance to measure, so what stands in for that margin is a
-grace period: a network that has gone is held as still present for a couple of minutes, and the
+grace period — but only for an absence nobody has *settled*. A radio switched off, or a device
+plainly joined to a different network, is the system saying the thing has gone, and that is
+reported at once (a desktop can only tell the second of those, so it only claims that one); held under the grace instead, switching wifi off and on again inside two minutes
+produced no crossing at all, because the departure was swallowed and the return was therefore not
+an arrival. What the grace is left for is the genuinely doubtful case: the radio on and associated
+with nothing, which is a router rebooting or a lift, not leaving the building. Then a network that
+has gone is held as still present for a couple of minutes, and the
 clock runs from the first sweep that *noticed* it missing rather than from the last that saw it — a
 phone on a table runs no sweeps for hours, so "last seen" is stale the instant a router blinks, and
 measured from that a hiccup at midnight is a departure. A sweep is booked for the moment the grace

@@ -34,16 +34,26 @@ private object DesktopSignalSource : SignalSource {
     override suspend fun nearby(): NearbySignals {
         val kinds = mutableSetOf<SignalKind>()
         val present = mutableSetOf<String>()
+        val definite = mutableSetOf<SignalKind>()
 
         joinedNetwork()?.let { ssid ->
             kinds += SignalKind.Wifi
             if (ssid.isNotEmpty()) present += NearbySignal.Wifi(ssid).key
+            // A name settles every *other* network: a machine is on one at a time, so hearing
+            // about the office is hearing that home has gone.
+            //
+            // An empty answer does not settle anything here. On a phone the two cases behind it
+            // can be told apart — the radio switched off, which is definite, or on and associated
+            // with nothing, which is a router rebooting — but as these tools are asked here both
+            // come back as "on nothing". Read as definite, a laptop would announce leaving home
+            // every time the router came back up, so the grace covers the window instead.
+            if (ssid.isNotEmpty()) definite += SignalKind.Wifi
         }
         pairedDevices()?.let { devices ->
             kinds += SignalKind.Bluetooth
             devices.filter { it.present }.forEach { present += it.signal.key }
         }
-        return NearbySignals(kinds = kinds, present = present)
+        return NearbySignals(kinds = kinds, present = present, definite = definite)
     }
 }
 

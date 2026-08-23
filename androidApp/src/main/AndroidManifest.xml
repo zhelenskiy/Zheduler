@@ -45,6 +45,12 @@
         so neither the scan permission nor a location strings attached to it are needed.
     -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <!--
+      From Android 13 this is what the wifi APIs ask for instead of location. Not flagged
+      "neverForLocation": the name of the network is exactly how a rule tells where the phone is,
+      which is the thing that flag promises not to do.
+    -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>

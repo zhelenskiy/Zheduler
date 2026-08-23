@@ -1936,7 +1936,7 @@ class ScheduledEventEngineTest {
         f.engine().sweep()
 
         assertEquals(
-            start + 1.minutes + Geofencing.SIGNAL_GRACE,
+            start + 1.minutes + Geofencing.WIFI_GRACE,
             nextAt,
             "the grace running out is itself something to come back for",
         )
@@ -1974,7 +1974,7 @@ class ScheduledEventEngineTest {
         f.engine().sweep()
 
         assertEquals(
-            start + 1.minutes + Geofencing.SIGNAL_GRACE,
+            start + 1.minutes + Geofencing.WIFI_GRACE,
             nextAt,
             "the grace still runs out at the same moment, and something still has to come back for it",
         )

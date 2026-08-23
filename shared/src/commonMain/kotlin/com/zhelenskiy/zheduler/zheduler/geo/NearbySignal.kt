@@ -120,6 +120,21 @@ enum class SignalDirection {
 data class NearbySignals(
     val kinds: Set<SignalKind> = emptySet(),
     val present: Set<String> = emptySet(),
+    /**
+     * The kinds whose absences this reading has *settled*, rather than merely failed to see.
+     *
+     * The grace that holds a missing signal as still present exists for one thing: a network drops
+     * for a moment — a router reboots, a lift takes the signal — and that is not leaving the
+     * building. It is the wrong answer to a radio that has been *switched off*, or to a phone that
+     * is plainly on a different network now: those are not a signal that failed to turn up, they
+     * are the system saying it has gone.
+     *
+     * Held under the grace anyway, switching wifi off and on again inside two minutes produces no
+     * crossing at all — the departure is swallowed by the grace and the return is not an arrival,
+     * because nothing ever recorded it as gone. Which is exactly what a rule that never fires
+     * looks like from the outside, and no amount of asking again will shake it loose.
+     */
+    val definite: Set<SignalKind> = emptySet(),
 ) {
     companion object {
         /** Nothing could be looked at. */

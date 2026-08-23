@@ -35,6 +35,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
@@ -47,6 +48,7 @@ import com.zhelenskiy.zheduler.zheduler.geo.OpenStreetMap
 import com.zhelenskiy.zheduler.zheduler.geo.TileKey
 import com.zhelenskiy.zheduler.zheduler.geo.TileMath
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
@@ -174,6 +176,15 @@ fun OsmMap(
     areas: List<GeoArea> = emptyList(),
     highlights: List<GeoPoint> = emptyList(),
     onTap: ((GeoPoint) -> Unit)? = null,
+    /**
+     * Called with true while a finger is on the map and false when it lifts.
+     *
+     * For a caller that scrolls: a scrolling parent claims the vertical part of a pan or a pinch
+     * before this ever sees it, and the map then only moves when the fingers happen to travel
+     * level. There is nothing the map can do about that from inside — a parent that has taken a
+     * gesture has taken it — so it says when it is being held and lets the caller stand aside.
+     */
+    onHeldChange: ((Boolean) -> Unit)? = null,
 ) {
     val cache = rememberTileCache()
     val colors = MaterialTheme.colorScheme
@@ -186,24 +197,37 @@ fun OsmMap(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(onHeldChange) {
+                    // Said before any gesture is recognised, so a parent has stood aside by the
+                    // time one is: told only once a pinch had been *detected*, the scroll would
+                    // already have taken the movement that would have proved it was a pinch.
+                    onHeldChange ?: return@pointerInput
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                            val down = currentEvent.changes.any { it.pressed }
+                            onHeldChange(down)
+                        }
+                    }
+                }
                 .pointerInput(camera) {
                     // A pinch is reported as the ratio since the *last pointer event*, which for a
                     // real gesture is a per-frame 1.01 or so. Compared against a threshold on its
                     // own it never crosses one and the map simply does not zoom; multiplied up
                     // across the gesture it steps when the fingers have really moved that far.
                     var pinched = 1f
-                    detectTransformGestures { _, pan, zoomChange, _ ->
+                    detectTransformGestures(panZoomLock = true) { centroid, pan, zoomChange, _ ->
                         camera.panBy(pan, size.toSize())
                         // Exactly one is what a single finger reports, so this is also where a
                         // gesture that is not a pinch clears what the last one left part-way.
                         if (zoomChange == 1f) pinched = 1f
                         pinched *= zoomChange
                         while (pinched >= PINCH_STEP) {
-                            camera.zoomBy(1)
+                            camera.zoomAbout(1, centroid, size.toSize())
                             pinched /= PINCH_STEP
                         }
                         while (pinched <= 1f / PINCH_STEP) {
-                            camera.zoomBy(-1)
+                            camera.zoomAbout(-1, centroid, size.toSize())
                             pinched *= PINCH_STEP
                         }
                     }
@@ -408,9 +432,12 @@ private val BETWEEN_STEPS = 120.milliseconds
 private const val PIN_REACH = 16.0
 
 /**
- * How far a pinch has to travel before it is worth a whole step of zoom.
+ * How much wider the fingers must get for one step of zoom.
  *
- * A step of zoom doubles the scale, so a doubling of the gesture is the honest threshold — and
- * what is left over is carried on rather than thrown away, so a long pinch keeps stepping.
+ * A step *is* a doubling of scale, so two would be the honest figure — and it made the map read as
+ * having no pinch at all: the fingers have to travel the width of the screen before anything
+ * happens, and on a phone that is the whole gesture for one level. The root of two steps twice
+ * across the same movement, which is near enough continuous to feel like a map and still lands on
+ * whole tile levels, which is all this camera has.
  */
-private const val PINCH_STEP = 2f
+private val PINCH_STEP = sqrt(2f)

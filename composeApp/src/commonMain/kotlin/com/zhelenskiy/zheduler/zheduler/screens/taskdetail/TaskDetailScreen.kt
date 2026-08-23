@@ -34,6 +34,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.TagChip
 import com.zhelenskiy.zheduler.zheduler.components.common.appTopAppBarColors
 import com.zhelenskiy.zheduler.zheduler.components.form.RecurrenceRuleItem
 import com.zhelenskiy.zheduler.zheduler.components.markdown.TaskDescriptionView
+import com.zhelenskiy.zheduler.zheduler.components.common.CheckNowButton
 import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.util.LocalNow
@@ -88,6 +89,7 @@ private fun TaskDetailTopAppBar(
             IconButton(onClick = onNavigateToSpaceList) {
                 Icon(Icons.Default.Home, contentDescription = "Spaces")
             }
+            CheckNowButton()
             SettingsButton(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,

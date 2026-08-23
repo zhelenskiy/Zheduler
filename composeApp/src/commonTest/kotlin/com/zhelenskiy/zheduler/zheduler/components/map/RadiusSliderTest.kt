@@ -33,9 +33,10 @@ class RadiusSliderTest {
 
     @Test
     fun `the smallest fences are a metre apart rather than ten`() {
-        // The whole point of lowering the floor: if the rounding step stayed at ten metres, every
-        // position between the smallest fence and 10 m would round to nothing and be clamped back
-        // to the floor, so a 3 m fence could not be asked for at all.
+        // The floor is a metre, so the rounding step has to be one down there too: at ten metres
+        // apart every position between the floor and 10 m would round to nothing and be clamped
+        // back, and a 3 m fence could not be asked for at all — which is the whole point of
+        // allowing one beside a condition that is exact.
         val small = (0..200).map { sliderToRadius(it / 1000f) }.distinct().filter { it < 10 }
         assertEquals(
             listOf(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0),

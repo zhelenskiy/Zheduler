@@ -42,7 +42,7 @@ class NearbySignalTest {
         wasInside = wasInside,
         missingSince = missingSince,
         now = at,
-        grace = grace,
+        grace = { grace },
     ).reading
 
     /** The whole answer, for the tests that are about the bookkeeping rather than the crossings. */
@@ -59,8 +59,123 @@ class NearbySignalTest {
         wasInside = wasInside,
         missingSince = missingSince,
         now = at,
-        grace = grace,
+        grace = { grace },
     )
+
+    @Test
+    fun `switching the radio off is a departure at once rather than in two minutes`() {
+        // The bug this exists for, reported from a real phone: wifi off and on again inside the
+        // grace produced no crossing at all — the departure was swallowed by the grace, and the
+        // return was not an arrival because nothing had recorded it as gone. A rule that never
+        // fires, and no amount of asking again shakes it loose.
+        val settled = Geofencing.readSignals(
+            signals = listOf(office),
+            nearby = NearbySignals(
+                kinds = setOf(SignalKind.Wifi),
+                present = emptySet(),
+                definite = setOf(SignalKind.Wifi),
+            ),
+            wasInside = mapOf(office.key to true),
+            missingSince = emptyMap(),
+            now = now,
+        ).reading
+
+        assertTrue(office.key in settled.left, "a radio switched off has settled the matter")
+    }
+
+    @Test
+    fun `a network that merely dropped is still held for its grace`() {
+        // The other half, and why the grace is not simply shorter: a router rebooting, or a lift,
+        // is not leaving the building. The radio is on and associated with nothing, which is the
+        // one wifi answer that is not settled.
+        val blinked = Geofencing.readSignals(
+            signals = listOf(office),
+            nearby = NearbySignals(kinds = setOf(SignalKind.Wifi), present = emptySet()),
+            wasInside = mapOf(office.key to true),
+            missingSince = emptyMap(),
+            now = now,
+        ).reading
+
+        assertTrue(office.key in blinked.inside, "a blink is not a departure")
+        assertTrue(blinked.left.isEmpty())
+    }
+
+    @Test
+    fun `being on another network settles the one left behind`() {
+        // Which is what a name in the reading means: a device is on one network at a time, so
+        // hearing about the office is hearing that home has gone.
+        val elsewhere = NearbySignal.Wifi("Home")
+        val moved = Geofencing.readSignals(
+            signals = listOf(office, elsewhere),
+            nearby = NearbySignals(
+                kinds = setOf(SignalKind.Wifi),
+                present = setOf(office.key),
+                definite = setOf(SignalKind.Wifi),
+            ),
+            wasInside = mapOf(office.key to false, elsewhere.key to true),
+            missingSince = emptyMap(),
+            now = now,
+        ).reading
+
+        assertTrue(office.key in moved.entered)
+        assertTrue(elsewhere.key in moved.left, "you cannot be on two networks at once")
+    }
+
+    @Test
+    fun `a settled absence for one kind does not settle the other`() {
+        // The flag is per kind, because the radios fail apart: a wifi radio switched off says
+        // nothing about a car that is still connected and merely missed one sweep.
+        val held = Geofencing.readSignals(
+            signals = listOf(office, car),
+            nearby = NearbySignals(
+                kinds = setOf(SignalKind.Wifi, SignalKind.Bluetooth),
+                present = emptySet(),
+                definite = setOf(SignalKind.Wifi),
+            ),
+            wasInside = mapOf(office.key to true, car.key to true),
+            missingSince = emptyMap(),
+            now = now,
+        ).reading
+
+        assertTrue(office.key in held.left)
+        assertTrue(car.key in held.inside, "the car is still inside its own grace")
+    }
+
+    @Test
+    fun `a device is given up on sooner than a network`() {
+        // They fail differently. A network drops all the time — a router reboots, a lift takes the
+        // signal — and none of that is leaving the building. A disconnect is *reported* by the
+        // system the moment it happens, and a car that has been switched off is not coming back
+        // inside the minute; held as long as a network it reads as a reminder that simply arrives
+        // two minutes late, which is what it was reported as.
+        assertTrue(
+            Geofencing.graceFor(SignalKind.Bluetooth) < Geofencing.graceFor(SignalKind.Wifi),
+            "a device disconnecting is a firmer answer than a network dropping",
+        )
+    }
+
+    @Test
+    fun `a device outlives its grace sooner than a network does`() {
+        // The same absence, the same moment, read differently by kind — which is the whole point
+        // of the two figures. Read with one grace for both, either the car is late or the router
+        // blinking is a departure.
+        val bothGone = Geofencing.readSignals(
+            signals = listOf(office, car),
+            nearby = NearbySignals(
+                kinds = setOf(SignalKind.Wifi, SignalKind.Bluetooth),
+                present = emptySet(),
+            ),
+            wasInside = mapOf(office.key to true, car.key to true),
+            missingSince = mapOf(
+                office.key to now.toEpochMilliseconds(),
+                car.key to now.toEpochMilliseconds(),
+            ),
+            now = now + Geofencing.BLUETOOTH_GRACE + 1.minutes,
+        ).reading
+
+        assertTrue(car.key in bothGone.left, "the car has been gone longer than a car's grace")
+        assertTrue(office.key in bothGone.inside, "the network is still inside its own grace")
+    }
 
     @Test
     fun `a bluetooth device is known by its address whatever it has been renamed to`() {

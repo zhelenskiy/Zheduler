@@ -54,6 +54,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import com.zhelenskiy.zheduler.zheduler.components.common.dataOrNull
 import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
+import com.zhelenskiy.zheduler.zheduler.components.common.CheckNowButton
 import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
 import com.zhelenskiy.zheduler.zheduler.settings.LocalEditorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
@@ -199,6 +200,7 @@ private fun TaskListTopAppBar(
             IconButton(onClick = onNavigateToSavedFilterManagement) {
                 Icon(Icons.Default.FilterList, contentDescription = "Saved filters")
             }
+            CheckNowButton()
             IconButton(onClick = onNavigateToCalendar) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = "Calendar")
             }

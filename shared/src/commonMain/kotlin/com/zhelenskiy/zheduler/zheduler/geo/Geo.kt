@@ -5,6 +5,7 @@ package com.zhelenskiy.zheduler.zheduler.geo
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 import kotlin.math.abs
@@ -83,17 +84,25 @@ data class GeoArea(
 
     companion object {
         /**
-         * A metre, which is finer than any consumer fix.
+         * The smallest fence a rule can watch.
          *
-         * So a fence this small will seldom be entered by positioning alone — the reading has to
-         * land within a metre of the point — and that is the user's to choose rather than ours to
-         * refuse. It is a sensible thing to ask for next to a condition that *is* precise: a rule
-         * that wants the office wifi and a point on the map is not relying on the metre.
-         *
-         * Not zero, because a circle of no size can never be entered at all, and because the key a
-         * place is remembered by is quantised to the metre.
+         * A metre, because it is a reasonable thing to ask for beside a condition that *is* exact
+         * — a rule wanting a point on the map and the office wifi is not relying on the metre. It
+         * is not a reasonable thing to ask of positioning alone: see [RELIABLE_RADIUS_METERS],
+         * which is what the editor warns below.
          */
         const val MIN_RADIUS_METERS: Double = 1.0
+
+        /**
+         * The smallest fence positioning alone can be trusted to cross reliably.
+         *
+         * Roughly what a phone knows itself to indoors, and the figure the editor warns below. Not
+         * a limit — a smaller fence is allowed and is genuinely useful beside a wifi or bluetooth
+         * condition — but below it a fence stops reporting crossings tightly and starts reporting
+         * them at random: the margin a fence must be left by before it counts as departed grows to
+         * whatever the fix says its own error is, which indoors is tens of metres.
+         */
+        const val RELIABLE_RADIUS_METERS: Double = 20.0
 
         /** Half the distance from pole to equator; past it a circle is no longer a place. */
         const val MAX_RADIUS_METERS: Double = 5_000_000.0
@@ -191,6 +200,20 @@ data class PlaceReading(
      * at it, the very next sweep calls it an arrival and fires a rule nobody moved for.
      */
     val measured: Set<String> = emptySet(),
+    /**
+     * How far the device was from the nearest watched *boundary*, in metres, or null where nothing
+     * was measured.
+     *
+     * The distance to the line, from whichever side: a crossing happens at the boundary, so the
+     * middle of a fence is as far from one as the same distance outside it. Measured as the depth
+     * past the edge instead, someone sitting at home all night — inside a fence they watch, and so
+     * at depth zero — would be the most urgent case there is, and asked where they are every
+     * fifteen seconds until morning.
+     *
+     * Carried so a platform can decide how soon to look again. Not part of what a rule matches on:
+     * it is a cost decision, not an answer.
+     */
+    val nearestEdgeMeters: Double? = null,
 ) {
     /** Whether this reading is a crossing rather than a standing answer about where the device is. */
     val isCrossing: Boolean get() = entered.isNotEmpty() || left.isNotEmpty()
@@ -350,10 +373,13 @@ object Geofencing {
         val entered = mutableSetOf<String>()
         val left = mutableSetOf<String>()
         val measured = mutableSetOf<String>()
+        var nearestEdge: Double? = null
         // Two areas can be the same place under different names; they share one answer.
         areas.distinctBy { it.key }.forEach { area ->
             measured += area.key
             val before = wasInside[area.key]
+            val edge = abs(distanceMeters(area.point, fix.point) - area.radius())
+            nearestEdge = nearestEdge?.let { min(it, edge) } ?: edge
             val now = isInside(area, fix, wasInside = before == true)
             if (now) inside += area.key
             when {
@@ -368,6 +394,7 @@ object Geofencing {
             left = left,
             known = true,
             measured = measured,
+            nearestEdgeMeters = nearestEdge,
         )
     }
 
@@ -376,10 +403,12 @@ object Geofencing {
      *
      * The counterpart of [read] for the things that are simply present or not — there is no
      * distance to measure and so no boundary to widen. What takes the place of that margin is
-     * [grace]: a network drops for a moment far more readily than a user walks out of a building,
-     * and a router that hiccups must not read as having left the house. A signal that has gone is
-     * held as still present until it has been missing for [grace]; the next sweep after that is
-     * what reports the departure.
+     * [grace], which differs by kind — see [graceFor]. A signal that has gone is held as still
+     * present until it has been missing that long; the next sweep after that reports the
+     * departure.
+     *
+     * Unless the reading has settled it: an absence the platform is *sure* of — the radio switched
+     * off, another network joined — is reported at once. See [NearbySignals.definite].
      *
      * Only the kinds [nearby] covers are looked at. The rest are left unmeasured — a phone that
      * cannot be asked about bluetooth has not watched every paired device drive away. A radio
@@ -391,7 +420,7 @@ object Geofencing {
         wasInside: Map<String, Boolean>,
         missingSince: Map<String, Long>,
         now: Instant,
-        grace: Duration,
+        grace: (SignalKind) -> Duration = ::graceFor,
     ): SignalReading {
         if (nearby.kinds.isEmpty()) return SignalReading(PlaceReading.Unknown, emptyMap())
         val inside = mutableSetOf<String>()
@@ -414,8 +443,10 @@ object Geofencing {
             val missingFrom = if (here) null else missingSince[key] ?: now.toEpochMilliseconds()
             missingFrom?.let { missing[key] = it }
 
+            // Not held where the platform has settled the matter — see [NearbySignals.definite].
             val heldByGrace = before == true && missingFrom != null &&
-                now - Instant.fromEpochMilliseconds(missingFrom) < grace
+                signal.kind !in nearby.definite &&
+                now - Instant.fromEpochMilliseconds(missingFrom) < grace(signal.kind)
             val nowPresent = here || heldByGrace
             if (nowPresent) inside += key
             when {
@@ -450,10 +481,32 @@ object Geofencing {
         left = places.left + signals.left,
         known = places.known || signals.known,
         measured = places.measured + signals.measured,
+        // Only the places half has a distance to report; signals are simply present or not.
+        nearestEdgeMeters = places.nearestEdgeMeters,
     )
 
-    /** How long a signal has to be missing before it counts as gone. */
-    val SIGNAL_GRACE: Duration = 2.minutes
+    /**
+     * How long a signal has to be missing before it counts as gone.
+     *
+     * Not one figure, because the two kinds fail differently. A network drops for a moment all the
+     * time — a router reboots, a phone hands over between bands, a lift takes the signal for
+     * fifteen seconds — and none of those is leaving the building, so a wifi rule waits two
+     * minutes before believing it. A bluetooth link is not like that: the phone is *told* the
+     * device disconnected, by a system broadcast that arrives the moment it happens, and a car
+     * that has been switched off does not come back inside the minute. Held for two minutes it
+     * simply reads as broken — "I got out of the car and the reminder came two minutes later" is
+     * the complaint, and it is a fair one.
+     *
+     * Not zero, because a link does flap: a headset at the edge of range can drop and rejoin
+     * within a second or two, and every one of those would be a task reset.
+     */
+    fun graceFor(kind: SignalKind): Duration = when (kind) {
+        SignalKind.Wifi -> WIFI_GRACE
+        SignalKind.Bluetooth -> BLUETOOTH_GRACE
+    }
+
+    val WIFI_GRACE: Duration = 2.minutes
+    val BLUETOOTH_GRACE: Duration = 20.seconds
 
     /**
      * Whereabouts as they should be remembered after [reading], for whatever is still watched —

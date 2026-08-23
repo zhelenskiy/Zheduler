@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
@@ -108,6 +109,12 @@ fun SettingsButton(
                     icon = Icons.Default.Bluetooth,
                     onClick = { showing = SettingsPane.Bluetooth },
                 )
+                SettingsRow(
+                    label = "Location checks",
+                    description = "How often this device is asked where it is",
+                    icon = Icons.Default.MyLocation,
+                    onClick = { showing = SettingsPane.LocationChecks },
+                )
                 if (notificationSoundsAvailable()) {
                     SettingsRow(
                         label = "Notification sounds",
@@ -135,6 +142,7 @@ fun SettingsButton(
         SettingsPane.Bluetooth ->
             SavedSignalsDialog(SignalKind.Bluetooth, onDismiss = { showing = null })
 
+        SettingsPane.LocationChecks -> LocationChecksDialog(onDismiss = { showing = null })
         SettingsPane.Sounds -> NotificationSoundsDialog(onDismiss = { showing = null })
         SettingsPane.Theme -> ThemeSettingsDialog(
             onDismiss = { showing = null },
@@ -151,7 +159,7 @@ fun SettingsButton(
 }
 
 /** Which page is open over the list. Saved, so it survives a recreation. */
-private enum class SettingsPane { Places, Wifi, Bluetooth, Sounds, Theme }
+private enum class SettingsPane { Places, Wifi, Bluetooth, LocationChecks, Sounds, Theme }
 
 @Composable
 private fun SettingsRow(

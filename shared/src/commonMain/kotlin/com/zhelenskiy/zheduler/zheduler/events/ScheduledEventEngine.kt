@@ -106,6 +106,25 @@ class ScheduledEventEngine(
     data class WatchNeeds(
         val places: Boolean = false,
         val signals: Set<SignalKind> = emptySet(),
+        /**
+         * The radius of the smallest area being watched, or null where none is.
+         *
+         * Passed on so a platform can ask for fixes at a rate the smallest fence needs. A watch
+         * tuned for a kilometre is delivered a fix every minute and only after a hundred metres of
+         * movement, which never reports a crossing of a fence eight metres across at walking pace:
+         * the user is in and out again between two updates. What the tightest fence costs is what
+         * the user asked for by drawing it.
+         */
+        val tightestMeters: Double? = null,
+        /**
+         * How far the device was from the nearest watched edge when it was last looked at.
+         *
+         * What lets the rate follow the user rather than the clock: a phone in a city on the other
+         * side of the country from every fence it watches need not be asked every few seconds, and
+         * one a street away must be. Null where nothing was measured, which asks for the ordinary
+         * rate rather than the cheapest — not knowing is not the same as being far away.
+         */
+        val nearestMeters: Double? = null,
     ) {
         val any: Boolean get() = places || signals.isNotEmpty()
     }
@@ -252,11 +271,18 @@ class ScheduledEventEngine(
         // that a sweep which could not look at the radios still re-books the one that can. Read
         // from the reading alone, a wedged bluetooth stack would swallow the appointment as well
         // as the answer.
+        // Per kind, because the graces differ: a device held for twenty seconds and a network for
+        // two minutes must each be come back for at their own moment, and the earliest wins.
+        // A key whose kind is no longer known is given the longer of the two — coming back late
+        // costs a delay, coming back early reports a departure that has not happened yet.
+        val kindByKey = stillWatchedSignals.associate { it.key to it.kind }
         val heldUntil = missingSinceNow
             .filterKeys { insideNow[it] == true }
-            .values
+            .map { (key, since) ->
+                val grace = kindByKey[key]?.let(Geofencing::graceFor) ?: Geofencing.WIFI_GRACE
+                Instant.fromEpochMilliseconds(since) + grace
+            }
             .minOrNull()
-            ?.let { Instant.fromEpochMilliseconds(it) + Geofencing.SIGNAL_GRACE }
         val nextAt = listOfNotNull(plannedNext, heldUntil?.takeIf { it > now }).minOrNull()
 
         speak(candidates)
@@ -265,6 +291,8 @@ class ScheduledEventEngine(
             WatchNeeds(
                 places = stillWatched.isNotEmpty(),
                 signals = stillWatchedSignals.mapTo(mutableSetOf()) { it.kind },
+                tightestMeters = stillWatched.minOfOrNull { it.radius() },
+                nearestMeters = reading.nearestEdgeMeters,
             )
         )
         return Sweep(delivered, nextAt)
@@ -596,7 +624,7 @@ class ScheduledEventEngine(
             wasInside = previous.insideAreas,
             missingSince = previous.signalsMissingSince,
             now = now,
-            grace = Geofencing.SIGNAL_GRACE,
+            grace = Geofencing::graceFor,
         )
     }
 

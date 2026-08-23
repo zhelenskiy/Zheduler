@@ -60,6 +60,10 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.rememberContainer
 import com.zhelenskiy.zheduler.zheduler.settings.ThemeSettings
 import com.zhelenskiy.zheduler.zheduler.settings.createThemeSettingsStore
 import com.zhelenskiy.zheduler.zheduler.events.LocalNotificationPreferences
+import com.zhelenskiy.zheduler.zheduler.components.common.LocalLocationChecks
+import com.zhelenskiy.zheduler.zheduler.components.common.LocalManualCheck
+import com.zhelenskiy.zheduler.zheduler.components.common.ManualCheck
+import com.zhelenskiy.zheduler.zheduler.components.common.rememberLocationChecks
 import com.zhelenskiy.zheduler.zheduler.components.map.PlaceBookProvider
 import com.zhelenskiy.zheduler.zheduler.geo.SignalBookProvider
 import com.zhelenskiy.zheduler.zheduler.util.ProvideCurrentTime
@@ -215,6 +219,16 @@ fun App(themeState: ThemeState = rememberThemeState()) {
               ) {
               // Above the navigation graph, because the rule editor is several screens down from
               // anything that knows the address book exists.
+              // Both above the navigation graph, because every screen's cog offers them and the
+              // check button sits in two headers that know nothing about the engine.
+              val manualCheck = remember(graph) {
+                  ManualCheck { graph.scheduledEventEngine.sweep() }
+              }
+              val locationChecks = rememberLocationChecks(afterChange = manualCheck::run)
+              CompositionLocalProvider(
+                  LocalLocationChecks provides locationChecks,
+                  LocalManualCheck provides manualCheck,
+              ) {
               PlaceBookProvider(graph.savedLocationContainer) {
               SignalBookProvider(graph.savedSignalContainer) {
               ProvideCurrentTime {
@@ -236,6 +250,7 @@ fun App(themeState: ThemeState = rememberThemeState()) {
                         SnackbarHost(failureSnackbar, modifier = Modifier.align(Alignment.BottomCenter))
                     }
                 }
+              }
               }
               }
               }

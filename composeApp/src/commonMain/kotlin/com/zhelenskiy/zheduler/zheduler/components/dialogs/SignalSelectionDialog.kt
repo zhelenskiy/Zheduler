@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
@@ -197,6 +198,11 @@ fun SignalSelectionDialog(
                                     }
                                 )
                             },
+                            // Already in the book, and shown to be. Left blank, the column read as
+                            // "this kind cannot be kept" — which is exactly how it looked for wifi,
+                            // where the one network on offer is usually the one already saved,
+                            // beside a bluetooth list of several that mostly are not.
+                            kept = true,
                         )
                     }
                 }
@@ -262,6 +268,11 @@ fun SignalSelectionDialog(
                                     signals = chosen.filterNot { it.key == signal.key }.toPersistentSet()
                                 )
                             },
+                            // Keepable too. These are the rows a network typed by name lands in —
+                            // it is not something the machine offered — so without this a wifi
+                            // rule could be written but never named, and the bookmark appeared for
+                            // bluetooth and not for wifi with nothing to explain the difference.
+                            onKeep = { book.keep(SavedSignal(id = book.newId(), name = "", signal = signal)) },
                         )
                     }
                 }
@@ -415,6 +426,7 @@ private fun SignalRow(
     onToggle: () -> Unit,
     label: String = signal.label,
     onKeep: (() -> Unit)? = null,
+    kept: Boolean = false,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(vertical = 2.dp),
@@ -447,8 +459,15 @@ private fun SignalRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        onKeep?.let {
-            IconButton(onClick = it) {
+        when {
+            kept -> Icon(
+                Icons.Default.Bookmark,
+                contentDescription = "Kept",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(12.dp).size(18.dp),
+            )
+
+            onKeep != null -> IconButton(onClick = onKeep) {
                 Icon(
                     Icons.Default.BookmarkAdd,
                     contentDescription = "Keep ${signal.label}",

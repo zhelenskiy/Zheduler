@@ -125,6 +125,22 @@ fun RadiusSlider(
             onValueChange = { onRadiusChange(sliderToRadius(it)) },
             modifier = Modifier.fillMaxWidth(),
         )
+        // Shown against the fence being drawn rather than buried in a help page: this is the one
+        // moment the user is deciding the number, and the failure it warns about is silent — a
+        // fence this small does not refuse to work, it works sometimes, late, and looks like a bug
+        // in the app rather than a limit of the hardware.
+        if (radiusMeters < GeoArea.RELIABLE_RADIUS_METERS) {
+            Text(
+                text = "Smaller than a phone can reliably tell. Positioning is good to about " +
+                    "${formatDistance(GeoArea.RELIABLE_RADIUS_METERS)} outdoors and worse indoors, " +
+                    "so a fence this size will fire late, or now and then, or not at all — walking " +
+                    "past the edge may not register. Pair it with a Wi-Fi or Bluetooth condition, " +
+                    "which are exact, or widen it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 
