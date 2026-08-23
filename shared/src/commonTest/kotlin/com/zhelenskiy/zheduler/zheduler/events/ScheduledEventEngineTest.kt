@@ -190,7 +190,94 @@ class ScheduledEventEngineTest {
             "the occurrence is the event; got ${f.notifier.alerts.map { it.body }}",
         )
         assertEquals("Water the plants", f.notifier.alerts.single().title)
+        assertEquals(
+            // The status it has landed on is the news. "Came round again" named the machinery
+            // instead, which tells the reader nothing about what their task now says — and read
+            // as a second, differently-worded notice about the same event as the status change.
+            "Status changed: ${TaskStatus.Open.displayName}",
+            f.notifier.alerts.single().body,
+        )
     }
+
+    @Test
+    fun `an occurrence that changed nothing does not claim it changed something`() = runTest {
+        // The ordinary day of a recurring task's life: it reset yesterday, nobody has touched it,
+        // and it is already in the status the rule resets to. The schedule still moves on, which
+        // is why this is announced at all — but nothing changed, and saying otherwise is simply
+        // untrue about the one fact the notification exists to carry.
+        val start = at(2026, 6, 1, 9, 0)
+        val f = fixture(start)
+        val firstOccurrence = start + 1.hours
+        f.repository.addTask(
+            spaceId = f.spaceId,
+            title = "Water the plants",
+            status = TaskStatus.Open,
+            recurrenceRules = persistentListOf(
+                RecurrenceRule(
+                    timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                        period = RecurrencePeriod(days = 1),
+                        firstOccurrence = firstOccurrence,
+                    ),
+                    statusChangeTrigger = null,
+                    resetToStatus = TaskStatus.Open,
+                ) to RecurrenceState()
+            ),
+        )
+
+        f.engine().sweep()
+        f.clock.current = firstOccurrence
+        f.engine().sweep()
+
+        val bodies = f.notifier.alerts.map { it.body }
+        assertTrue(
+            bodies.none { it.startsWith("Status changed") },
+            "nothing changed, so nothing should say it did; got $bodies",
+        )
+        assertTrue(
+            bodies.any { it == "Still ${TaskStatus.Open.displayName}" },
+            "and it should still say where the task stands; got $bodies",
+        )
+    }
+
+    @Test
+    fun `an occurrence names the status the task has landed on rather than the one it left`() =
+        runTest {
+            // The task is reset *before* the alert is built, and the copy the loop is holding is
+            // the one from before. Named from that, every notification would announce the status
+            // the user had already seen — the one thing it is certainly not about.
+            val start = at(2026, 6, 1, 9, 0)
+            val f = fixture(start)
+            val firstOccurrence = start + 1.hours
+            f.repository.addTask(
+                spaceId = f.spaceId,
+                title = "Water the plants",
+                status = TaskStatus.Done,
+                recurrenceRules = persistentListOf(
+                    RecurrenceRule(
+                        timeRecurrenceTrigger = RecurrenceTrigger.AfterTimeout(
+                            period = RecurrencePeriod(days = 1),
+                            firstOccurrence = firstOccurrence,
+                        ),
+                        statusChangeTrigger = null,
+                        resetToStatus = TaskStatus.Open,
+                    ) to RecurrenceState()
+                ),
+            )
+
+            f.engine().sweep()
+            f.clock.current = firstOccurrence
+            f.engine().sweep()
+
+            val bodies = f.notifier.alerts.map { it.body }
+            assertTrue(
+                bodies.any { it == "Status changed: ${TaskStatus.Open.displayName}" },
+                "it should say what the task is now; got $bodies",
+            )
+            assertTrue(
+                bodies.none { it.contains(TaskStatus.Done.displayName) },
+                "and not what it was; got $bodies",
+            )
+        }
 
     @Test
     fun `both the warning and the deadline itself are announced`() = runTest {

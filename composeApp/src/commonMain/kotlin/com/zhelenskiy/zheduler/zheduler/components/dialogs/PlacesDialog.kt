@@ -38,7 +38,10 @@ import com.zhelenskiy.zheduler.zheduler.components.map.LocalPlaceBook
 import com.zhelenskiy.zheduler.zheduler.components.map.LocationPermissionNotice
 import com.zhelenskiy.zheduler.zheduler.components.map.formatCoordinates
 import com.zhelenskiy.zheduler.zheduler.components.map.formatDistance
+import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
+import com.zhelenskiy.zheduler.zheduler.geo.rememberWhereabouts
 import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
+import com.zhelenskiy.zheduler.zheduler.geo.metresOutside
 import com.zhelenskiy.zheduler.zheduler.geo.rememberLocationPermission
 
 /**
@@ -56,7 +59,6 @@ import com.zhelenskiy.zheduler.zheduler.geo.rememberLocationPermission
 fun PlacesDialog(onDismiss: () -> Unit) {
     val book = LocalPlaceBook.current
     val permission = rememberLocationPermission()
-
     // By id and saved, so a recreation does not close the editor and drop the edit — and so that
     // reopening it lands on the place that was being edited, not on whichever one the editor's own
     // saved fields happened to belong to.
@@ -64,6 +66,11 @@ fun PlacesDialog(onDismiss: () -> Unit) {
     var adding by rememberSaveable { mutableStateOf(false) }
     var deletingId by rememberSaveable { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+
+    // Only while this is the screen in front. The editor stacks on top of this dialog without
+    // closing it, and both want a distance — polled from both, a phone would be asked for a fix
+    // twice as often for a list nobody can see behind the editor.
+    val here = if (adding || editingId != null) null else rememberWhereabouts()
 
     val editing = editingId?.let { id -> book.places.firstOrNull { it.id == id } }
     val deleting = deletingId?.let { id -> book.places.firstOrNull { it.id == id } }
@@ -110,6 +117,7 @@ fun PlacesDialog(onDismiss: () -> Unit) {
                         items(matching, key = { it.id }) { place ->
                             PlaceRow(
                                 place = place,
+                                here = here,
                                 onEdit = { editingId = place.id },
                                 onDelete = { deletingId = place.id },
                             )
@@ -179,7 +187,12 @@ internal fun SearchField(query: String, onQueryChange: (String) -> Unit, label: 
 }
 
 @Composable
-private fun PlaceRow(place: SavedLocation, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun PlaceRow(
+    place: SavedLocation,
+    here: GeoPoint?,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -198,7 +211,10 @@ private fun PlaceRow(place: SavedLocation, onEdit: () -> Unit, onDelete: () -> U
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "Within ${formatDistance(place.radiusMeters)}",
+                // The radius, and — where the device knows where it is — how far off that is from
+                // here. Which is the question a list of places is really being read to answer.
+                text = "Within ${formatDistance(place.radiusMeters)}" +
+                    (here?.let { " · ${place.awayFrom(it)}" } ?: ""),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -210,4 +226,10 @@ private fun PlaceRow(place: SavedLocation, onEdit: () -> Unit, onDelete: () -> U
             Icon(Icons.Default.Delete, contentDescription = "Delete ${place.name}")
         }
     }
+}
+
+/** How far this place is from [here], in the words a person would use. See [metresOutside]. */
+private fun SavedLocation.awayFrom(here: GeoPoint): String {
+    val toEdge = metresOutside(here, toArea())
+    return if (toEdge <= 0) "you are here" else "${formatDistance(toEdge)} away"
 }

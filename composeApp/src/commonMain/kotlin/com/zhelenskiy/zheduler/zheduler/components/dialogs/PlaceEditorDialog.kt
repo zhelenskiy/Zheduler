@@ -28,9 +28,12 @@ import com.zhelenskiy.zheduler.zheduler.components.map.PlaceSearchField
 import com.zhelenskiy.zheduler.zheduler.components.map.RadiusSlider
 import com.zhelenskiy.zheduler.zheduler.components.map.UseMyLocationButton
 import com.zhelenskiy.zheduler.zheduler.components.map.formatCoordinates
+import com.zhelenskiy.zheduler.zheduler.components.map.formatDistance
 import com.zhelenskiy.zheduler.zheduler.components.map.rememberMapCamera
 import com.zhelenskiy.zheduler.zheduler.components.map.rememberPlaceSearch
 import com.zhelenskiy.zheduler.zheduler.geo.GeoArea
+import com.zhelenskiy.zheduler.zheduler.geo.metresOutside
+import com.zhelenskiy.zheduler.zheduler.geo.rememberWhereabouts
 import com.zhelenskiy.zheduler.zheduler.geo.GeoPoint
 import com.zhelenskiy.zheduler.zheduler.geo.LocationPermissionStatus
 import com.zhelenskiy.zheduler.zheduler.geo.SavedLocation
@@ -90,6 +93,8 @@ fun PlaceEditorDialog(
     // A place that has never been put anywhere is not one that is in the Atlantic: until the user
     // has chosen a spot, there is nothing to save and nothing to draw a circle around.
     val area = if (placed) GeoArea(name = name, point = point, radiusMeters = radius) else null
+    // Only while this dialog is open — see `rememberWhereabouts`.
+    val here = rememberWhereabouts()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -151,6 +156,21 @@ fun PlaceEditorDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                // While the fence is being drawn, and only then: the number in the slider above
+                // means most against where the person setting it is actually standing. Refreshed
+                // every few seconds, so walking to the edge to check it shows the edge arriving.
+                if (placed) {
+                    here?.let { from ->
+                        val toEdge = area?.let { metresOutside(from, it) } ?: 0.0
+                        Text(
+                            text = if (toEdge <= 0) "You are inside this place now."
+                            else "You are ${formatDistance(toEdge)} outside it now.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
 
                 UseMyLocationButton(
                     enabled = permission.status != LocationPermissionStatus.Unavailable,

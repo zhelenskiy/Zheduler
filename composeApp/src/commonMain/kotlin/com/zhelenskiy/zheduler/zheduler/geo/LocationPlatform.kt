@@ -61,6 +61,19 @@ interface LocationPermissionState {
 @Composable
 expect fun rememberLocationPermission(): LocationPermissionState
 
+/**
+ * Whether asking where the device is can put a prompt in front of the user.
+ *
+ * Not the same question as the permission, and that is the point. A browser reports the permission
+ * as *granted* meaning only "you may ask" — the prompt comes on the call itself, and a user who
+ * dismisses rather than refuses is asked again on the next one. So a screen that quietly polls for
+ * a fix, to show a distance nobody demanded, would sit there raising prompts.
+ *
+ * A phone that has already granted the permission prompts for nothing, which is why this is about
+ * the platform rather than about the permission's state.
+ */
+expect val positioningPromptsOnUse: Boolean
+
 /** For platforms where the question does not arise, and for previews. */
 internal class FixedLocationPermission(
     override val status: LocationPermissionStatus,

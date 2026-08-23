@@ -3,6 +3,7 @@
 package com.zhelenskiy.zheduler.zheduler.events
 
 import com.zhelenskiy.zheduler.zheduler.AutomaticChangeReason
+import com.zhelenskiy.zheduler.zheduler.TaskStatus
 import com.zhelenskiy.zheduler.zheduler.RecurrenceTerminationCondition.AfterOccurrences
 import com.zhelenskiy.zheduler.zheduler.RecurrenceRule
 import com.zhelenskiy.zheduler.zheduler.RecurrenceService
@@ -207,7 +208,17 @@ class ScheduledEventEngine(
                     mutated = true
                     delivered += event
                     if (!firstRun) {
-                        candidates += Candidate(task.id, event.at, event.rank, alertFor(task, event, now))
+                        // Read again, because what this says is the status the task has just been
+                        // put back to — and `task` is still the one from before the reset. Named
+                        // from the stale copy the notification would announce the status the user
+                        // had already seen, which is the one thing it is not about.
+                        val settledTask = repository.getTaskById(event.taskId) ?: task
+                        candidates += Candidate(
+                            task.id,
+                            event.at,
+                            event.rank,
+                            alertFor(settledTask, event, now, changedFrom = task.status),
+                        )
                     }
                 }
             }
@@ -409,7 +420,7 @@ class ScheduledEventEngine(
                         taskId = task.id,
                         spaceId = task.spaceId,
                         title = task.title,
-                        body = "${reasonText(change.automaticChangeReason)} — now ${change.newStatus.displayName}",
+                        body = announcement(change.automaticChangeReason, change.newStatus),
                         at = change.timestamp,
                         sound = appSounds().announcements,
                     ),
@@ -432,12 +443,23 @@ class ScheduledEventEngine(
 
     private fun StatusChange.key(task: Task): String = "status:${task.id}:${timestamp.toEpochMilliseconds()}"
 
-    private fun reasonText(reason: AutomaticChangeReason?): String = when (reason) {
-        is AutomaticChangeReason.Unblocked -> "No longer blocked"
-        is AutomaticChangeReason.UpdatedFromSubtasks -> "Followed its subtasks"
-        is AutomaticChangeReason.Recurrence -> "Came round again"
-        null -> "Changed"
-    }
+    /**
+     * What to say about a status the app arrived at by itself.
+     *
+     * The status it landed on is the news, so it is what the sentence is built around. A rule
+     * coming round says only that — "came round again" named the machinery rather than the thing
+     * that changed, and read as a second, differently-worded notification about the same event as
+     * the occurrence alert. The other two keep their reason, because *why* is the surprising part
+     * there: a task unblocking is news about something else having finished.
+     */
+    private fun announcement(reason: AutomaticChangeReason?, newStatus: TaskStatus): String =
+        when (reason) {
+            is AutomaticChangeReason.Unblocked -> "No longer blocked — now ${newStatus.displayName}"
+            is AutomaticChangeReason.UpdatedFromSubtasks ->
+                "Followed its subtasks — now ${newStatus.displayName}"
+
+            is AutomaticChangeReason.Recurrence, null -> "Status changed: ${newStatus.displayName}"
+        }
 
     /**
      * Fire the rules that wait for a status rather than for a moment — "when I mark this done, put
@@ -819,7 +841,12 @@ class ScheduledEventEngine(
      * hour ahead does not still say "Due in 1 hour" when it is read three hours late — by then the
      * deadline has been and gone, and saying how long is left is worse than saying nothing.
      */
-    private fun alertFor(task: Task, event: ScheduledEvent, now: Instant): TaskAlert = TaskAlert(
+    private fun alertFor(
+        task: Task,
+        event: ScheduledEvent,
+        now: Instant,
+        changedFrom: TaskStatus? = null,
+    ): TaskAlert = TaskAlert(
         id = event.key,
         taskId = task.id,
         spaceId = task.spaceId,
@@ -827,7 +854,16 @@ class ScheduledEventEngine(
         body = when (event) {
             is ScheduledEvent.Reminder -> standingOf(event.dueDate, now)
             is ScheduledEvent.Deadline -> standingOf(event.at, now)
-            is ScheduledEvent.Occurrence -> "Came round again"
+            // Two different pieces of news, and saying the wrong one is worse than saying either.
+            // A rule coming round *usually* changes nothing: the task was reset yesterday, the
+            // user has not touched it, and it is already in the status the rule resets to — the
+            // schedule still moves on, which is why this is announced at all. Told "status
+            // changed" on that day the notification is simply untrue.
+            is ScheduledEvent.Occurrence -> if (changedFrom != null && changedFrom == task.status) {
+                "Still ${task.status.displayName}"
+            } else {
+                "Status changed: ${task.status.displayName}"
+            }
         },
         at = event.at,
         // Each of the three asks the app only where nothing nearer to the user has an answer.

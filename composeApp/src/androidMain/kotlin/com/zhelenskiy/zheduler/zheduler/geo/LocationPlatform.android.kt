@@ -189,3 +189,6 @@ actual fun rememberLocationPermission(): LocationPermissionState {
         }
     }
 }
+
+/** A granted permission is granted: nothing is put in front of the user by asking. */
+actual val positioningPromptsOnUse: Boolean = false

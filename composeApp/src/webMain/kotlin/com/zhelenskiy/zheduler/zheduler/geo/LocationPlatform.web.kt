@@ -121,3 +121,9 @@ actual fun rememberLocationPermission(): LocationPermissionState = remember {
         override val requestWhileAway: (() -> Unit)? = null
     }
 }
+
+/**
+ * The browser prompts on the call, not on some earlier grant — and asks again after a dismissal.
+ * So nothing here asks for a fix the user did not press a button for.
+ */
+actual val positioningPromptsOnUse: Boolean = true

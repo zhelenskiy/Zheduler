@@ -17,3 +17,6 @@ actual fun createLocationSource(): LocationSource = NoLocationSource
 @Composable
 actual fun rememberLocationPermission(): LocationPermissionState =
     remember { FixedLocationPermission(LocationPermissionStatus.Unavailable) }
+
+/** A granted permission is granted: nothing is put in front of the user by asking. */
+actual val positioningPromptsOnUse: Boolean = false
