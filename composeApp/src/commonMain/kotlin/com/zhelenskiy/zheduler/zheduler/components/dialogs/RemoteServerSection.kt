@@ -121,13 +121,39 @@ fun RemoteServerSection(
         }
 
         AnimatedVisibility(visible = state.stage !is RemoteSetupStage.Off) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                KnownServerChoices(knownServers, state, onUseKnownServer)
-                AddressField(state, onEdit, onCheckServer)
-                RemoteCredentialsForm(state, onEdit, onAuthenticate)
-                SignedInRow(state)
-            }
+            RemoteServerFields(
+                state = state,
+                onEdit = onEdit,
+                onCheckServer = onCheckServer,
+                onAuthenticate = onAuthenticate,
+                knownServers = knownServers,
+                onUseKnownServer = onUseKnownServer,
+            )
         }
+    }
+}
+
+/**
+ * Choosing a server and signing in to it: address, then credentials, then confirmation.
+ *
+ * Its own composable because two things need it. A space being created asks for a server as one
+ * part of a larger form, behind a switch; a space that already exists is sent to a server on its
+ * own, where there is nothing to switch — the user opened the page to do exactly this.
+ */
+@Composable
+fun RemoteServerFields(
+    state: RemoteSetupState,
+    onEdit: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit,
+    onCheckServer: (addressText: String) -> Unit,
+    onAuthenticate: (username: String, password: String) -> Unit,
+    knownServers: List<KnownServer> = emptyList(),
+    onUseKnownServer: (KnownServer) -> Unit = {},
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        KnownServerChoices(knownServers, state, onUseKnownServer)
+        AddressField(state, onEdit, onCheckServer)
+        RemoteCredentialsForm(state, onEdit, onAuthenticate)
+        SignedInRow(state)
     }
 }
 

@@ -104,6 +104,14 @@ data class SpaceListState(
      * absent from the new-space dialog rather than present and inert.
      */
     val remoteSetup: RemoteSetupState? = null,
+    /**
+     * The space waiting to be sent to a server, if the user is choosing one.
+     *
+     * Separate from [reauthSpaceId] because the two ask different questions of the same form:
+     * signing in again is about a space that already belongs somewhere, and this is about one that
+     * does not belong anywhere yet.
+     */
+    val putOnServer: PutOnServerPrompt? = null,
     /** Which spaces have a copy on a server, and at which revision. */
     val remoteLinks: PersistentMap<String, RemoteSpaceLink> = persistentMapOf(),
     /** Spaces with an upload in flight, so the row can say so and the button can be disabled. */
@@ -140,6 +148,9 @@ data class SpaceListState(
 
 /** The space a conflict dialog is open for. */
 data class ConflictPrompt(val spaceId: String, val spaceName: String)
+
+/** A space waiting to be sent to a server, and the name to call it in the page that asks. */
+data class PutOnServerPrompt(val spaceId: String, val spaceName: String)
 
 /** What the space list is currently searching for. */
 private data class SpaceQuery(
@@ -243,6 +254,15 @@ sealed interface SpaceListIntent : MVIIntent {
     /** Signs out of the account a space uses, leaving the space and the server's copy alone. */
     data class SignOutOfSpace(val spaceId: String) : SpaceListIntent
 
+    /** Opens the page that sends a space this device already has to a server. */
+    data class BeginPutOnServer(val spaceId: String, val spaceName: String) : SpaceListIntent
+
+    /** Closes it without uploading anything. */
+    data object CancelPutOnServer : SpaceListIntent
+
+    /** Uploads a space that already exists, and hands it to [account]'s server from then on. */
+    data class PutOnServer(val spaceId: String, val account: SignedInAccount) : SpaceListIntent
+
     /** Fills the new-space dialog in from a server this device already knows. */
     data class UseKnownServer(val server: KnownServer) : SpaceListIntent
 }
@@ -253,6 +273,15 @@ sealed interface SpaceListAction : MVIAction {
     data class SpaceDeleted(val success: Boolean) : SpaceListAction
     data class SpaceExported(val json: String?) : SpaceListAction
     data class SpaceImported(val space: Space?) : SpaceListAction
+
+    /**
+     * Something worth a sentence and nothing more.
+     *
+     * For what an action *did*, as opposed to where a space now stands. A space's standing is
+     * already written on its row, and repeating it there as a second red box gave the user two
+     * "Sign in again" buttons for one problem — two things to do where there was one.
+     */
+    data class Announce(val message: String) : SpaceListAction
 }
 
 private typealias SpaceListPipelineContext = PipelineContext<SpaceListState, SpaceListIntent, SpaceListAction>
@@ -364,6 +393,18 @@ class SpaceListContainer(
                 is SpaceListIntent.RefreshCloudSpace -> cloud?.refresh(intent.spaceId)
                 is SpaceListIntent.DeleteSpaceEverywhere -> deleteEverywhere(intent.spaceId)
                 is SpaceListIntent.SignOutOfSpace -> signOutOfSpace(intent.spaceId)
+                is SpaceListIntent.BeginPutOnServer -> updateState {
+                    copy(
+                        putOnServer = PutOnServerPrompt(intent.spaceId, intent.spaceName),
+                        // Straight past the switch: opening this page is the decision it asks
+                        // about, so the address field is what should be waiting.
+                        remoteSetup = RemoteSetup.turnedOn(RemoteSetupState()),
+                    )
+                }
+                is SpaceListIntent.CancelPutOnServer -> updateState {
+                    copy(putOnServer = null, remoteSetup = sync?.let { RemoteSetupState() })
+                }
+                is SpaceListIntent.PutOnServer -> putOnServer(intent.spaceId, intent.account)
                 is SpaceListIntent.UseKnownServer -> useKnownServer(intent.server)
                 is SpaceListIntent.BeginReauth -> beginReauth(intent.spaceId)
                 is SpaceListIntent.CancelReauth -> updateState {
@@ -463,9 +504,21 @@ class SpaceListContainer(
     private suspend fun SpaceListPipelineContext.uploadNewSpace(
         spaceId: String,
         account: SignedInAccount,
-    ) {
-        val service = sync ?: return
-        updateState { copy(uploading = uploading.adding(spaceId)) }
+    ): Boolean {
+        val service = sync ?: return false
+        // Claimed and checked in one state transaction, as an ordinary upload is. This used to be
+        // a bare claim, which was safe while the only caller was a dialog that closed itself after
+        // one press. The page that sends an *existing* space stays open while the upload runs, and
+        // a second press would mint a second remote id and leave two copies on the server — the
+        // first of them orphaned, with this device attached to the second.
+        var started = false
+        updateState {
+            if (spaceId in uploading) this else {
+                started = true
+                copy(uploading = uploading.adding(spaceId))
+            }
+        }
+        if (!started) return false
         val remoteSpaceId = newRemoteId()
         // Through the cloud layer where there is one, so the space is claimed before a byte leaves
         // and nothing else can start a second upload against the same remote id while this one is
@@ -488,6 +541,7 @@ class SpaceListContainer(
                 )
             }
         }
+        return true
     }
 
     /**
@@ -641,10 +695,103 @@ class SpaceListContainer(
      * a token for it, so the space goes read-only until somebody signs in again — which is the
      * honest state, not a failure.
      */
+    /**
+     * Sends a space this device already has to a server.
+     *
+     * The same upload a space created on a server gets, and deliberately so: from here on there is
+     * no difference between the two, and there should be no second way for one of them to behave.
+     * The page closes only once the upload has landed — a page that shut on failure would leave
+     * the user believing the space was up there.
+     */
+    private suspend fun SpaceListPipelineContext.putOnServer(
+        spaceId: String,
+        account: SignedInAccount,
+    ) {
+        val service = sync ?: return
+        // Already on its way. Said nothing about, because the page is already saying it: a press
+        // that beat the button disabling itself must not be answered with a complaint about a link
+        // that its own upload wrote a moment ago.
+        if (peek { spaceId in uploading }) return
+
+        val existing = service.linkFor(spaceId)
+        // Refused here and not only in the list: the icon that opens this page is drawn from a
+        // status that starts out empty, so for the first frames after launch every space looks
+        // like one that belongs to this device alone. Linking a second time would overwrite the
+        // link, orphan the copy the user's other devices share, and leave this one attached to a
+        // duplicate nobody else can see.
+        //
+        // Judged on whether the server ever took it, not on the link existing. A link is written
+        // before the first upload is attempted and kept when it fails — which is precisely the
+        // state this page stays open in — so refusing on the link alone would answer Try again
+        // with "that space is already on a server", about a space that is not.
+        if (existing?.isUploaded == true) {
+            updateState { copy(putOnServer = null) }
+            action(SpaceListAction.Announce("That space is already kept on a server."))
+            return
+        }
+        // Read before the upload: the user can close this page and open another one for a
+        // different space while this is in flight, and the name is wanted for *this* space.
+        val name = peek { putOnServer }
+            ?.takeIf { it.spaceId == spaceId }
+            ?.spaceName
+            ?: repository.getSpaceById(spaceId)?.name
+        // Only where it is the *same* account. The page stays open on failure so the user can put
+        // things right, and one of the things they can put right is the server: the address field
+        // is still there, and signing in somewhere else is the obvious answer to "that one is not
+        // answering". Retrying against the address the failed attempt pinned would then upload to
+        // a server they had just navigated away from, and announce the one they are looking at.
+        //
+        // Starting again elsewhere abandons the old link. That is the right trade rather than a
+        // free one: `isUploaded` being false means no acknowledgement was ever seen, not that the
+        // old server certainly refused, so a reply lost in transit could leave a copy behind
+        // there. Nothing can be done about it from here — that server is precisely the one not
+        // answering — and the copy would sit in the user's own account on it, listed and
+        // deletable from any device that signs in. A duplicate they can see beats a space that
+        // will not go anywhere.
+        val retryable = existing?.takeIf { it.account == account.key }
+        if (retryable != null) {
+            // A first upload that did not land, tried again. Through the ordinary upload so that
+            // it reuses the remote id the link pinned: minting another would leave the first
+            // attempt's copy behind on the server if its reply had merely gone missing.
+            uploadSpace(spaceId, overwrite = false)
+        } else if (!uploadNewSpace(spaceId, account)) {
+            return
+        }
+        // Judged on whether the server has it, not on whether a failure was filed. Two presses can
+        // both get past the check above, and the one whose claim is refused does nothing at all;
+        // "no failure was recorded" would read as success to it and close the page over an upload
+        // that is still in flight, or that is about to fail.
+        if (service.linkFor(spaceId)?.isUploaded != true) return
+        updateState {
+            // Only if it is still this space's page. Another one may have been opened while this
+            // upload was on the wire, and closing that would take away a question nobody answered.
+            if (putOnServer?.spaceId != spaceId) this
+            else copy(putOnServer = null, remoteSetup = sync?.let { RemoteSetupState() })
+        }
+        val called = name?.let { "\"$it\"" } ?: "That space"
+        action(SpaceListAction.Announce("$called is now kept on ${account.key.serverUrl}."))
+    }
+
     private suspend fun SpaceListPipelineContext.signOutOfSpace(spaceId: String) {
         val service = sync ?: return
         val link = peek { remoteLinks[spaceId] } ?: return
-        service.signOut(link.account).onFailure { }
+        val server = link.account.serverUrl
+        val outcome = service.signOut(link.account)
+        // Said in passing, not filed against the space. The token is gone from this device either
+        // way — including when the server refuses because it had already expired, which is the
+        // very case where a second red box under the row helped nobody.
+        action(
+            SpaceListAction.Announce(
+                when (outcome) {
+                    is Outcome.Success -> "Signed out of $server."
+                    is Outcome.Failure ->
+                        "Signed out of $server on this device. The server could not be told."
+                }
+            )
+        )
+        // Filed against the space only once it has none: what is left is not a failed sign-out
+        // but a space whose server this device can no longer answer for.
+        updateState { copy(syncFailures = syncFailures.remove(spaceId)) }
         cloud?.refresh(spaceId)
     }
 

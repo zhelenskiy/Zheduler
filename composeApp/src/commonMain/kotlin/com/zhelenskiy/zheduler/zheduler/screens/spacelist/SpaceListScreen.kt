@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
@@ -44,6 +45,7 @@ import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.PutSpaceOnServerDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.RemoteSignInDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.SyncConflictDialog
 import com.zhelenskiy.zheduler.zheduler.components.common.RemoteFailure
@@ -158,7 +160,10 @@ private fun SpaceCard(
     onEdit: (Space) -> Unit,
     onDelete: (Space) -> Unit,
     cloudStatus: CloudSpaceStatus,
+    /** What this space is linked to, if anything. See the put-on-a-server button for why. */
+    remoteLink: RemoteSpaceLink?,
     syncFailure: RemoteError?,
+    onPutOnServer: (Space) -> Unit,
     onRefresh: (String) -> Unit,
     onResolveConflict: (String) -> Unit,
     onSignInAgain: (String) -> Unit,
@@ -205,6 +210,17 @@ private fun SpaceCard(
             // nothing of the server and is exactly what somebody cut off from theirs wants.
             IconButton(onClick = { onExport(space) }) {
                 Icon(Icons.Default.Download, contentDescription = "Export")
+            }
+            // Offered only where there is no server yet — judged on the link as well as the
+            // status, because the status map starts empty and fills after the links are read, so
+            // for the first frames after launch every space would otherwise look like a local one.
+            if (cloudStatus is CloudSpaceStatus.OnThisDevice && remoteLink == null) {
+                IconButton(
+                    onClick = { onPutOnServer(space) },
+                    modifier = Modifier.testTag(putOnServerTag(space.id)),
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = "Put on a server")
+                }
             }
             // Renaming and deleting do not: both are changes to a space the server holds, and
             // making one here while the server is out of reach would be undone the moment it
@@ -298,25 +314,7 @@ private fun SpaceSyncRow(
             }
         }
 
-        // The status's own error first: that is the one about this space's connection to its
-        // server. `failure` is the last thing an explicit action reported, and is shown under it.
-        (status as? CloudSpaceStatus.Offline)?.error?.let { error ->
-            RemoteFailure(
-                error = error,
-                onRetry = { onRefresh(spaceId) },
-                onSignIn = { onSignInAgain(spaceId) },
-            )
-        }
-        (status as? CloudSpaceStatus.Blocked)?.error?.let { error ->
-            RemoteFailure(
-                error = error,
-                onRetry = { onRefresh(spaceId) },
-                onResolveConflict = { onResolveConflict(spaceId) },
-                onSignIn = { onSignInAgain(spaceId) },
-            )
-        }
-
-        failure?.let { error ->
+        spaceProblem(status, failure)?.let { error ->
             RemoteFailure(
                 error = error,
                 onRetry = { onRefresh(spaceId) },
@@ -391,6 +389,24 @@ private fun SpaceServerMenu(
 }
 
 /** The menu button's tag, so a test can open one particular space's menu. */
+/**
+ * The one thing wrong with a space, out of the two places trouble is recorded.
+ *
+ * The status is what this space's standing with its server *is*; a failure is only the last thing
+ * an action happened to report, and is usually the same trouble said a second time. Showing both
+ * put two "Sign in again" buttons under one space — which reads as two different things to do
+ * rather than one thing said once, and was at its worst after signing out of a space whose session
+ * had already expired.
+ */
+internal fun spaceProblem(status: CloudSpaceStatus, failure: RemoteError?): RemoteError? =
+    when (status) {
+        is CloudSpaceStatus.Offline -> status.error
+        is CloudSpaceStatus.Blocked -> status.error
+        else -> failure
+    }
+
+internal fun putOnServerTag(spaceId: String) = "spacePutOnServer:$spaceId"
+
 internal fun spaceServerMenuTag(spaceId: String) = "spaceServerMenu:$spaceId"
 
 private fun CloudSpaceStatus.icon() = when (this) {
@@ -426,7 +442,9 @@ private fun SpaceListContent(
     onSpaceDelete: (Space) -> Unit,
     onClearSearch: () -> Unit,
     cloudStatus: Map<String, CloudSpaceStatus>,
+    remoteLinks: Map<String, RemoteSpaceLink>,
     syncFailures: Map<String, RemoteError>,
+    onPutOnServer: (Space) -> Unit,
     onRefreshSpace: (String) -> Unit,
     onResolveConflict: (String) -> Unit,
     onSignInAgain: (String) -> Unit,
@@ -476,7 +494,9 @@ private fun SpaceListContent(
                         onEdit = onSpaceEdit,
                         onDelete = onSpaceDelete,
                         cloudStatus = cloudStatus[space.id] ?: CloudSpaceStatus.OnThisDevice,
+                        remoteLink = remoteLinks[space.id],
                         syncFailure = syncFailures[space.id],
+                        onPutOnServer = onPutOnServer,
                         onRefresh = onRefreshSpace,
                         onResolveConflict = onResolveConflict,
                         onSignInAgain = onSignInAgain,
@@ -571,6 +591,9 @@ fun SpaceListScreen(
             }
             is SpaceListAction.SpaceUpdated,
             is SpaceListAction.SpaceDeleted -> onRefresh()
+            is SpaceListAction.Announce -> coroutineScope.launch {
+                snackbarHostState.showSnackbar(action.message)
+            }
             else -> Unit
         }
     }
@@ -643,6 +666,10 @@ fun SpaceListScreen(
                 onSpaceDelete = { dialogState.spaceToDelete = it },
                 onClearSearch = { container.store.intent(SpaceListIntent.ClearSearchQuery) },
                 cloudStatus = state.cloudStatus,
+            remoteLinks = state.remoteLinks,
+            onPutOnServer = { space ->
+                container.store.intent(SpaceListIntent.BeginPutOnServer(space.id, space.name))
+            },
                 syncFailures = state.syncFailures,
                 onRefreshSpace = { container.store.intent(SpaceListIntent.RefreshCloudSpace(it)) },
                 onSignOut = { container.store.intent(SpaceListIntent.SignOutOfSpace(it)) },
@@ -668,6 +695,10 @@ fun SpaceListScreen(
             container.store.intent(SpaceListIntent.AuthenticateRemote(user, secret))
         },
         onUseKnownServer = { container.store.intent(SpaceListIntent.UseKnownServer(it)) },
+        onPutSpaceOnServer = { spaceId, account ->
+            container.store.intent(SpaceListIntent.PutOnServer(spaceId, account))
+        },
+        onCancelPutOnServer = { container.store.intent(SpaceListIntent.CancelPutOnServer) },
         onClearRemoteSetup = { container.store.intent(SpaceListIntent.ClearRemoteSetup) },
         onCancelReauth = { container.store.intent(SpaceListIntent.CancelReauth) },
         describeRemoteCopy = container::describeRemoteCopy,
@@ -716,6 +747,8 @@ private fun SpaceListDialogs(
     onCheckServer: (addressText: String) -> Unit,
     onAuthenticate: (username: String, password: String) -> Unit,
     onUseKnownServer: (KnownServer) -> Unit,
+    onPutSpaceOnServer: (spaceId: String, account: SignedInAccount) -> Unit,
+    onCancelPutOnServer: () -> Unit,
     onClearRemoteSetup: () -> Unit,
     onCancelReauth: () -> Unit,
     /** Asks the server what its copy of a space looks like, for the conflict dialog to show. */
@@ -751,6 +784,23 @@ private fun SpaceListDialogs(
             onAuthenticate = onAuthenticate,
             knownServers = state.knownServers,
             onUseKnownServer = onUseKnownServer,
+        )
+    }
+
+    val putOnServerSetup = state.remoteSetup
+    if (state.putOnServer != null && putOnServerSetup != null) {
+        PutSpaceOnServerDialog(
+            spaceName = state.putOnServer.spaceName,
+            state = putOnServerSetup,
+            onEdit = onRemoteSetupChange,
+            onCheckServer = onCheckServer,
+            onAuthenticate = onAuthenticate,
+            onConfirm = { account -> onPutSpaceOnServer(state.putOnServer.spaceId, account) },
+            onDismiss = onCancelPutOnServer,
+            knownServers = state.knownServers,
+            onUseKnownServer = onUseKnownServer,
+            failure = state.syncFailures[state.putOnServer.spaceId],
+            isUploading = state.putOnServer.spaceId in state.uploading,
         )
     }
 
