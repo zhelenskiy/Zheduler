@@ -43,7 +43,17 @@ import com.zhelenskiy.zheduler.zheduler.components.common.pagingLoadStatus
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.EditSpaceDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.NewSpaceDialog
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.RemoteSignInDialog
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.SyncConflictDialog
+import com.zhelenskiy.zheduler.zheduler.components.common.RemoteFailure
 import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
+import com.zhelenskiy.zheduler.zheduler.sync.RemoteError
+import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupState
+import com.zhelenskiy.zheduler.zheduler.sync.RemoteSpaceLink
+import com.zhelenskiy.zheduler.zheduler.components.common.rememberRemoteContent
+import com.zhelenskiy.zheduler.zheduler.sync.Outcome
+import com.zhelenskiy.zheduler.zheduler.sync.SignedInAccount
+import com.zhelenskiy.zheduler.zheduler.sync.SpaceSummary
 import com.zhelenskiy.zheduler.zheduler.settings.LocalEditorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ExportResult
@@ -144,6 +154,13 @@ private fun SpaceCard(
     onExport: (Space) -> Unit,
     onEdit: (Space) -> Unit,
     onDelete: (Space) -> Unit,
+    remoteLink: RemoteSpaceLink?,
+    isUploading: Boolean,
+    syncFailure: RemoteError?,
+    onUpload: (String) -> Unit,
+    onResolveConflict: (String) -> Unit,
+    onSignInAgain: (String) -> Unit,
+    onStopSyncing: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -152,6 +169,7 @@ private fun SpaceCard(
             .clip(MaterialTheme.shapes.medium)
             .clickable { onSpaceClick(space.id) }
     ) {
+      Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -189,6 +207,93 @@ private fun SpaceCard(
                 Icon(Icons.Default.Delete, contentDescription = "Delete")
             }
         }
+
+        SpaceSyncRow(
+            spaceId = space.id,
+            link = remoteLink,
+            isUploading = isUploading,
+            failure = syncFailure,
+            onUpload = onUpload,
+            onResolveConflict = onResolveConflict,
+            onSignInAgain = onSignInAgain,
+            onStopSyncing = onStopSyncing,
+        )
+      }
+    }
+}
+
+/**
+ * What a space's server copy is doing, under the space's own row.
+ *
+ * Absent entirely for a space that was never put on a server, so the list of purely local spaces
+ * looks exactly as it did before.
+ */
+@Composable
+private fun SpaceSyncRow(
+    spaceId: String,
+    link: RemoteSpaceLink?,
+    isUploading: Boolean,
+    failure: RemoteError?,
+    onUpload: (String) -> Unit,
+    onResolveConflict: (String) -> Unit,
+    onSignInAgain: (String) -> Unit,
+    onStopSyncing: (String) -> Unit,
+) {
+    if (link == null && failure == null) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (link != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = if (link.isUploaded) Icons.Default.CloudDone else Icons.Default.CloudUpload,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = if (link.isUploaded) {
+                        "${link.account.username} at ${link.account.serverUrl} · v${link.lastSyncedRevision}"
+                    } else {
+                        // Not "v0": a space the server has never accepted is not a version of
+                        // anything, and saying so is what makes the Upload button next to it read
+                        // as the thing that finishes the job.
+                        "Not uploaded yet · ${link.account.username} at ${link.account.serverUrl}"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                if (isUploading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    TextButton(onClick = { onUpload(spaceId) }) { Text("Upload") }
+                    // The way out. Some failures — the server no longer has the space, or the
+                    // account may not touch it — have no remedy at all, and without this the row
+                    // would keep an error on screen that nothing but deleting the space clears.
+                    TextButton(onClick = { onStopSyncing(spaceId) }) { Text("Disconnect") }
+                }
+            }
+        }
+
+        failure?.let { error ->
+            RemoteFailure(
+                error = error,
+                onRetry = { onUpload(spaceId) },
+                isRetrying = isUploading,
+                // Opens the dialog that spells out what each answer discards. Nothing is
+                // overwritten from here.
+                onResolveConflict = { onResolveConflict(spaceId) },
+                onSignIn = { onSignInAgain(spaceId) },
+            )
+        }
     }
 }
 
@@ -200,7 +305,14 @@ private fun SpaceListContent(
     onSpaceExport: (Space) -> Unit,
     onSpaceEdit: (Space) -> Unit,
     onSpaceDelete: (Space) -> Unit,
-    onClearSearch: () -> Unit
+    onClearSearch: () -> Unit,
+    remoteLinks: Map<String, RemoteSpaceLink>,
+    uploading: Set<String>,
+    syncFailures: Map<String, RemoteError>,
+    onUploadSpace: (String) -> Unit,
+    onResolveConflict: (String) -> Unit,
+    onSignInAgain: (String) -> Unit,
+    onStopSyncing: (String) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedVisibility(
@@ -243,6 +355,13 @@ private fun SpaceListContent(
                         onExport = onSpaceExport,
                         onEdit = onSpaceEdit,
                         onDelete = onSpaceDelete,
+                        remoteLink = remoteLinks[space.id],
+                        isUploading = space.id in uploading,
+                        syncFailure = syncFailures[space.id],
+                        onUpload = onUploadSpace,
+                        onResolveConflict = onResolveConflict,
+                        onSignInAgain = onSignInAgain,
+                        onStopSyncing = onStopSyncing,
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -401,7 +520,14 @@ fun SpaceListScreen(
                 onSpaceExport = { dialogState.spaceToExport = it },
                 onSpaceEdit = { dialogState.spaceToEdit = it },
                 onSpaceDelete = { dialogState.spaceToDelete = it },
-                onClearSearch = { container.store.intent(SpaceListIntent.ClearSearchQuery) }
+                onClearSearch = { container.store.intent(SpaceListIntent.ClearSearchQuery) },
+                remoteLinks = state.remoteLinks,
+                uploading = state.uploading,
+                syncFailures = state.syncFailures,
+                onUploadSpace = { container.store.intent(SpaceListIntent.UploadSpace(it)) },
+                onResolveConflict = { container.store.intent(SpaceListIntent.BeginConflictResolution(it)) },
+                onSignInAgain = { container.store.intent(SpaceListIntent.BeginReauth(it)) },
+                onStopSyncing = { container.store.intent(SpaceListIntent.ForgetRemoteLink(it)) },
             )
         }
     }
@@ -411,9 +537,18 @@ fun SpaceListScreen(
         coroutineScope = coroutineScope,
         snackbarHostState = snackbarHostState,
         state = state,
-        onAddSpace = { name, idPrefix ->
-            container.store.intent(SpaceListIntent.AddSpace(name, idPrefix))
+        onAddSpace = { name, idPrefix, account ->
+            container.store.intent(SpaceListIntent.AddSpace(name, idPrefix, account))
         },
+        onRemoteSetupChange = { container.store.intent(SpaceListIntent.UpdateRemoteSetup(it)) },
+        onCheckServer = { container.store.intent(SpaceListIntent.CheckRemoteServer) },
+        onAuthenticate = { container.store.intent(SpaceListIntent.AuthenticateRemote) },
+        onClearRemoteSetup = { container.store.intent(SpaceListIntent.ClearRemoteSetup) },
+        onCancelReauth = { container.store.intent(SpaceListIntent.CancelReauth) },
+        describeRemoteCopy = container::describeRemoteCopy,
+        onOverwriteRemote = { container.store.intent(SpaceListIntent.UploadSpaceOverwriting(it)) },
+        onDownloadRemoteCopy = { container.store.intent(SpaceListIntent.DownloadRemoteCopy(it)) },
+        onCancelConflict = { container.store.intent(SpaceListIntent.CancelConflictResolution) },
         onUpdateSpace = { spaceId, newName ->
             container.store.intent(SpaceListIntent.UpdateSpace(spaceId, newName))
         },
@@ -451,7 +586,17 @@ private fun SpaceListDialogs(
     coroutineScope: CoroutineScope,
     snackbarHostState: SnackbarHostState,
     state: SpaceListState,
-    onAddSpace: (name: String, idPrefix: String) -> Unit,
+    onAddSpace: (name: String, idPrefix: String, account: SignedInAccount?) -> Unit,
+    onRemoteSetupChange: (RemoteSetupState) -> Unit,
+    onCheckServer: () -> Unit,
+    onAuthenticate: () -> Unit,
+    onClearRemoteSetup: () -> Unit,
+    onCancelReauth: () -> Unit,
+    /** Asks the server what its copy of a space looks like, for the conflict dialog to show. */
+    describeRemoteCopy: suspend (String) -> Outcome<SpaceSummary>,
+    onOverwriteRemote: (String) -> Unit,
+    onDownloadRemoteCopy: (String) -> Unit,
+    onCancelConflict: () -> Unit,
     onUpdateSpace: (spaceId: String, newName: String) -> Unit,
     onDeleteSpace: (spaceId: String) -> Unit,
     onLoadTagsForSpace: (spaceId: String) -> Unit,
@@ -463,12 +608,52 @@ private fun SpaceListDialogs(
 ) {
     if (dialogState.showNewSpace) {
         NewSpaceDialog(
-            onDismiss = { dialogState.showNewSpace = false },
-            onSpaceCreated = { name, prefix ->
-                onAddSpace(name, prefix)
+            onDismiss = {
                 dialogState.showNewSpace = false
-            }
+                // Reset here rather than on open: a dialog that was dismissed mid-sign-in would
+                // otherwise reopen still signed in to a server the user had walked away from.
+                onClearRemoteSetup()
+            },
+            onSpaceCreated = { name, prefix, account ->
+                onAddSpace(name, prefix, account)
+                dialogState.showNewSpace = false
+                onClearRemoteSetup()
+            },
+            remoteSetup = state.remoteSetup,
+            onRemoteSetupChange = onRemoteSetupChange,
+            onCheckServer = onCheckServer,
+            onAuthenticate = onAuthenticate,
         )
+    }
+
+    val reauthLink = state.reauthSpaceId?.let { state.remoteLinks[it] }
+    val reauthSetup = state.remoteSetup
+    if (reauthLink != null && reauthSetup != null) {
+        RemoteSignInDialog(
+            serverUrl = reauthLink.account.serverUrl,
+            state = reauthSetup,
+            onStateChange = onRemoteSetupChange,
+            onAuthenticate = onAuthenticate,
+            onDismiss = onCancelReauth,
+        )
+    }
+
+    state.conflict?.let { conflict ->
+        state.remoteLinks[conflict.spaceId]?.let { link ->
+            // Fetched while the dialog is open, keyed on the space so reopening it for another one
+            // asks again rather than showing the last space's answer.
+            val theirCopy = rememberRemoteContent(conflict.spaceId) { describeRemoteCopy(conflict.spaceId) }
+            SyncConflictDialog(
+                spaceName = conflict.spaceName,
+                serverUrl = link.account.serverUrl,
+                busy = conflict.spaceId in state.uploading,
+                theirCopy = theirCopy,
+                failure = state.syncFailures[conflict.spaceId],
+                onReplaceRemote = { onOverwriteRemote(conflict.spaceId) },
+                onDownloadRemoteCopy = { onDownloadRemoteCopy(conflict.spaceId) },
+                onDismiss = onCancelConflict,
+            )
+        }
     }
 
     dialogState.spaceToEdit?.let { space ->

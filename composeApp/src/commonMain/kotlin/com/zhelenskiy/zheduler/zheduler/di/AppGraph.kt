@@ -20,6 +20,13 @@ import com.zhelenskiy.zheduler.zheduler.geo.SignalSource
 import com.zhelenskiy.zheduler.zheduler.geo.createLocationSource
 import com.zhelenskiy.zheduler.zheduler.geo.createSignalSource
 import com.zhelenskiy.zheduler.zheduler.geo.updatePlaceWatch
+import com.zhelenskiy.zheduler.zheduler.sync.KtorRemoteSpaceGateway
+import com.zhelenskiy.zheduler.zheduler.sync.RemoteSpaceGateway
+import com.zhelenskiy.zheduler.zheduler.sync.SpaceSyncService
+import com.zhelenskiy.zheduler.zheduler.sync.createCredentialStore
+import com.zhelenskiy.zheduler.zheduler.sync.createRemoteSpaceLinkStore
+import com.zhelenskiy.zheduler.zheduler.sync.installSyncClientDefaults
+import io.ktor.client.HttpClient
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.CalendarContainerFactory
 import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskContainer
@@ -174,10 +181,39 @@ interface AppGraph {
             onWatchingPlaces = ::updatePlaceWatch,
         )
 
+        /**
+         * One client for every server the user has, made on first use.
+         *
+         * Never closed: it lives as long as the process, and the engine comes from whichever
+         * platform artifact this build linked.
+         */
         @Provides
         @SingleIn(AppScope::class)
-        fun provideSpaceListContainer(repository: RoomTaskRepository): SpaceListContainer =
-            SpaceListContainer(repository)
+        fun provideSyncHttpClient(): HttpClient = HttpClient { installSyncClientDefaults() }
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideRemoteSpaceGateway(client: HttpClient): RemoteSpaceGateway =
+            KtorRemoteSpaceGateway(client)
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideSpaceSyncService(
+            gateway: RemoteSpaceGateway,
+            repository: RoomTaskRepository,
+        ): SpaceSyncService = SpaceSyncService(
+            gateway = gateway,
+            repository = repository,
+            links = createRemoteSpaceLinkStore(),
+            credentials = createCredentialStore(),
+        )
+
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideSpaceListContainer(
+            repository: RoomTaskRepository,
+            sync: SpaceSyncService,
+        ): SpaceListContainer = SpaceListContainer(repository, sync)
 
         @Provides
         @SingleIn(AppScope::class)

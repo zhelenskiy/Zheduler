@@ -36,6 +36,12 @@ tasks.withType<Test>().configureEach {
 }
 
 kotlin {
+    // See :shared — this is the caller's half of it. Without the flag here, an `Outcome` dropped
+    // in a screen or a view model compiles without a word.
+    compilerOptions {
+        freeCompilerArgs.add("-Xreturn-value-checker=check")
+    }
+
     // A `cascadeMain` source set shared by every target cascade-editor publishes for.
     // Extending the template rather than calling dependsOn() by hand is what keeps the
     // default hierarchy — and with it webMain, iosMain, ... — in place.
@@ -134,10 +140,21 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            // `runTest`. It happened to resolve on the JVM through another test dependency, so a
+            // common test using it compiled there and failed on every other target.
+            implementation(libs.kotlinx.coroutines.test)
         }
         jvmTest.dependencies {
             implementation(libs.compose.uiTest)
             implementation(compose.desktop.currentOs)
+            // The sync feature is only really finished when the dialog can drive a real server, so
+            // one suite starts :server in-process and clicks through the flow against it. Test-only
+            // and one-directional: the app itself does not know the server module exists.
+            implementation(projects.server)
+            // :server keeps these to itself, so starting one from here needs them named again.
+            implementation(libs.ktor.serverCore)
+            implementation(libs.ktor.serverNetty)
+            implementation(libs.ktor.clientCio)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.clientCio)

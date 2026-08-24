@@ -13,6 +13,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -29,11 +31,23 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.Space
+import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupState
+import com.zhelenskiy.zheduler.zheduler.sync.SignedInAccount
 
+/**
+ * @param remoteSetup where the user has got to with connecting this space to a server, or null in
+ *   a build with no sync wired up — in which case the whole section is absent rather than shown
+ *   disabled.
+ * @param onSpaceCreated carries the account to upload to, or null when the space stays local.
+ */
 @Composable
 fun NewSpaceDialog(
     onDismiss: () -> Unit,
-    onSpaceCreated: (name: String, idPrefix: String) -> Unit
+    onSpaceCreated: (name: String, idPrefix: String, account: SignedInAccount?) -> Unit,
+    remoteSetup: RemoteSetupState? = null,
+    onRemoteSetupChange: (RemoteSetupState) -> Unit = {},
+    onCheckServer: () -> Unit = {},
+    onAuthenticate: () -> Unit = {},
 ) {
     // Saved, not remembered: the space-list dialogs already reopen after an activity recreation,
     // so leaving these behind brought the dialog back with both fields blank — which reads as a
@@ -43,7 +57,12 @@ fun NewSpaceDialog(
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val idPrefixFocusRequester = remember { FocusRequester() }
 
-    val isValid = spaceName.isNotBlank() && idPrefix.matches(Regex("^[A-Z]+$"))
+    // A server that was asked for but not signed in to blocks creation: creating the space anyway
+    // would leave the user with a local space they had every reason to believe was backed up.
+    val isValid = spaceName.isNotBlank() &&
+        idPrefix.matches(Regex("^[A-Z]+$")) &&
+        (remoteSetup?.canCreateSpace ?: true)
+    val submit = { if (isValid) onSpaceCreated(spaceName, idPrefix, remoteSetup?.readyAccount) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -62,14 +81,15 @@ fun NewSpaceDialog(
                 },
                 errorMessage = errorMessage,
                 idPrefixFocusRequester = idPrefixFocusRequester,
-                onSubmit = { if (isValid) onSpaceCreated(spaceName, idPrefix) }
+                onSubmit = submit,
+                remoteSetup = remoteSetup,
+                onRemoteSetupChange = onRemoteSetupChange,
+                onCheckServer = onCheckServer,
+                onAuthenticate = onAuthenticate,
             )
         },
         confirmButton = {
-            TextButton(
-                onClick = { if (isValid) onSpaceCreated(spaceName, idPrefix) },
-                enabled = isValid
-            ) {
+            TextButton(onClick = submit, enabled = isValid) {
                 Text("Create")
             }
         },
@@ -89,9 +109,16 @@ private fun NewSpaceDialogContent(
     onIdPrefixChange: (String) -> Unit,
     errorMessage: String?,
     idPrefixFocusRequester: FocusRequester,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    remoteSetup: RemoteSetupState?,
+    onRemoteSetupChange: (RemoteSetupState) -> Unit,
+    onCheckServer: () -> Unit,
+    onAuthenticate: () -> Unit,
 ) {
     Column(
+        // Scrollable: with the server section open this is taller than a phone dialog, and without
+        // it the Create button ends up off screen with no way to reach it.
+        modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SpaceNameTextField(
@@ -112,6 +139,15 @@ private fun NewSpaceDialogContent(
                 text = it,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        remoteSetup?.let { setup ->
+            RemoteServerSection(
+                state = setup,
+                onStateChange = onRemoteSetupChange,
+                onCheckServer = onCheckServer,
+                onAuthenticate = onAuthenticate,
             )
         }
     }

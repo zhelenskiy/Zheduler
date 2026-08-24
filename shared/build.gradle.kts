@@ -40,6 +40,14 @@ val extractMacX64SqliteJni by tasks.registering(Sync::class) {
 }
 
 kotlin {
+    // `check` reports an unused return value only where something is annotated @MustUseReturnValues
+    // — here, `Outcome` and `RemoteSpaceGateway`. That is what makes a dropped network failure a
+    // compiler warning instead of a silent no-op. `full` would report every expression statement
+    // in the module and is not what is wanted.
+    compilerOptions {
+        freeCompilerArgs.add("-Xreturn-value-checker=check")
+    }
+
     android {
         namespace = "com.zhelenskiy.zheduler.zheduler.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -83,10 +91,16 @@ kotlin {
             implementation(libs.room3.runtime)
             api(libs.kotlinx.collections.immutable)
             api(libs.androidx.paging.common)
+            // The sync client. `api` because callers construct the HttpClient they hand it, and
+            // because :server compiles the same protocol classes out of this module.
+            api(libs.ktor.clientCore)
+            implementation(libs.ktor.clientContentNegotiation)
+            implementation(libs.ktor.serializationJson)
         }
 
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.clientMock)
         }
 
         // sqlite-bundled ships SQLite compiled from source (with the JSON1 extension the filter
