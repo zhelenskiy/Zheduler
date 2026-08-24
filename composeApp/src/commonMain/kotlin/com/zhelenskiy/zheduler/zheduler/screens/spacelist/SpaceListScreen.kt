@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -47,6 +48,8 @@ import com.zhelenskiy.zheduler.zheduler.components.dialogs.RemoteSignInDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.SyncConflictDialog
 import com.zhelenskiy.zheduler.zheduler.components.common.RemoteFailure
 import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceStatus
+import com.zhelenskiy.zheduler.zheduler.sync.KnownServer
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteError
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupState
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSpaceLink
@@ -154,13 +157,14 @@ private fun SpaceCard(
     onExport: (Space) -> Unit,
     onEdit: (Space) -> Unit,
     onDelete: (Space) -> Unit,
-    remoteLink: RemoteSpaceLink?,
-    isUploading: Boolean,
+    cloudStatus: CloudSpaceStatus,
     syncFailure: RemoteError?,
-    onUpload: (String) -> Unit,
+    onRefresh: (String) -> Unit,
     onResolveConflict: (String) -> Unit,
     onSignInAgain: (String) -> Unit,
     onStopSyncing: (String) -> Unit,
+    onSignOut: (String) -> Unit,
+    onDeleteEverywhere: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -197,48 +201,60 @@ private fun SpaceCard(
                     )
                 }
             }
+            // Export stays whatever the server is doing: reading a space out to a file asks
+            // nothing of the server and is exactly what somebody cut off from theirs wants.
             IconButton(onClick = { onExport(space) }) {
                 Icon(Icons.Default.Download, contentDescription = "Export")
             }
-            IconButton(onClick = { onEdit(space) }) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit")
-            }
-            IconButton(onClick = { onDelete(space) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete")
+            // Renaming and deleting do not: both are changes to a space the server holds, and
+            // making one here while the server is out of reach would be undone the moment it
+            // answers. Deleting a cloud space has its own item in the menu below, which says on
+            // which side it happens.
+            if (cloudStatus.isEditable) {
+                IconButton(onClick = { onEdit(space) }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit")
+                }
+                IconButton(onClick = { onDelete(space) }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                }
             }
         }
 
         SpaceSyncRow(
             spaceId = space.id,
-            link = remoteLink,
-            isUploading = isUploading,
+            status = cloudStatus,
             failure = syncFailure,
-            onUpload = onUpload,
+            onRefresh = onRefresh,
             onResolveConflict = onResolveConflict,
             onSignInAgain = onSignInAgain,
             onStopSyncing = onStopSyncing,
+            onSignOut = onSignOut,
+            onDeleteEverywhere = onDeleteEverywhere,
         )
       }
     }
 }
 
 /**
- * What a space's server copy is doing, under the space's own row.
+ * Where a space stands with the server that holds it.
  *
- * Absent entirely for a space that was never put on a server, so the list of purely local spaces
- * looks exactly as it did before.
+ * Absent entirely for a space that belongs to this device, so a list of purely local spaces looks
+ * exactly as it did before. There is no upload button: for a cloud space the server *is* the
+ * space, so changes go up on their own and what this row does is report, not ask.
  */
 @Composable
 private fun SpaceSyncRow(
     spaceId: String,
-    link: RemoteSpaceLink?,
-    isUploading: Boolean,
+    status: CloudSpaceStatus,
     failure: RemoteError?,
-    onUpload: (String) -> Unit,
+    onRefresh: (String) -> Unit,
     onResolveConflict: (String) -> Unit,
     onSignInAgain: (String) -> Unit,
     onStopSyncing: (String) -> Unit,
+    onSignOut: (String) -> Unit,
+    onDeleteEverywhere: (String) -> Unit,
 ) {
+    val link = status.linkOrNull
     if (link == null && failure == null) return
 
     Column(
@@ -253,47 +269,150 @@ private fun SpaceSyncRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    imageVector = if (link.isUploaded) Icons.Default.CloudDone else Icons.Default.CloudUpload,
+                    imageVector = status.icon(),
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (status.needsAttention) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
                 Text(
-                    text = if (link.isUploaded) {
-                        "${link.account.username} at ${link.account.serverUrl} · v${link.lastSyncedRevision}"
-                    } else {
-                        // Not "v0": a space the server has never accepted is not a version of
-                        // anything, and saying so is what makes the Upload button next to it read
-                        // as the thing that finishes the job.
-                        "Not uploaded yet · ${link.account.username} at ${link.account.serverUrl}"
-                    },
+                    text = status.summary(link),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                if (isUploading) {
+                if (status is CloudSpaceStatus.Checking || status is CloudSpaceStatus.Saving) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    TextButton(onClick = { onUpload(spaceId) }) { Text("Upload") }
-                    // The way out. Some failures — the server no longer has the space, or the
-                    // account may not touch it — have no remedy at all, and without this the row
-                    // would keep an error on screen that nothing but deleting the space clears.
-                    TextButton(onClick = { onStopSyncing(spaceId) }) { Text("Disconnect") }
                 }
+                SpaceServerMenu(
+                    spaceId = spaceId,
+                    serverUrl = link.account.serverUrl,
+                    onRefresh = onRefresh,
+                    onSignOut = onSignOut,
+                    onStopSyncing = onStopSyncing,
+                    onDeleteEverywhere = onDeleteEverywhere,
+                )
             }
+        }
+
+        // The status's own error first: that is the one about this space's connection to its
+        // server. `failure` is the last thing an explicit action reported, and is shown under it.
+        (status as? CloudSpaceStatus.Offline)?.error?.let { error ->
+            RemoteFailure(
+                error = error,
+                onRetry = { onRefresh(spaceId) },
+                onSignIn = { onSignInAgain(spaceId) },
+            )
+        }
+        (status as? CloudSpaceStatus.Blocked)?.error?.let { error ->
+            RemoteFailure(
+                error = error,
+                onRetry = { onRefresh(spaceId) },
+                onResolveConflict = { onResolveConflict(spaceId) },
+                onSignIn = { onSignInAgain(spaceId) },
+            )
         }
 
         failure?.let { error ->
             RemoteFailure(
                 error = error,
-                onRetry = { onUpload(spaceId) },
-                isRetrying = isUploading,
-                // Opens the dialog that spells out what each answer discards. Nothing is
-                // overwritten from here.
+                onRetry = { onRefresh(spaceId) },
                 onResolveConflict = { onResolveConflict(spaceId) },
                 onSignIn = { onSignInAgain(spaceId) },
             )
         }
+    }
+}
+
+/**
+ * What can be done about a space's server, without cluttering the row with it.
+ *
+ * Three different things live here that a single button could not tell apart: signing out leaves
+ * everything where it is, disconnecting keeps this device's copy and abandons the server's, and
+ * deleting removes both. Only the last is destructive, and it is the only one that asks again.
+ */
+@Composable
+private fun SpaceServerMenu(
+    spaceId: String,
+    serverUrl: String,
+    onRefresh: (String) -> Unit,
+    onSignOut: (String) -> Unit,
+    onStopSyncing: (String) -> Unit,
+    onDeleteEverywhere: (String) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    var confirmingDelete by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(
+            onClick = { open = true },
+            modifier = Modifier.size(24.dp).testTag(spaceServerMenuTag(spaceId)),
+        ) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Server options")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Check the server now") },
+                onClick = { open = false; onRefresh(spaceId) },
+            )
+            DropdownMenuItem(
+                text = { Text("Sign out of $serverUrl") },
+                onClick = { open = false; onSignOut(spaceId) },
+            )
+            DropdownMenuItem(
+                text = { Text("Disconnect, keep this copy") },
+                onClick = { open = false; onStopSyncing(spaceId) },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "Delete here and on the server",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
+                onClick = { open = false; confirmingDelete = true },
+            )
+        }
+    }
+
+    if (confirmingDelete) {
+        DeleteConfirmationDialog(
+            title = "Delete everywhere",
+            message = "This removes the space from $serverUrl and from this device. " +
+                "Any other device signed in to that account loses it too, and nothing here can " +
+                "bring it back.",
+            onConfirm = { confirmingDelete = false; onDeleteEverywhere(spaceId) },
+            onDismiss = { confirmingDelete = false },
+        )
+    }
+}
+
+/** The menu button's tag, so a test can open one particular space's menu. */
+internal fun spaceServerMenuTag(spaceId: String) = "spaceServerMenu:$spaceId"
+
+private fun CloudSpaceStatus.icon() = when (this) {
+    is CloudSpaceStatus.OnThisDevice -> Icons.Default.CloudOff
+    is CloudSpaceStatus.Checking -> Icons.Default.CloudSync
+    is CloudSpaceStatus.Live -> Icons.Default.CloudDone
+    is CloudSpaceStatus.Saving -> Icons.Default.CloudUpload
+    is CloudSpaceStatus.Offline -> Icons.Default.CloudOff
+    is CloudSpaceStatus.Blocked -> Icons.Default.SyncProblem
+}
+
+/** One line saying where this space stands, which is the row's whole job. */
+private fun CloudSpaceStatus.summary(link: RemoteSpaceLink): String {
+    val where = "${link.account.username} at ${link.account.serverUrl}"
+    return when (this) {
+        is CloudSpaceStatus.OnThisDevice -> where
+        is CloudSpaceStatus.Checking -> "Checking $where…"
+        is CloudSpaceStatus.Live -> "$where · v${link.lastSyncedRevision}"
+        is CloudSpaceStatus.Saving -> "Saving to $where…"
+        // Not "v0" for a space the server never took: it is not a version of anything.
+        is CloudSpaceStatus.Offline -> "Offline · showing this device's copy of $where"
+        is CloudSpaceStatus.Blocked -> "Not in step with $where"
     }
 }
 
@@ -306,13 +425,14 @@ private fun SpaceListContent(
     onSpaceEdit: (Space) -> Unit,
     onSpaceDelete: (Space) -> Unit,
     onClearSearch: () -> Unit,
-    remoteLinks: Map<String, RemoteSpaceLink>,
-    uploading: Set<String>,
+    cloudStatus: Map<String, CloudSpaceStatus>,
     syncFailures: Map<String, RemoteError>,
-    onUploadSpace: (String) -> Unit,
+    onRefreshSpace: (String) -> Unit,
     onResolveConflict: (String) -> Unit,
     onSignInAgain: (String) -> Unit,
     onStopSyncing: (String) -> Unit,
+    onSignOut: (String) -> Unit,
+    onDeleteEverywhere: (String) -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedVisibility(
@@ -355,13 +475,14 @@ private fun SpaceListContent(
                         onExport = onSpaceExport,
                         onEdit = onSpaceEdit,
                         onDelete = onSpaceDelete,
-                        remoteLink = remoteLinks[space.id],
-                        isUploading = space.id in uploading,
+                        cloudStatus = cloudStatus[space.id] ?: CloudSpaceStatus.OnThisDevice,
                         syncFailure = syncFailures[space.id],
-                        onUpload = onUploadSpace,
+                        onRefresh = onRefreshSpace,
                         onResolveConflict = onResolveConflict,
                         onSignInAgain = onSignInAgain,
                         onStopSyncing = onStopSyncing,
+                        onSignOut = onSignOut,
+                        onDeleteEverywhere = onDeleteEverywhere,
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -521,10 +642,11 @@ fun SpaceListScreen(
                 onSpaceEdit = { dialogState.spaceToEdit = it },
                 onSpaceDelete = { dialogState.spaceToDelete = it },
                 onClearSearch = { container.store.intent(SpaceListIntent.ClearSearchQuery) },
-                remoteLinks = state.remoteLinks,
-                uploading = state.uploading,
+                cloudStatus = state.cloudStatus,
                 syncFailures = state.syncFailures,
-                onUploadSpace = { container.store.intent(SpaceListIntent.UploadSpace(it)) },
+                onRefreshSpace = { container.store.intent(SpaceListIntent.RefreshCloudSpace(it)) },
+                onSignOut = { container.store.intent(SpaceListIntent.SignOutOfSpace(it)) },
+                onDeleteEverywhere = { container.store.intent(SpaceListIntent.DeleteSpaceEverywhere(it)) },
                 onResolveConflict = { container.store.intent(SpaceListIntent.BeginConflictResolution(it)) },
                 onSignInAgain = { container.store.intent(SpaceListIntent.BeginReauth(it)) },
                 onStopSyncing = { container.store.intent(SpaceListIntent.ForgetRemoteLink(it)) },
@@ -540,9 +662,12 @@ fun SpaceListScreen(
         onAddSpace = { name, idPrefix, account ->
             container.store.intent(SpaceListIntent.AddSpace(name, idPrefix, account))
         },
-        onRemoteSetupChange = { container.store.intent(SpaceListIntent.UpdateRemoteSetup(it)) },
-        onCheckServer = { container.store.intent(SpaceListIntent.CheckRemoteServer) },
-        onAuthenticate = { container.store.intent(SpaceListIntent.AuthenticateRemote) },
+        onRemoteSetupChange = { edit -> container.store.intent(SpaceListIntent.EditRemoteSetup(edit)) },
+        onCheckServer = { address -> container.store.intent(SpaceListIntent.CheckRemoteServer(address)) },
+        onAuthenticate = { user, secret ->
+            container.store.intent(SpaceListIntent.AuthenticateRemote(user, secret))
+        },
+        onUseKnownServer = { container.store.intent(SpaceListIntent.UseKnownServer(it)) },
         onClearRemoteSetup = { container.store.intent(SpaceListIntent.ClearRemoteSetup) },
         onCancelReauth = { container.store.intent(SpaceListIntent.CancelReauth) },
         describeRemoteCopy = container::describeRemoteCopy,
@@ -587,9 +712,10 @@ private fun SpaceListDialogs(
     snackbarHostState: SnackbarHostState,
     state: SpaceListState,
     onAddSpace: (name: String, idPrefix: String, account: SignedInAccount?) -> Unit,
-    onRemoteSetupChange: (RemoteSetupState) -> Unit,
-    onCheckServer: () -> Unit,
-    onAuthenticate: () -> Unit,
+    onRemoteSetupChange: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit,
+    onCheckServer: (addressText: String) -> Unit,
+    onAuthenticate: (username: String, password: String) -> Unit,
+    onUseKnownServer: (KnownServer) -> Unit,
     onClearRemoteSetup: () -> Unit,
     onCancelReauth: () -> Unit,
     /** Asks the server what its copy of a space looks like, for the conflict dialog to show. */
@@ -623,6 +749,8 @@ private fun SpaceListDialogs(
             onRemoteSetupChange = onRemoteSetupChange,
             onCheckServer = onCheckServer,
             onAuthenticate = onAuthenticate,
+            knownServers = state.knownServers,
+            onUseKnownServer = onUseKnownServer,
         )
     }
 
@@ -632,7 +760,7 @@ private fun SpaceListDialogs(
         RemoteSignInDialog(
             serverUrl = reauthLink.account.serverUrl,
             state = reauthSetup,
-            onStateChange = onRemoteSetupChange,
+            onEdit = onRemoteSetupChange,
             onAuthenticate = onAuthenticate,
             onDismiss = onCancelReauth,
         )

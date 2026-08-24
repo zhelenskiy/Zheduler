@@ -38,7 +38,7 @@ data class Downloaded(val space: Space, val link: RemoteSpaceLink)
 class SpaceSyncService(
     private val gateway: RemoteSpaceGateway,
     private val repository: TaskRepository,
-    private val links: KStore<RemoteSpaceLinks>,
+    private val links: KStore<SyncSettings>,
     private val credentials: KStore<StoredCredentials>,
     /**
      * Where telling a server to forget a token happens.
@@ -77,7 +77,125 @@ class SpaceSyncService(
     val linksBySpaceId: Flow<Map<String, RemoteSpaceLink>> =
         links.updates.map { it?.bySpaceId.orEmpty() }
 
+    /** The servers this device has used before, most recently used first. */
+    val knownServers: Flow<List<KnownServer>> =
+        links.updates.map { it?.knownServers.orEmpty() }
+
+    suspend fun knownServersNow(): List<KnownServer> = links.get()?.knownServers.orEmpty()
+
+    /**
+     * Remembers a server the user has actually reached, and who they were on it.
+     *
+     * Recorded on a successful sign-in rather than on a successful health check: an address that
+     * answered is not yet a server this user has anything on, and offering it later as one of
+     * "their" servers would be putting words in their mouth.
+     */
+    private suspend fun rememberServer(account: AccountKey, startedIn: Long) = storeLock.withLock {
+        if (epoch != startedIn) return@withLock
+        links.update { current ->
+            val settings = current ?: SyncSettings()
+            val entry = KnownServer(url = account.serverUrl, lastUsername = account.username)
+            settings.copy(
+                // Most recent first, and one entry per address: signing in as somebody else on the
+                // same server replaces the name offered rather than listing the server twice.
+                knownServers = listOf(entry) + settings.knownServers.filterNot { it.url == entry.url },
+            )
+        }
+    }
+
+    /**
+     * Forgets a server, and signs out of it.
+     *
+     * Refused while a space still belongs to it: that space's only copy of the truth is there, and
+     * forgetting the address would leave it pointing at somewhere the user can no longer name.
+     */
+    suspend fun forgetServer(url: String): Boolean {
+        if (allLinks().values.any { it.account.serverUrl == url }) return false
+        val accounts = credentials.get()?.tokensByAccount?.keys.orEmpty()
+            .mapNotNull { AccountKey.fromStorageKey(it) }
+            .filter { it.serverUrl == url }
+        // A revocation that does not land is not a reason to keep the address: the token is gone
+        // from this device either way, and the server expires it on its own.
+        accounts.forEach { account -> signOut(account).deliberatelyIgnored() }
+        storeLock.withLock {
+            links.update { current ->
+                val settings = current ?: SyncSettings()
+                settings.copy(knownServers = settings.knownServers.filterNot { it.url == url })
+            }
+        }
+        return true
+    }
+
+    /**
+     * Files a fingerprint of what the server has taken, beside the revision.
+     *
+     * Written from the cloud layer rather than from the upload itself, because it is the cloud
+     * layer that knows which payload was actually agreed to — an upload re-exports internally, and
+     * an adoption's agreed state is what the database holds afterwards.
+     */
+    suspend fun noteAccepted(spaceId: String, fingerprint: String) {
+        val link = linkFor(spaceId) ?: return
+        advanceLink(link.copy(lastAcceptedFingerprint = fingerprint), currentEpoch())
+    }
+
+    /** Every space that belongs to [url], so the user can be told why it cannot be forgotten. */
+    suspend fun spacesOn(url: String): List<RemoteSpaceLink> =
+        allLinks().values.filter { it.account.serverUrl == url }
+
     suspend fun linkFor(spaceId: String): RemoteSpaceLink? = links.get()?.bySpaceId?.get(spaceId)
+
+    /** Every space this device has linked, by local space id. */
+    suspend fun allLinks(): Map<String, RemoteSpaceLink> = links.get()?.bySpaceId.orEmpty()
+
+    /**
+     * Asks the server whether it has moved past the revision this device holds.
+     *
+     * Conditional, so a space that has not changed costs a header exchange rather than its whole
+     * contents — which is what makes checking on every open affordable.
+     */
+    suspend fun fetchSpaceIfChanged(link: RemoteSpaceLink): Outcome<FetchedSpace> =
+        fetchSpace(link, sinceKnownRevision = true)
+
+    /**
+     * Fetches a space, conditionally or not.
+     *
+     * Unconditional fetching exists for the case where "the server has not moved" is not enough to
+     * conclude anything: this device may have written something the server never took, and
+     * comparing against a revision number cannot see that. Asking for the whole copy is the only
+     * way to find out what the space actually is.
+     */
+    suspend fun fetchSpace(
+        link: RemoteSpaceLink,
+        sinceKnownRevision: Boolean,
+    ): Outcome<FetchedSpace> {
+        val address = addressOf(link.account) ?: return badAddress()
+        val token = tokenFor(link.account) ?: return signInAgain()
+        return gateway
+            .fetchSpace(
+                address,
+                token,
+                link.remoteSpaceId,
+                link.lastSyncedRevision.takeIf { sinceKnownRevision },
+            )
+            .also { it.recordIfAuthExpired(link.account) }
+    }
+
+    /**
+     * Records that this device now holds the server's revision.
+     *
+     * Written after the local copy has been replaced, never before: the link is what the next
+     * upload guards on, and moving it ahead of the contents would let a write claim to be based
+     * on a revision this device never actually had.
+     */
+    suspend fun noteSynced(link: RemoteSpaceLink, revision: Long, updatedAtEpochSeconds: Long) {
+        advanceLink(
+            link.copy(
+                lastSyncedRevision = revision,
+                lastSyncedAtEpochSeconds = updatedAtEpochSeconds,
+            ),
+            currentEpoch(),
+        )
+    }
 
     // ------------------------------------------------------------------ signing in
 
@@ -113,6 +231,7 @@ class SpaceSyncService(
             // file the token under a name the next sign-in never looks up.
             val key = AccountKey(address.value, value.username)
             storeToken(key, AuthToken(value.token), startedIn)
+            rememberServer(key, startedIn)
             Outcome.Success(SignedInAccount(key, value.userId))
         }
     }
@@ -291,7 +410,20 @@ class SpaceSyncService(
      * overwrote a local space would be the one operation here that can destroy work the user has
      * not backed up.
      */
-    suspend fun download(account: AccountKey, remoteSpaceId: String): Outcome<Downloaded> {
+    suspend fun download(
+        account: AccountKey,
+        remoteSpaceId: String,
+        /**
+         * Whether the new space should belong to the server it came from.
+         *
+         * False when the copy is being brought down beside a space that is *already* linked to
+         * that same remote space — during a conflict. Two local spaces pointing at one remote one
+         * would fight over it: whichever the user then chose, the other would adopt the winner on
+         * its next check, and the copy they downloaded to keep safe would be overwritten by the
+         * very thing they overwrote it with.
+         */
+        link: Boolean = true,
+    ): Outcome<Downloaded> {
         val startedIn = currentEpoch()
         val address = addressOf(account) ?: return badAddress()
         val token = tokenFor(account) ?: return signInAgain()
@@ -314,15 +446,15 @@ class SpaceSyncService(
                         RemoteError.Malformed("that space was written by a newer version of the app")
                     )
 
-                val link = RemoteSpaceLink(
+                val downloadedLink = RemoteSpaceLink(
                     spaceId = imported.id,
                     account = account,
                     remoteSpaceId = remoteSpaceId,
                     lastSyncedRevision = snapshot.revision,
                     lastSyncedAtEpochSeconds = snapshot.updatedAtEpochSeconds,
                 )
-                putLink(link, startedIn)
-                Outcome.Success(Downloaded(imported, link))
+                if (link) putLink(downloadedLink, startedIn)
+                Outcome.Success(Downloaded(imported, downloadedLink))
             }
     }
 
@@ -346,7 +478,7 @@ class SpaceSyncService(
      * reattach itself to whichever space next takes that id.
      */
     suspend fun unlink(spaceId: String) = storeLock.withLock {
-        links.update { current -> (current ?: RemoteSpaceLinks()).let {
+        links.update { current -> (current ?: SyncSettings()).let {
             it.copy(bySpaceId = it.bySpaceId - spaceId)
         } }
     }
@@ -369,7 +501,7 @@ class SpaceSyncService(
             // Bumped inside the lock, so a call already in flight cannot write its result back
             // after this: its epoch is now in the past and every write checks.
             epoch++
-            links.set(RemoteSpaceLinks())
+            links.set(SyncSettings())
             credentials.set(StoredCredentials())
             tokens
         }
@@ -410,7 +542,7 @@ class SpaceSyncService(
     /** Writes a link that was not there before. */
     private suspend fun putLink(link: RemoteSpaceLink, startedIn: Long) = storeLock.withLock {
         if (epoch != startedIn) return@withLock
-        links.update { current -> (current ?: RemoteSpaceLinks()).let {
+        links.update { current -> (current ?: SyncSettings()).let {
             it.copy(bySpaceId = it.bySpaceId + (link.spaceId to link))
         } }
     }
@@ -430,7 +562,7 @@ class SpaceSyncService(
     private suspend fun advanceLink(link: RemoteSpaceLink, startedIn: Long) = storeLock.withLock {
         if (epoch != startedIn) return@withLock
         links.update { current ->
-            val existing = current ?: RemoteSpaceLinks()
+            val existing = current ?: SyncSettings()
             val stored = existing.bySpaceId[link.spaceId]
             if (stored == null ||
                 stored.remoteSpaceId != link.remoteSpaceId ||

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runComposeUiTest
 import com.zhelenskiy.zheduler.zheduler.InMemoryTaskRepository
@@ -97,7 +98,7 @@ class SpaceCreationAgainstARealServerTest {
         sync = SpaceSyncService(
             gateway = KtorRemoteSpaceGateway(syncClient),
             repository = repository,
-            links = inMemoryStore(RemoteSpaceLinks()),
+            links = inMemoryStore(SyncSettings()),
             credentials = inMemoryStore(StoredCredentials()),
         )
         container = SpaceListContainer(
@@ -142,9 +143,11 @@ class SpaceCreationAgainstARealServerTest {
                     container.store.intent(SpaceListIntent.AddSpace(name, prefix, account))
                 },
                 remoteSetup = state.remoteSetup,
-                onRemoteSetupChange = { container.store.intent(SpaceListIntent.UpdateRemoteSetup(it)) },
-                onCheckServer = { container.store.intent(SpaceListIntent.CheckRemoteServer) },
-                onAuthenticate = { container.store.intent(SpaceListIntent.AuthenticateRemote) },
+                onRemoteSetupChange = { edit -> container.store.intent(SpaceListIntent.EditRemoteSetup(edit)) },
+                onCheckServer = { typed -> container.store.intent(SpaceListIntent.CheckRemoteServer(typed)) },
+                onAuthenticate = { user, secret ->
+                    container.store.intent(SpaceListIntent.AuthenticateRemote(user, secret))
+                },
             )
         }
         waitForIdle()
@@ -221,9 +224,11 @@ class SpaceCreationAgainstARealServerTest {
                 onDismiss = {},
                 onSpaceCreated = { _, _, _ -> },
                 remoteSetup = state.remoteSetup,
-                onRemoteSetupChange = { container.store.intent(SpaceListIntent.UpdateRemoteSetup(it)) },
-                onCheckServer = { container.store.intent(SpaceListIntent.CheckRemoteServer) },
-                onAuthenticate = { container.store.intent(SpaceListIntent.AuthenticateRemote) },
+                onRemoteSetupChange = { edit -> container.store.intent(SpaceListIntent.EditRemoteSetup(edit)) },
+                onCheckServer = { typed -> container.store.intent(SpaceListIntent.CheckRemoteServer(typed)) },
+                onAuthenticate = { user, secret ->
+                    container.store.intent(SpaceListIntent.AuthenticateRemote(user, secret))
+                },
             )
         }
         waitForIdle()
@@ -262,9 +267,11 @@ class SpaceCreationAgainstARealServerTest {
                 onDismiss = {},
                 onSpaceCreated = { _, _, _ -> },
                 remoteSetup = state.remoteSetup,
-                onRemoteSetupChange = { container.store.intent(SpaceListIntent.UpdateRemoteSetup(it)) },
-                onCheckServer = { container.store.intent(SpaceListIntent.CheckRemoteServer) },
-                onAuthenticate = { container.store.intent(SpaceListIntent.AuthenticateRemote) },
+                onRemoteSetupChange = { edit -> container.store.intent(SpaceListIntent.EditRemoteSetup(edit)) },
+                onCheckServer = { typed -> container.store.intent(SpaceListIntent.CheckRemoteServer(typed)) },
+                onAuthenticate = { user, secret ->
+                    container.store.intent(SpaceListIntent.AuthenticateRemote(user, secret))
+                },
             )
         }
         waitForIdle()
@@ -283,13 +290,11 @@ class SpaceCreationAgainstARealServerTest {
         onNodeWithText("Try again").assertIsDisplayed()
 
         // Point it at the server that is actually running, and the same button gets through.
-        onNodeWithTag(RemoteSetupTags.ADDRESS).performTextInput("")
-        container.store.intent(
-            SpaceListIntent.UpdateRemoteSetup(
-                RemoteSetup.addressEdited(assertNotNull(seen.value.remoteSetup), serverUrl)
-            )
-        )
-        until("the new address to be held") { it.remoteSetup?.addressText == serverUrl }
+        // Typed into the box rather than pushed through the store on purpose: the box owns what
+        // is in it, and Connect sends what the box holds — which is the whole of the fix for a
+        // caret that used to jump backwards under a fast typist.
+        onNodeWithTag(RemoteSetupTags.ADDRESS).performTextClearance()
+        onNodeWithTag(RemoteSetupTags.ADDRESS).performTextInput(serverUrl)
         waitForIdle()
 
         onNodeWithTag(RemoteSetupTags.CONNECT).performClick()

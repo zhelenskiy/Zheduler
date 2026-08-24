@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontFamily
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
 
 /**
  * Standard top app bar colors used across the application.
@@ -57,11 +58,15 @@ fun TaskFormTopAppBar(
             }
         },
         actions = {
+            // Both forms are reached from an affordance that is already hidden while the space
+            // cannot be changed. This is for the way back into one that is still on the back
+            // stack when the server drops — the screen stays, but it stops being able to save.
+            val canSave = isFormValid && LocalSpaceEditing.current.isEditable
             IconButton(
                 onClick = onSave,
-                enabled = isFormValid,
+                enabled = canSave,
                 colors = IconButtonDefaults.iconButtonColors(
-                    contentColor = if (isFormValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    contentColor = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     disabledContentColor = MaterialTheme.colorScheme.error
                 )
             ) {

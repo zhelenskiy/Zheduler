@@ -6,6 +6,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.form.FormStatePersistence
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaces
+import com.zhelenskiy.zheduler.zheduler.sync.CommitOutcome
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentMapOf
@@ -55,12 +57,25 @@ sealed interface TaskEditAction : MVIAction {
 
     /** The task could not be saved — most likely it no longer exists. */
     data object TaskSaveFailed : TaskEditAction
+
+    /**
+     * The server would not take it, so it did not happen — and the form still has it.
+     *
+     * Distinct from [TaskSaveFailed] because the answer is different: nothing is wrong with what
+     * the user wrote, and the way out is to wait for the server rather than to change anything.
+     */
+    data object TaskSaveNotAccepted : TaskEditAction
 }
 
 private typealias TaskEditPipelineContext = PipelineContext<TaskEditState, TaskEditIntent, TaskEditAction>
 
 class TaskEditContainer(
     private val repository: TaskRepository,
+    /**
+     * Where a cloud space's changes have to be agreed. Null in a build with no sync, and for
+     * every space that belongs to this device alone.
+     */
+    private val cloud: CloudSpaces? = null,
     private val spaceId: String,
     private val taskId: String,
     private val savedStateHandle: SavedStateHandle
@@ -99,16 +114,37 @@ class TaskEditContainer(
         }
     }
 
+    /**
+     * Writes the edit and gets it agreed, or reports why it did not happen.
+     *
+     * The write goes *inside* [CloudSpaces.commit] rather than before it. A save on a cloud space
+     * is only half an edit until the server has taken it, and the other half can be refused —
+     * which takes the change back out. Doing the two separately leaves a gap in which somebody
+     * else's rollback can land on top of the write, and everything afterwards then reports a space
+     * that is perfectly in step, having quietly thrown this edit away.
+     */
     private suspend fun TaskEditPipelineContext.saveTask(updatedTask: Task) {
         // A null return means the task is no longer there — deleted from another window, say.
         // Reporting success anyway discarded the edit, wiped the copy kept for process death and
         // navigated away, all while behaving as though the save had worked.
-        if (repository.updateTask(updatedTask) == null) {
-            action(TaskEditAction.TaskSaveFailed)
-            return
+        val write: suspend () -> Boolean = { repository.updateTask(updatedTask) != null }
+        val outcome = cloud?.commit(spaceId, write)
+            ?: if (write()) CommitOutcome.Accepted else CommitOutcome.NotWritten
+
+        when (outcome) {
+            CommitOutcome.NotWritten -> action(TaskEditAction.TaskSaveFailed)
+            // The one answer that must not leave: the change is gone from the space and the form
+            // in front of the user is the only place it still exists.
+            CommitOutcome.Undone,
+            // And a conflict too. The copy does survive here, but only until the question is
+            // answered — and until then the form is the one place it cannot be adopted over.
+            CommitOutcome.AwaitingYourChoice -> action(TaskEditAction.TaskSaveNotAccepted)
+
+            CommitOutcome.Accepted -> {
+                formPersistence.clear()
+                action(TaskEditAction.TaskSaved)
+            }
         }
-        formPersistence.clear()
-        action(TaskEditAction.TaskSaved)
     }
 
     /** Keeps a half-written edit across process death. See [FormStatePersistence]. */

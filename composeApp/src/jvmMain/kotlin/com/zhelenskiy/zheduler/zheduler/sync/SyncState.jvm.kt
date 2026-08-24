@@ -13,8 +13,8 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 
-actual fun createRemoteSpaceLinkStore(): KStore<RemoteSpaceLinks> =
-    storeOf(Path("${syncDataDir()}/remote_spaces.json"), default = RemoteSpaceLinks())
+actual fun createRemoteSpaceLinkStore(): KStore<SyncSettings> =
+    storeOf(Path("${syncDataDir()}/remote_spaces.json"), default = SyncSettings())
 
 actual fun createCredentialStore(): KStore<StoredCredentials> =
     credentialStoreOver(File(syncDataDir(), "remote_credentials.json"))

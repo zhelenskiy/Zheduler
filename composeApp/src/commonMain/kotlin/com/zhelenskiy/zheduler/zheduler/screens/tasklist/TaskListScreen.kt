@@ -56,6 +56,8 @@ import com.zhelenskiy.zheduler.zheduler.components.common.shouldAnimate
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.DeleteConfirmationDialog
 import com.zhelenskiy.zheduler.zheduler.components.common.CheckNowButton
 import com.zhelenskiy.zheduler.zheduler.components.common.SettingsButton
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
 import com.zhelenskiy.zheduler.zheduler.settings.LocalEditorSettings
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskListContainer
@@ -904,12 +906,18 @@ fun TaskListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddTask) {
-                Icon(Icons.Default.Add, contentDescription = "Add Task")
+            // Gone rather than greyed: a disabled button invites the press that explains nothing,
+            // and the banner above the list has already said why there is no adding today.
+            if (LocalSpaceEditing.current.isEditable) {
+                FloatingActionButton(onClick = onAddTask) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Task")
+                }
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
+        Column(modifier = Modifier.padding(padding)) {
+        CloudSpaceBanner()
+        Box {
             if (uiData == null || currentSpace == null) {
                 // Show loading state - important for navigation animation
                 Box(modifier = Modifier.fillMaxSize())
@@ -948,6 +956,7 @@ fun TaskListScreen(
                     onCopy = onCopyTask
                 )
             }
+        }
         }
     }
 

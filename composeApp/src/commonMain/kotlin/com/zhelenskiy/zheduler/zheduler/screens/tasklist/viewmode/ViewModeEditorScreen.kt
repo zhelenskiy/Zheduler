@@ -49,6 +49,8 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import zheduler.composeapp.generated.resources.Res
 import zheduler.composeapp.generated.resources.ic_align_end
 import zheduler.composeapp.generated.resources.ic_align_start
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
 
 @Composable
 fun ViewModeEditorScreen(
@@ -66,11 +68,23 @@ fun ViewModeEditorScreen(
     onColorSettingsChange: (ColorSettings) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // See the task form: a save on a cloud space waits for the server.
+    var saving by remember { mutableStateOf(false) }
+
     val state by container.store.subscribe { action ->
         when (action) {
             is ViewModeAction.ViewModeSaved -> onSave()
+            // Stays put. The view mode has been taken back out of the space and everything the
+            // user arranged is still on screen; leaving would be the way to lose it. The banner
+            // above says why, and Save comes back when the server does.
+            is ViewModeAction.ViewModeNotAccepted -> saving = false
         }
     }
+    // See the task form: a failure with no action to answer it must not leave Save dead.
+    LaunchedEffect(container) {
+        container.failures.collect { saving = false }
+    }
+
     val isCopy = copyFromViewModeId != null
 
     // One editor for the life of this screen, kept across activity recreation, rather than one
@@ -159,9 +173,16 @@ fun ViewModeEditorScreen(
                 actions = {
                     IconButton(
                         onClick = {
+                            saving = true
                             container.store.intent(ViewModeIntent.SaveViewMode(editorState.toViewMode()))
                         },
-                        enabled = isValid && editorState.name.isNotBlank()
+                        // Entered through a button that is already hidden while the space
+                        // cannot be changed; this is for being *in* the editor when the server
+                        // drops, where the screen stays but saving must not.
+                        enabled = isValid &&
+                            !saving &&
+                            editorState.name.isNotBlank() &&
+                            LocalSpaceEditing.current.isEditable
                     ) {
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
@@ -178,10 +199,12 @@ fun ViewModeEditorScreen(
             )
         }
     ) { padding ->
+        Column(modifier = Modifier.padding(padding)) {
+        // The Save button greys out when the server cannot be reached; without this it would grey
+        // out for no stated reason, indistinguishable from a form the user has filled in wrongly.
+        CloudSpaceBanner()
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -214,6 +237,7 @@ fun ViewModeEditorScreen(
             item {
                 DefaultOrderingRulesSection(editorState)
             }
+        }
         }
     }
 }

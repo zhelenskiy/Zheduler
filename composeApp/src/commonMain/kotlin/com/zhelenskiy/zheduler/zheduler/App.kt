@@ -65,6 +65,8 @@ import com.zhelenskiy.zheduler.zheduler.components.common.LocalManualCheck
 import com.zhelenskiy.zheduler.zheduler.components.common.ManualCheck
 import com.zhelenskiy.zheduler.zheduler.components.common.rememberLocationChecks
 import com.zhelenskiy.zheduler.zheduler.components.map.PlaceBookProvider
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceGate
+import com.zhelenskiy.zheduler.zheduler.sync.KnownServersProvider
 import com.zhelenskiy.zheduler.zheduler.geo.SignalBookProvider
 import com.zhelenskiy.zheduler.zheduler.util.ProvideCurrentTime
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
@@ -229,6 +231,7 @@ fun App(themeState: ThemeState = rememberThemeState()) {
                   LocalLocationChecks provides locationChecks,
                   LocalManualCheck provides manualCheck,
               ) {
+              KnownServersProvider(graph.spaceSync) {
               PlaceBookProvider(graph.savedLocationContainer) {
               SignalBookProvider(graph.savedSignalContainer) {
               ProvideCurrentTime {
@@ -250,6 +253,7 @@ fun App(themeState: ThemeState = rememberThemeState()) {
                         SnackbarHost(failureSnackbar, modifier = Modifier.align(Alignment.BottomCenter))
                     }
                 }
+              }
               }
               }
               }
@@ -393,42 +397,44 @@ private fun AppContent(
             // Observe loaded filter from SavedFilterManagementScreen
             val loadedFilterId by savedStateHandle.getStateFlow<String?>("loadedFilterId", null).collectAsState()
 
-            TaskListScreen(
-                container = container,
-                refreshTrigger = refreshTrigger,
-                loadedFilterId = loadedFilterId,
-                onFilterLoaded = {
-                    savedStateHandle["loadedFilterId"] = null
-                },
-                onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
-                },
-                onAddTask = {
-                    navController.navigate(NewTaskRoute(spaceId = route.spaceId))
-                },
-                onCopyTask = { taskId ->
-                    navController.navigate(NewTaskRoute(spaceId = route.spaceId, taskIdToCopy = taskId))
-                },
-                onRefresh = { refreshTrigger++ },
-                onNavigateToSpaceList = {
-                    navController.popBackStack(SpaceListRoute, inclusive = false)
-                },
-                onNavigateToCalendar = {
-                    navController.navigate(CalendarRoute(route.spaceId))
-                },
-                onNavigateToViewModeManagement = {
-                    navController.navigate(ViewModeManagementRoute(route.spaceId))
-                },
-                onNavigateToSavedFilterManagement = {
-                    navController.navigate(SavedFilterManagementRoute(route.spaceId))
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                TaskListScreen(
+                    container = container,
+                    refreshTrigger = refreshTrigger,
+                    loadedFilterId = loadedFilterId,
+                    onFilterLoaded = {
+                        savedStateHandle["loadedFilterId"] = null
+                    },
+                    onTaskClick = { taskId ->
+                        openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
+                    },
+                    onAddTask = {
+                        navController.navigate(NewTaskRoute(spaceId = route.spaceId))
+                    },
+                    onCopyTask = { taskId ->
+                        navController.navigate(NewTaskRoute(spaceId = route.spaceId, taskIdToCopy = taskId))
+                    },
+                    onRefresh = { refreshTrigger++ },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
+                    onNavigateToCalendar = {
+                        navController.navigate(CalendarRoute(route.spaceId))
+                    },
+                    onNavigateToViewModeManagement = {
+                        navController.navigate(ViewModeManagementRoute(route.spaceId))
+                    },
+                    onNavigateToSavedFilterManagement = {
+                        navController.navigate(SavedFilterManagementRoute(route.spaceId))
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
 
         composable<CalendarRoute> { backStackEntry ->
@@ -437,24 +443,26 @@ private fun AppContent(
                 appGraph.calendarContainerFactory.create(route.spaceId)
             }
             ReportFailures(container)
-            CalendarScreen(
-                container = container,
-                onNavigateBack = {
-                    navController.popOnce(backStackEntry)
-                },
-                onNavigateToSpaceList = {
-                    navController.popBackStack(SpaceListRoute, inclusive = false)
-                },
-                onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                CalendarScreen(
+                    container = container,
+                    onNavigateBack = {
+                        navController.popOnce(backStackEntry)
+                    },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
+                    onTaskClick = { taskId ->
+                        openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
 
         composable<TaskDetailRoute>(
@@ -484,29 +492,31 @@ private fun AppContent(
                 )
             }
             ReportFailures(container)
-            TaskDetailScreen(
-                container = container,
-                externalRefreshTrigger = refreshTrigger,
-                onNavigateBack = {
-                    refreshTrigger++
-                    navController.popOnce(backStackEntry)
-                },
-                onNavigateToEdit = {
-                    navController.navigate(TaskEditRoute(route.spaceId, route.taskId))
-                },
-                onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
-                },
-                onNavigateToSpaceList = {
-                    navController.popBackStack(SpaceListRoute, inclusive = false)
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                TaskDetailScreen(
+                    container = container,
+                    externalRefreshTrigger = refreshTrigger,
+                    onNavigateBack = {
+                        refreshTrigger++
+                        navController.popOnce(backStackEntry)
+                    },
+                    onNavigateToEdit = {
+                        navController.navigate(TaskEditRoute(route.spaceId, route.taskId))
+                    },
+                    onTaskClick = { taskId ->
+                        openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
+                    },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
 
         composable<TaskEditRoute> { backStackEntry ->
@@ -520,32 +530,34 @@ private fun AppContent(
                 )
             }
             ReportFailures(container)
-            TaskEditScreen(
-                container = container,
-                onNavigateBack = {
-                    refreshTrigger++
-                    navController.popOnce(backStackEntry)
-                },
-                onAddNewTaskWithConnection = { targetTaskId, connectionType ->
-                    navController.navigate(
-                        NewTaskRoute(
-                            spaceId = route.spaceId,
-                            prefilledConnectionTargetId = targetTaskId,
-                            prefilledConnectionType = connectionType.name,
-                            returnToEditTaskId = route.taskId
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                TaskEditScreen(
+                    container = container,
+                    onNavigateBack = {
+                        refreshTrigger++
+                        navController.popOnce(backStackEntry)
+                    },
+                    onAddNewTaskWithConnection = { targetTaskId, connectionType ->
+                        navController.navigate(
+                            NewTaskRoute(
+                                spaceId = route.spaceId,
+                                prefilledConnectionTargetId = targetTaskId,
+                                prefilledConnectionType = connectionType.name,
+                                returnToEditTaskId = route.taskId
+                            )
                         )
-                    )
-                },
-                onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+                    },
+                    onTaskClick = { taskId ->
+                        openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
 
         composable<NewTaskRoute>(
@@ -585,125 +597,133 @@ private fun AppContent(
                 )
             }
             ReportFailures(container)
-            NewTaskScreen(
-                container = container,
-                onNavigateBack = {
-                    refreshTrigger++
-                    navController.popOnce(backStackEntry)
-                },
-                onTaskCreated = { taskId ->
-                    refreshTrigger++
-                    if (route.returnToEditTaskId != null) {
-                        // Just pop back to the parent task - it will stay in edit mode
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                NewTaskScreen(
+                    container = container,
+                    onNavigateBack = {
+                        refreshTrigger++
                         navController.popOnce(backStackEntry)
-                    } else {
-                        navController.navigate(TaskDetailRoute(route.spaceId, taskId, fromCreation = true)) {
-                            popUpTo<NewTaskRoute> { inclusive = true }
+                    },
+                    onTaskCreated = { taskId ->
+                        refreshTrigger++
+                        if (route.returnToEditTaskId != null) {
+                            // Just pop back to the parent task - it will stay in edit mode
+                            navController.popOnce(backStackEntry)
+                        } else {
+                            navController.navigate(TaskDetailRoute(route.spaceId, taskId, fromCreation = true)) {
+                                popUpTo<NewTaskRoute> { inclusive = true }
+                            }
                         }
-                    }
-                },
-                onTaskClick = { taskId ->
-                    openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+                    },
+                    onTaskClick = { taskId ->
+                        openTask(taskId, fallbackSpaceId = route.spaceId, from = backStackEntry)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
 
         composable<ViewModeManagementRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<ViewModeManagementRoute>()
             val container = rememberContainer(route.spaceId) {
-                ViewModeContainer(appGraph.taskRepository, route.spaceId)
+                ViewModeContainer(appGraph.taskRepository, route.spaceId, appGraph.cloudSpaces)
             }
             ReportFailures(container)
 
-            ViewModeManagementScreen(
-                container = container,
-                onCreateNew = {
-                    navController.navigate(ViewModeEditorRoute(route.spaceId))
-                },
-                onEdit = { viewMode ->
-                    navController.navigate(ViewModeEditorRoute(route.spaceId, viewModeId = viewMode.id))
-                },
-                onCopy = { viewMode ->
-                    navController.navigate(ViewModeEditorRoute(route.spaceId, copyFromViewModeId = viewMode.id))
-                },
-                onBack = {
-                    refreshTrigger++
-                    navController.popOnce(backStackEntry)
-                },
-                onNavigateToSpaceList = {
-                    navController.popBackStack(SpaceListRoute, inclusive = false)
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                ViewModeManagementScreen(
+                    container = container,
+                    onCreateNew = {
+                        navController.navigate(ViewModeEditorRoute(route.spaceId))
+                    },
+                    onEdit = { viewMode ->
+                        navController.navigate(ViewModeEditorRoute(route.spaceId, viewModeId = viewMode.id))
+                    },
+                    onCopy = { viewMode ->
+                        navController.navigate(ViewModeEditorRoute(route.spaceId, copyFromViewModeId = viewMode.id))
+                    },
+                    onBack = {
+                        refreshTrigger++
+                        navController.popOnce(backStackEntry)
+                    },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
 
         composable<ViewModeEditorRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<ViewModeEditorRoute>()
             val container = rememberContainer(route.spaceId) {
-                ViewModeContainer(appGraph.taskRepository, route.spaceId)
+                ViewModeContainer(appGraph.taskRepository, route.spaceId, appGraph.cloudSpaces)
             }
             ReportFailures(container)
 
-            ViewModeEditorScreen(
-                container = container,
-                viewModeId = route.viewModeId,
-                copyFromViewModeId = route.copyFromViewModeId,
-                spaceId = route.spaceId,
-                onSave = {
-                    navController.popOnce(backStackEntry)
-                },
-                onCancel = {
-                    navController.popOnce(backStackEntry)
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                ViewModeEditorScreen(
+                    container = container,
+                    viewModeId = route.viewModeId,
+                    copyFromViewModeId = route.copyFromViewModeId,
+                    spaceId = route.spaceId,
+                    onSave = {
+                        navController.popOnce(backStackEntry)
+                    },
+                    onCancel = {
+                        navController.popOnce(backStackEntry)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
 
         composable<SavedFilterManagementRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<SavedFilterManagementRoute>()
             val container = rememberContainer(route.spaceId) {
-                SavedFilterContainer(appGraph.taskRepository, route.spaceId)
+                SavedFilterContainer(appGraph.taskRepository, route.spaceId, appGraph.cloudSpaces)
             }
             ReportFailures(container)
 
-            SavedFilterManagementScreen(
-                container = container,
-                spaceId = route.spaceId,
-                onLoad = { filter ->
-                    // Navigate back with the filter to apply
-                    navController.previousBackStackEntry?.savedStateHandle?.set("loadedFilterId", filter.id)
-                    navController.popOnce(backStackEntry)
-                },
-                onBack = {
-                    refreshTrigger++
-                    navController.popOnce(backStackEntry)
-                },
-                onNavigateToSpaceList = {
-                    navController.popBackStack(SpaceListRoute, inclusive = false)
-                },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                useDynamicColors = useDynamicColors,
-                onDynamicColorsChange = onUseDynamicColorsChange,
-                colorSettings = colorSettings,
-                onColorSettingsChange = onColorSettingsChange
-            )
+            CloudSpaceGate(route.spaceId, appGraph.cloudSpaces) {
+                SavedFilterManagementScreen(
+                    container = container,
+                    spaceId = route.spaceId,
+                    onLoad = { filter ->
+                        // Navigate back with the filter to apply
+                        navController.previousBackStackEntry?.savedStateHandle?.set("loadedFilterId", filter.id)
+                        navController.popOnce(backStackEntry)
+                    },
+                    onBack = {
+                        refreshTrigger++
+                        navController.popOnce(backStackEntry)
+                    },
+                    onNavigateToSpaceList = {
+                        navController.popBackStack(SpaceListRoute, inclusive = false)
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    useDynamicColors = useDynamicColors,
+                    onDynamicColorsChange = onUseDynamicColorsChange,
+                    colorSettings = colorSettings,
+                    onColorSettingsChange = onColorSettingsChange
+                )
+            }
         }
     }
 }

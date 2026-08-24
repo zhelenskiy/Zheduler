@@ -790,7 +790,83 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             )
             spaces[newSpaceId] = newSpace
 
-            val oldToNewTaskId = createTaskIdMapping(exportData.tasks, newPrefix)
+            fillSpaceUnsafe(newSpaceId, newPrefix, exportData, keepForeignIds = false)
+            notifyChanged()
+
+            newSpace
+        }
+    }
+
+    override suspend fun replaceSpaceFromJson(spaceId: String, jsonString: String): Boolean {
+        val exportData = try {
+            jsonCompact.decodeFromString<SpaceExportData>(jsonString)
+        } catch (e: Exception) {
+            return false
+        }
+
+        return mutex.withLock {
+            require(exportData.tasks.distinctBy { it.id }.size == exportData.tasks.size) {
+                "The file names the same task id more than once"
+            }
+            val existing = spaces[spaceId] ?: return@withLock false
+
+            // As the database does it: the space is emptied the way a deletion empties it and
+            // refilled under the same id and prefix, so nothing outside has to learn a new name
+            // for it. Only the tasks that are actually going are treated as deleted — a task
+            // elsewhere that points at one the snapshot brings back has lost nothing.
+            val taskIdsInSpace = tasks.values.filter { it.spaceId == spaceId }.map { it.id }.toSet()
+            val surviving = createTaskIdMapping(exportData.tasks, existing.idPrefix).values.toSet()
+            val departing = taskIdsInSpace - surviving
+            if (departing.isNotEmpty()) {
+                handleCrossSpaceRelationshipsOnSpaceDeletion(
+                    departing,
+                    tasks.values.filter { it.spaceId != spaceId },
+                )
+            }
+            taskIdsInSpace.forEach { taskId ->
+                tasks.remove(taskId)
+                statusTimelines.remove(taskId)
+            }
+            tagsBySpace.remove(spaceId)
+            customViewModes.remove(spaceId)
+            savedFilters.remove(spaceId)
+            nextIdBySpace.remove(spaceId)
+
+            spaces[spaceId] = existing.copy(name = exportData.space.name)
+            fillSpaceUnsafe(spaceId, existing.idPrefix, exportData, keepForeignIds = true)
+            notifyChanged()
+
+            true
+        }
+    }
+
+    /**
+     * Writes a snapshot's contents into a space that already exists and is empty.
+     *
+     * Shared by importing and by replacing; see the Room repository, whose version this mirrors.
+     * The caller holds the mutex.
+     */
+    private suspend fun fillSpaceUnsafe(
+        newSpaceId: String,
+        newPrefix: String,
+        exportData: SpaceExportData,
+        /**
+         * Whether ids the snapshot names that are not its own may point at tasks already here.
+         *
+         * True only when a space is being replaced by its own copy from the server: those ids are
+         * this device's, and dropping them would cut the space's outgoing links on every refresh.
+         * False on import, where the file was written somewhere else — the ids there mean nothing
+         * here, and honouring one that happened to match would wire a stranger's task to an
+         * unrelated task of the user's.
+         */
+        keepForeignIds: Boolean,
+    ) {
+            val reissued = createTaskIdMapping(exportData.tasks, newPrefix)
+        // See the database's copy: a link out of the space keeps its id where that task is here.
+        val stillHere = if (!keepForeignIds) emptyList() else {
+            foreignIdsNamedBy(exportData, reissued.keys).filter { it in tasks }
+        }
+        val oldToNewTaskId = reissued + stillHere.associateWith { it }
             nextIdBySpace[newSpaceId] = nextIdAfter(oldToNewTaskId.values, exportData.nextId)
 
             exportData.tasks.forEach { task ->
@@ -839,7 +915,7 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
             // A known difference, left as it is: the database import adds connections one at a
             // time and so refuses a cycle, while this takes the file's graph as given. No export
             // the app writes can contain one, and neither answer is unsafe for a hand-edited file.
-            tagsBySpace.getOrPut(newSpace.id) { mutableSetOf() }.addAll(exportData.tags)
+            tagsBySpace.getOrPut(newSpaceId) { mutableSetOf() }.addAll(exportData.tags)
 
             val (viewModes, filters) = importedSettings(exportData, newSpaceId, oldToNewTaskId)
             viewModes.forEach { mode ->
@@ -851,10 +927,6 @@ class InMemoryTaskRepository(clock: Clock = Clock.System) : AbstractTaskReposito
 
             // Now that every task exists, and not before. See the Room import.
             unblockTasksWithOnlyResolvedBlockers(oldToNewTaskId.values)
-            notifyChanged()
-
-            newSpace
-        }
     }
 
     // ============ Space deletion helper ============

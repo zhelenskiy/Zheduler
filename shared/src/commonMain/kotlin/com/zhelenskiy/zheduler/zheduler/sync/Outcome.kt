@@ -178,3 +178,12 @@ sealed interface RemoteError {
         override val remedy: RemoteRemedy get() = RemoteRemedy.ReviewSettings
     }
 }
+
+/**
+ * Throws the outcome away on purpose.
+ *
+ * The reason this exists rather than a bare call: the return-value checker is on across this
+ * module precisely so that a network failure cannot be dropped by accident, and the handful of
+ * places where dropping one is the right answer should have to say so.
+ */
+fun Outcome<*>.deliberatelyIgnored() = Unit

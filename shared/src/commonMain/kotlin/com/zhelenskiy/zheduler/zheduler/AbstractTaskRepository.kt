@@ -1079,6 +1079,28 @@ abstract class AbstractTaskRepository(protected val clock: Clock = Clock.System)
      * @param oldToNewTaskId The mapping from old to new task IDs
      * @return The remapped status, or TaskStatus.Open if all blockers were removed
      */
+    /**
+     * Every task id a snapshot names that is not one of its own tasks.
+     *
+     * These are links out of the space — a task here blocked by, or connected to, a task in
+     * another space. The snapshot carries them because the export is written from this space's
+     * side, but they are not re-issued with the rest, so without picking them out they are simply
+     * dropped: a routine refresh from the server would cut every outgoing link the space had, and
+     * then upload the space without them.
+     */
+    protected fun foreignIdsNamedBy(exportData: SpaceExportData, own: Set<String>): Set<String> {
+        val fromTasks = exportData.tasks.flatMap { task ->
+            task.connections.map { it.targetTaskId } + task.status.blockerIds()
+        }
+        val fromHistory = exportData.statusTimelines.values.flatten().flatMap { change ->
+            change.newStatus.blockerIds() + change.previousStatus?.blockerIds().orEmpty()
+        }
+        return (fromTasks + fromHistory).toSet() - own
+    }
+
+    private fun TaskStatus.blockerIds(): Set<String> =
+        (this as? TaskStatus.Blocked)?.blockerTaskIds.orEmpty().toSet()
+
     protected fun remapBlockedStatus(status: TaskStatus, oldToNewTaskId: Map<String, String>): TaskStatus {
         return when (status) {
             is TaskStatus.Blocked -> {

@@ -619,6 +619,21 @@ interface TaskRepository {
      */
     suspend fun importSpaceFromJson(jsonString: String): Space?
 
+    /**
+     * Replace a space's entire contents with a snapshot, keeping its id and prefix.
+     *
+     * What "the server holds the space" needs: the copy that arrives *is* the space, so it takes
+     * the place of what was here rather than arriving alongside it as [importSpaceFromJson] does.
+     * The id and prefix survive because everything outside the space is keyed on them — where the
+     * user has navigated, the space's own settings, and the record of which server it belongs to.
+     *
+     * Tasks in other spaces that pointed into this one are detached, exactly as a deletion detaches
+     * them: the ids they named are not coming back.
+     *
+     * @return true if the space existed and was replaced
+     */
+    suspend fun replaceSpaceFromJson(spaceId: String, jsonString: String): Boolean
+
     // ============ Recurrence operations ============
 
     /**

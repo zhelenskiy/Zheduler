@@ -9,7 +9,7 @@ import com.zhelenskiy.zheduler.zheduler.sync.RemoteError
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetup
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupStage
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupState
-import com.zhelenskiy.zheduler.zheduler.sync.RemoteSpaceLinks
+import com.zhelenskiy.zheduler.zheduler.sync.SyncSettings
 import com.zhelenskiy.zheduler.zheduler.sync.SignedInAccount
 import com.zhelenskiy.zheduler.zheduler.sync.SpacePushResponse
 import com.zhelenskiy.zheduler.zheduler.sync.SpaceSyncService
@@ -46,7 +46,7 @@ class SpaceListSyncTest {
 
     private val gateway = FakeRemoteSpaceGateway()
     private val repository = InMemoryTaskRepository()
-    private val links = inMemoryStore(RemoteSpaceLinks())
+    private val links = inMemoryStore(SyncSettings())
     private val credentials = inMemoryStore(StoredCredentials())
     private val sync = SpaceSyncService(gateway, repository, links, credentials)
     private val address = testAddress()
@@ -120,8 +120,8 @@ class SpaceListSyncTest {
 
     @Test
     fun `checking a server that answers moves on to the credentials`() = onScreen {
-        send(SpaceListIntent.UpdateRemoteSetup(RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value))))
-        send(SpaceListIntent.CheckRemoteServer)
+        send(SpaceListIntent.EditRemoteSetup { RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value)) })
+        send(SpaceListIntent.CheckRemoteServer(address.value))
 
         until("the credentials to be asked for") {
             it.remoteSetup?.stage is RemoteSetupStage.Authenticating
@@ -131,8 +131,8 @@ class SpaceListSyncTest {
     @Test
     fun `a server that does not answer leaves the error under the address`() = onScreen {
         gateway.onServerInfo = { Outcome.Failure(RemoteError.Unreachable("refused")) }
-        send(SpaceListIntent.UpdateRemoteSetup(RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value))))
-        send(SpaceListIntent.CheckRemoteServer)
+        send(SpaceListIntent.EditRemoteSetup { RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value)) })
+        send(SpaceListIntent.CheckRemoteServer(address.value))
 
         val state = until("the failure to be shown") {
             (it.remoteSetup?.stage as? RemoteSetupStage.Addressing)?.error != null
@@ -146,11 +146,9 @@ class SpaceListSyncTest {
     @Test
     fun `an address this app will not use is refused without contacting anything`() = onScreen {
         send(
-            SpaceListIntent.UpdateRemoteSetup(
-                RemoteSetup.turnedOn(RemoteSetupState(addressText = "http://sync.example.com"))
-            )
+            SpaceListIntent.EditRemoteSetup { RemoteSetup.turnedOn(RemoteSetupState(addressText = "http://sync.example.com")) }
         )
-        send(SpaceListIntent.CheckRemoteServer)
+        send(SpaceListIntent.CheckRemoteServer("http://sync.example.com"))
 
         until("the address to be refused") {
             (it.remoteSetup?.stage as? RemoteSetupStage.Addressing)?.error != null
@@ -163,18 +161,16 @@ class SpaceListSyncTest {
         gateway.onLogIn = { _, _ ->
             Outcome.Failure(RemoteError.Rejected(ApiErrorCode.InvalidCredentials, "no"))
         }
-        send(SpaceListIntent.UpdateRemoteSetup(RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value))))
-        send(SpaceListIntent.CheckRemoteServer)
+        send(SpaceListIntent.EditRemoteSetup { RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value)) })
+        send(SpaceListIntent.CheckRemoteServer(address.value))
         val answered = until("the credentials to be asked for") {
             it.remoteSetup?.stage is RemoteSetupStage.Authenticating
         }
 
         send(
-            SpaceListIntent.UpdateRemoteSetup(
-                assertNotNull(answered.remoteSetup).copy(username = "ada", password = "wrong password")
-            )
+            SpaceListIntent.EditRemoteSetup { assertNotNull(answered.remoteSetup).copy(username = "ada", password = "wrong password") }
         )
-        send(SpaceListIntent.AuthenticateRemote)
+        send(SpaceListIntent.AuthenticateRemote("ada", "wrong password"))
 
         val rejected = until("the password to be rejected") {
             (it.remoteSetup?.stage as? RemoteSetupStage.Authenticating)?.error != null
@@ -186,18 +182,16 @@ class SpaceListSyncTest {
     @Test
     fun `signing in reaches Ready and offers the account`() = onScreen {
         gateway.onLogIn = { _, _ -> Outcome.Success(AuthResponse("tkn", "u1", "ada", 0)) }
-        send(SpaceListIntent.UpdateRemoteSetup(RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value))))
-        send(SpaceListIntent.CheckRemoteServer)
+        send(SpaceListIntent.EditRemoteSetup { RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value)) })
+        send(SpaceListIntent.CheckRemoteServer(address.value))
         val answered = until("the credentials to be asked for") {
             it.remoteSetup?.stage is RemoteSetupStage.Authenticating
         }
 
         send(
-            SpaceListIntent.UpdateRemoteSetup(
-                assertNotNull(answered.remoteSetup).copy(username = "ada", password = "a long enough password")
-            )
+            SpaceListIntent.EditRemoteSetup { assertNotNull(answered.remoteSetup).copy(username = "ada", password = "a long enough password") }
         )
-        send(SpaceListIntent.AuthenticateRemote)
+        send(SpaceListIntent.AuthenticateRemote("ada", "a long enough password"))
 
         val ready = until("the sign-in to finish") { it.remoteSetup?.stage is RemoteSetupStage.Ready }
         assertEquals("ada", assertNotNull(ready.remoteSetup?.readyAccount).key.username)
@@ -215,22 +209,20 @@ class SpaceListSyncTest {
             Outcome.Success(AuthResponse("tkn", "u1", "ada", 0))
         }
 
-        send(SpaceListIntent.UpdateRemoteSetup(RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value))))
-        send(SpaceListIntent.CheckRemoteServer)
+        send(SpaceListIntent.EditRemoteSetup { RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value)) })
+        send(SpaceListIntent.CheckRemoteServer(address.value))
         val answered = until("the credentials to be asked for") {
             it.remoteSetup?.stage is RemoteSetupStage.Authenticating
         }
         send(
-            SpaceListIntent.UpdateRemoteSetup(
-                assertNotNull(answered.remoteSetup).copy(username = "ada", password = "a long enough password")
-            )
+            SpaceListIntent.EditRemoteSetup { assertNotNull(answered.remoteSetup).copy(username = "ada", password = "a long enough password") }
         )
 
-        send(SpaceListIntent.AuthenticateRemote)
+        send(SpaceListIntent.AuthenticateRemote("ada", "a long enough password"))
         until("the first attempt to be in flight") {
             (it.remoteSetup?.stage as? RemoteSetupStage.Authenticating)?.busy == true
         }
-        send(SpaceListIntent.AuthenticateRemote)
+        send(SpaceListIntent.AuthenticateRemote("ada", "a long enough password"))
 
         held.complete(Unit)
         until("the sign-in to finish") { it.remoteSetup?.stage is RemoteSetupStage.Ready }
@@ -338,8 +330,8 @@ class SpaceListSyncTest {
         gateway.onUpdate = { _, remoteId, revision, _ ->
             Outcome.Success(SpacePushResponse(remoteId, revision + 1, 950))
         }
-        send(SpaceListIntent.UpdateRemoteSetup(setup.copy(password = "a long enough password")))
-        send(SpaceListIntent.AuthenticateRemote)
+        send(SpaceListIntent.EditRemoteSetup { setup.copy(password = "a long enough password") })
+        send(SpaceListIntent.AuthenticateRemote(setup.username, "a long enough password"))
 
         val recovered = until("the stuck space to go up") {
             it.reauthSpaceId == null && it.remoteLinks[spaceId]?.lastSyncedRevision == 2L
@@ -407,7 +399,7 @@ class SpaceListSyncTest {
     fun `the server section resets between dialogs`() = onScreen {
         // Otherwise the next new-space dialog opens already signed in to a server the user had
         // walked away from.
-        send(SpaceListIntent.UpdateRemoteSetup(RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value))))
+        send(SpaceListIntent.EditRemoteSetup { RemoteSetup.turnedOn(RemoteSetupState(addressText = address.value)) })
         until("the address to be held") { it.remoteSetup?.addressText == address.value }
 
         send(SpaceListIntent.ClearRemoteSetup)

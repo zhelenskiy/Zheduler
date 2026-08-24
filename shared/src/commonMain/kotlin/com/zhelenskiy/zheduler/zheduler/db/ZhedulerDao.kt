@@ -218,6 +218,24 @@ interface ZhedulerDao {
     )
     suspend fun getConnectionsBySpace(spaceId: String): List<TaskConnections>
 
+    /**
+     * Every connection that points *into* a space from a task living somewhere else.
+     *
+     * Read before a space is replaced from a snapshot. Both ends of a connection cascade, so
+     * emptying a space also deletes the links other spaces hold into it — including links to
+     * tasks the snapshot puts straight back, which would otherwise be quietly cut every time a
+     * cloud space merely caught up with its server.
+     */
+    @Query(
+        """
+        SELECT c.* FROM task_connections c
+        INNER JOIN tasks source ON source.id = c.sourceTaskId
+        INNER JOIN tasks target ON target.id = c.targetTaskId
+        WHERE target.spaceId = :spaceId AND source.spaceId != :spaceId
+        """
+    )
+    suspend fun getConnectionsIntoSpace(spaceId: String): List<TaskConnections>
+
     /** As [getConnectionsBySpace], restricted to one connection type (totals only need one). */
     @Query(
         """

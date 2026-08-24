@@ -65,6 +65,7 @@ import kotlinx.datetime.*
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
 
 @Suppress("UnusedReceiverParameter")
 /** [YearMonth] as the pair of numbers a platform state registry can hold. */
@@ -236,6 +237,7 @@ fun CalendarScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
+            CloudSpaceBanner()
             Column(
                 modifier = Modifier
                     .widthIn(max = 400.dp)

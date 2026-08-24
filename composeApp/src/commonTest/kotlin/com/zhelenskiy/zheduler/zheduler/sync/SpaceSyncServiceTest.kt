@@ -24,7 +24,7 @@ class SpaceSyncServiceTest {
 
     private val gateway = FakeRemoteSpaceGateway()
     private val repository: TaskRepository = InMemoryTaskRepository()
-    private val links = inMemoryStore(RemoteSpaceLinks())
+    private val links = inMemoryStore(SyncSettings())
     private val credentials = inMemoryStore(StoredCredentials())
     private val address = testAddress()
 

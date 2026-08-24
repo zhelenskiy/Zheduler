@@ -20,6 +20,7 @@ import com.zhelenskiy.zheduler.zheduler.geo.SignalSource
 import com.zhelenskiy.zheduler.zheduler.geo.createLocationSource
 import com.zhelenskiy.zheduler.zheduler.geo.createSignalSource
 import com.zhelenskiy.zheduler.zheduler.geo.updatePlaceWatch
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaces
 import com.zhelenskiy.zheduler.zheduler.sync.KtorRemoteSpaceGateway
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSpaceGateway
 import com.zhelenskiy.zheduler.zheduler.sync.SpaceSyncService
@@ -82,6 +83,13 @@ interface AppGraph {
      * Singleton SpaceListContainer - preserves search state across navigation.
      */
     val spaceListContainer: SpaceListContainer
+
+    /**
+     * What each cloud space's server is doing, and the servers this device has used.
+     */
+    val spaceSync: SpaceSyncService
+
+    val cloudSpaces: CloudSpaces
 
     /**
      * The address book of places, which belongs to no space and so needs no factory.
@@ -208,12 +216,26 @@ interface AppGraph {
             credentials = createCredentialStore(),
         )
 
+        /**
+         * The one place that keeps cloud spaces in step with their servers.
+         *
+         * App-scoped and started here rather than by a screen: a recurrence rule firing changes a
+         * space nobody is looking at, and that change still has to reach the server.
+         */
+        @Provides
+        @SingleIn(AppScope::class)
+        fun provideCloudSpaces(
+            sync: SpaceSyncService,
+            repository: RoomTaskRepository,
+        ): CloudSpaces = CloudSpaces(sync, repository).also { it.watch(repository) }
+
         @Provides
         @SingleIn(AppScope::class)
         fun provideSpaceListContainer(
             repository: RoomTaskRepository,
             sync: SpaceSyncService,
-        ): SpaceListContainer = SpaceListContainer(repository, sync)
+            cloud: CloudSpaces,
+        ): SpaceListContainer = SpaceListContainer(repository, sync, cloud)
 
         @Provides
         @SingleIn(AppScope::class)
@@ -238,9 +260,19 @@ interface AppGraph {
             }
 
         @Provides
-        fun provideNewTaskContainerFactory(repository: RoomTaskRepository): NewTaskContainerFactory =
+        fun provideNewTaskContainerFactory(
+            repository: RoomTaskRepository,
+            cloud: CloudSpaces,
+        ): NewTaskContainerFactory =
             NewTaskContainerFactory { spaceId, prefilledConnection, taskIdToCopy, savedStateHandle ->
-                NewTaskContainer(repository, spaceId, prefilledConnection, taskIdToCopy, savedStateHandle)
+                NewTaskContainer(
+                    repository,
+                    cloud,
+                    spaceId,
+                    prefilledConnection,
+                    taskIdToCopy,
+                    savedStateHandle,
+                )
             }
 
         @Provides
@@ -250,9 +282,12 @@ interface AppGraph {
             }
 
         @Provides
-        fun provideTaskEditContainerFactory(repository: RoomTaskRepository): TaskEditContainerFactory =
+        fun provideTaskEditContainerFactory(
+            repository: RoomTaskRepository,
+            cloud: CloudSpaces,
+        ): TaskEditContainerFactory =
             TaskEditContainerFactory { spaceId, taskId, savedStateHandle ->
-                TaskEditContainer(repository, spaceId, taskId, savedStateHandle)
+                TaskEditContainer(repository, cloud, spaceId, taskId, savedStateHandle)
             }
     }
 }

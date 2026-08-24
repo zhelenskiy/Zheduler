@@ -7,6 +7,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.components.form.FormStatePersistence
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaces
+import com.zhelenskiy.zheduler.zheduler.sync.CommitOutcome
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
@@ -68,12 +70,22 @@ sealed interface NewTaskAction : MVIAction {
 
     /** The repository declined to create it — see [TaskRepository.addTask]'s nullable return. */
     data object TaskCreationFailed : NewTaskAction
+
+    /**
+     * The server would not take it, so the task does not exist — and the form still holds it.
+     *
+     * Nothing is wrong with what was written; the way out is to wait for the server. See
+     * [TaskEditAction.TaskSaveNotAccepted], which is the same answer to the same question.
+     */
+    data object TaskNotAccepted : NewTaskAction
 }
 
 private typealias NewTaskPipelineContext = PipelineContext<NewTaskState, NewTaskIntent, NewTaskAction>
 
 class NewTaskContainer(
     private val repository: TaskRepository,
+    /** Where a cloud space's changes have to be agreed. Null in a build with no sync. */
+    private val cloud: CloudSpaces? = null,
     private val spaceId: String,
     private val prefilledConnection: TaskConnection?,
     private val taskIdToCopy: String?,
@@ -122,8 +134,34 @@ class NewTaskContainer(
     /** Keeps a half-written task across process death. See [FormStatePersistence]. */
     val formPersistence = FormStatePersistence(savedStateHandle)
 
+    /** See [TaskEditContainer.saveTask] for why the write happens inside the commit. */
     private suspend fun NewTaskPipelineContext.createTask(intent: NewTaskIntent.CreateTask) {
-        val task = repository.addTask(
+        var task: Task? = null
+        val write: suspend () -> Boolean = {
+            task = addTheTask(intent)
+            task != null
+        }
+        val outcome = cloud?.commit(spaceId, write)
+            ?: if (write()) CommitOutcome.Accepted else CommitOutcome.NotWritten
+
+        when (outcome) {
+            CommitOutcome.Accepted -> {
+                formPersistence.clear()
+                action(NewTaskAction.TaskCreated(task!!))
+            }
+
+            // See TaskEditContainer: the form is the only remaining copy in both of these.
+            CommitOutcome.Undone,
+            CommitOutcome.AwaitingYourChoice -> action(NewTaskAction.TaskNotAccepted)
+
+            // Saying nothing left the screen looking as though the tap had not registered, with
+            // its in-flight guard still latched and Save dead for good.
+            CommitOutcome.NotWritten -> action(NewTaskAction.TaskCreationFailed)
+        }
+    }
+
+    private suspend fun addTheTask(intent: NewTaskIntent.CreateTask): Task? {
+        return repository.addTask(
             spaceId = spaceId,
             title = intent.title,
             description = intent.description,
@@ -138,14 +176,6 @@ class NewTaskContainer(
             autoUpdateStatusFromSubtasks = intent.autoUpdateStatusFromSubtasks,
             dueSound = intent.dueSound,
         )
-        if (task != null) {
-            formPersistence.clear()
-            action(NewTaskAction.TaskCreated(task))
-        } else {
-            // Saying nothing left the screen looking as though the tap had not registered, with
-            // its in-flight guard still latched and Save dead for good.
-            action(NewTaskAction.TaskCreationFailed)
-        }
     }
 
     private suspend fun NewTaskPipelineContext.loadTask(taskId: String) {

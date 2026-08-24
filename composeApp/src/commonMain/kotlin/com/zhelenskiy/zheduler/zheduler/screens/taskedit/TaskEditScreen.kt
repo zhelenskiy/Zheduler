@@ -30,6 +30,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskEditIntent
 import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.ExperimentalTime
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
 
 @Composable
 fun TaskEditScreen(
@@ -46,12 +47,31 @@ fun TaskEditScreen(
 ) {
     var saveFailed by remember { mutableStateOf(false) }
 
+    // A save on a cloud space waits for the server, which can take as long as a network timeout.
+    // Without this the screen looks dead for that whole time and the button invites a second press
+    // — and on the network this exists for, that is precisely when it happens.
+    var saving by remember { mutableStateOf(false) }
+
     val state by container.store.subscribe { action ->
         when (action) {
             is TaskEditAction.TaskSaved -> onNavigateBack()
+            // Deliberately stays. The change has been taken back out of the space, and what the
+            // user wrote is still in the form in front of them — leaving now would be the one way
+            // to actually lose it. The banner above says why, and Save comes back with the server.
+            is TaskEditAction.TaskSaveNotAccepted -> saving = false
             // Stay put and say so, rather than navigating away as though it had worked.
-            is TaskEditAction.TaskSaveFailed -> saveFailed = true
+            is TaskEditAction.TaskSaveFailed -> {
+                saving = false
+                saveFailed = true
+            }
         }
+    }
+
+    // Anything the store threw leaves the screen up as well, with no action to answer the press —
+    // a kstore write can fail, and a Save button that never came back would strand the user on the
+    // one screen they have been told to stay on.
+    LaunchedEffect(container) {
+        container.failures.collect { saving = false }
     }
 
     if (saveFailed) {
@@ -164,9 +184,9 @@ fun TaskEditScreen(
             TaskFormTopAppBar(
                 title = "Edit Task",
                 taskId = currentTask.id,
-                isFormValid = formState.isFormValid,
+                isFormValid = formState.isFormValid && !saving,
                 onBackPress = { handleBackPress() },
-                onSave = { saveChanges() },
+                onSave = { saving = true; saveChanges() },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 useDynamicColors = useDynamicColors,
@@ -176,7 +196,9 @@ fun TaskEditScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
+        Column(modifier = Modifier.padding(padding)) {
+        CloudSpaceBanner()
+        Box {
             CompositionLocalProvider(LocalPendingEdits provides pendingEdits) {
             TaskFormContent(
                 formState = formState,
@@ -200,6 +222,7 @@ fun TaskEditScreen(
                 taskId = currentTask.id
             )
             }
+        }
         }
     }
 }

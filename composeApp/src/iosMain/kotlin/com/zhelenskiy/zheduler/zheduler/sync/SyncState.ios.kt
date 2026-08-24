@@ -6,8 +6,8 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.Foundation.NSHomeDirectory
 
-actual fun createRemoteSpaceLinkStore(): KStore<RemoteSpaceLinks> =
-    storeOf(Path("${syncDataDir()}/remote_spaces.json"), default = RemoteSpaceLinks())
+actual fun createRemoteSpaceLinkStore(): KStore<SyncSettings> =
+    storeOf(Path("${syncDataDir()}/remote_spaces.json"), default = SyncSettings())
 
 /**
  * The token file, in the app's Application Support directory.

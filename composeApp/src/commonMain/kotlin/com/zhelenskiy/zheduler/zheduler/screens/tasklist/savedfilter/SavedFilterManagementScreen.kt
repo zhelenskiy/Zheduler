@@ -38,6 +38,10 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterIntent
 import pro.respawn.flowmvi.compose.dsl.subscribe
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
+import com.zhelenskiy.zheduler.zheduler.components.common.LocalFailureSnackbar
+import com.zhelenskiy.zheduler.zheduler.viewmodels.SavedFilterAction
 
 /**
  * A screen for managing saved filters.
@@ -57,7 +61,16 @@ fun SavedFilterManagementScreen(
     colorSettings: ColorSettings,
     onColorSettingsChange: (ColorSettings) -> Unit
 ) {
-    val state by container.store.subscribe()
+    // Reported rather than left to be noticed. A filter the server would not take is removed from
+    // the space a moment after it appears, and without a word that reads as the app losing it.
+    val saidSo = LocalFailureSnackbar.current
+    val state by container.store.subscribe { action ->
+        when (action) {
+            is SavedFilterAction.FilterNotAccepted -> saidSo?.showSnackbar(
+                "That filter could not be saved — the server could not be reached."
+            )
+        }
+    }
 
     var filterToDelete by remember { mutableStateOf<SavedFilter?>(null) }
     // By id, and saved: an activity recreation used to close the editing dialog and drop the edit
@@ -83,18 +96,26 @@ fun SavedFilterManagementScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreateDialog = true }) {
+            if (LocalSpaceEditing.current.isEditable) FloatingActionButton(onClick = { showCreateDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Create new saved filter")
             }
         }
     ) { padding ->
+        // The inset belongs to the column, not to the banner: the banner draws nothing at all
+        // for a healthy space, and hanging the top padding on it took the padding away too —
+        // leaving the first card behind the app bar on every ordinary visit.
+        Column(modifier = Modifier.padding(padding)) {
+        // See the view modes screen: saved filters travel with the space, so the same explanation
+        // has to be here rather than only on the list this was reached from.
+        CloudSpaceBanner()
         SavedFilterList(
             savedFilters = state.savedFilters,
-            padding = padding,
+            padding = PaddingValues(),
             onLoad = onLoad,
             onEdit = { filterIdToEdit = it.id },
             onDelete = { filterToDelete = it }
         )
+        }
     }
 
     DeleteFilterDialog(
@@ -409,12 +430,15 @@ private fun SavedFilterCardActions(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Row {
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, contentDescription = "Edit")
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete")
+    // Saved filters are the space's too, and go up with it.
+    if (LocalSpaceEditing.current.isEditable) {
+        Row {
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit")
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete")
+            }
         }
     }
 }

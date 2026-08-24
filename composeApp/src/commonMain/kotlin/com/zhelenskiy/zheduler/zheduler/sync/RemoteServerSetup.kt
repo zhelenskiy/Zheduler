@@ -44,6 +44,15 @@ data class RemoteSetupState(
     val addressText: String = "",
     val username: String = "",
     val password: String = "",
+    /**
+     * Bumped whenever something other than typing put text in these fields.
+     *
+     * The dialog's text boxes hold their own copy of what is in them — they have to, or a caret
+     * would depend on how fast the rest of the app agrees — so they need to be told apart the one
+     * time the app is entitled to overwrite what the user typed: choosing a known server, or being
+     * asked to sign in again. Any change to this number is that moment.
+     */
+    val seedToken: Int = 0,
 ) {
     /**
      * Whether the dialog may be submitted.
@@ -107,6 +116,24 @@ object RemoteSetup {
         stage = (state.stage as? RemoteSetupStage.Authenticating)
             ?.copy(mode = mode, error = null)
             ?: state.stage,
+    )
+
+    /**
+     * Fills the fields in from somewhere other than the keyboard.
+     *
+     * The bump is the point: without it the dialog's own copy of the text would win, and tapping a
+     * known server would leave the address box empty.
+     */
+    fun seeded(
+        state: RemoteSetupState,
+        addressText: String = state.addressText,
+        username: String = state.username,
+        password: String = state.password,
+    ): RemoteSetupState = state.copy(
+        addressText = addressText,
+        username = username,
+        password = password,
+        seedToken = state.seedToken + 1,
     )
 
     /** The address as [ServerAddress] would read it, or the complaint to show under the field. */

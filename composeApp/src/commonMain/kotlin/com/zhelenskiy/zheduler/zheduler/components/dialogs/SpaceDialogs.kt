@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.Space
+import com.zhelenskiy.zheduler.zheduler.sync.KnownServer
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupState
 import com.zhelenskiy.zheduler.zheduler.sync.SignedInAccount
 
@@ -45,9 +46,11 @@ fun NewSpaceDialog(
     onDismiss: () -> Unit,
     onSpaceCreated: (name: String, idPrefix: String, account: SignedInAccount?) -> Unit,
     remoteSetup: RemoteSetupState? = null,
-    onRemoteSetupChange: (RemoteSetupState) -> Unit = {},
-    onCheckServer: () -> Unit = {},
-    onAuthenticate: () -> Unit = {},
+    onRemoteSetupChange: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit = {},
+    onCheckServer: (addressText: String) -> Unit = {},
+    onAuthenticate: (username: String, password: String) -> Unit = { _, _ -> },
+    knownServers: List<KnownServer> = emptyList(),
+    onUseKnownServer: (KnownServer) -> Unit = {},
 ) {
     // Saved, not remembered: the space-list dialogs already reopen after an activity recreation,
     // so leaving these behind brought the dialog back with both fields blank — which reads as a
@@ -86,6 +89,8 @@ fun NewSpaceDialog(
                 onRemoteSetupChange = onRemoteSetupChange,
                 onCheckServer = onCheckServer,
                 onAuthenticate = onAuthenticate,
+                knownServers = knownServers,
+                onUseKnownServer = onUseKnownServer,
             )
         },
         confirmButton = {
@@ -111,9 +116,11 @@ private fun NewSpaceDialogContent(
     idPrefixFocusRequester: FocusRequester,
     onSubmit: () -> Unit,
     remoteSetup: RemoteSetupState?,
-    onRemoteSetupChange: (RemoteSetupState) -> Unit,
-    onCheckServer: () -> Unit,
-    onAuthenticate: () -> Unit,
+    onRemoteSetupChange: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit,
+    onCheckServer: (addressText: String) -> Unit,
+    onAuthenticate: (username: String, password: String) -> Unit,
+    knownServers: List<KnownServer>,
+    onUseKnownServer: (KnownServer) -> Unit,
 ) {
     Column(
         // Scrollable: with the server section open this is taller than a phone dialog, and without
@@ -145,9 +152,11 @@ private fun NewSpaceDialogContent(
         remoteSetup?.let { setup ->
             RemoteServerSection(
                 state = setup,
-                onStateChange = onRemoteSetupChange,
+                onEdit = onRemoteSetupChange,
                 onCheckServer = onCheckServer,
                 onAuthenticate = onAuthenticate,
+                knownServers = knownServers,
+                onUseKnownServer = onUseKnownServer,
             )
         }
     }

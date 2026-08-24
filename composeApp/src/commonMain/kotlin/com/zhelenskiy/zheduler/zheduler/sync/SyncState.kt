@@ -55,6 +55,18 @@ data class RemoteSpaceLink(
     val remoteSpaceId: String,
     val lastSyncedRevision: Long,
     val lastSyncedAtEpochSeconds: Long,
+    /**
+     * A fingerprint of the contents the server last accepted.
+     *
+     * The revision alone cannot answer the question a restart asks. A device that was killed with
+     * an edit still waiting to be sent, on a space another device has since moved forward, holds a
+     * copy that differs from the server's for two quite different reasons at once — and revisions
+     * only ever say "the server is ahead". This says whether what is in the database is what the
+     * server took, which is the question that decides whether the user just lost something.
+     *
+     * Null for a link written before this existed, and for one whose first upload never landed.
+     */
+    val lastAcceptedFingerprint: String? = null,
 ) {
     /** Whether the server has ever acknowledged a copy of this space. */
     val isUploaded: Boolean get() = lastSyncedRevision >= FIRST_REVISION
@@ -68,10 +80,32 @@ data class RemoteSpaceLink(
     }
 }
 
-/** Every space this device has linked, by local space id. */
+/**
+ * A server this device has used before.
+ *
+ * Kept so the user types an address once. Somebody with a server of their own puts every space on
+ * it, and asking them to retype the URL each time is asking them to get it wrong — at which point
+ * the space quietly belongs to nothing.
+ */
 @Serializable
-data class RemoteSpaceLinks(
+data class KnownServer(
+    val url: String,
+    /** The account last used here, offered as the default the next time. Never the password. */
+    val lastUsername: String? = null,
+)
+
+/**
+ * Everything this device remembers about syncing, apart from the tokens.
+ *
+ * One file rather than two: the links and the list of servers are the same kind of thing — device
+ * configuration that is not secret — and they are read together. Tokens live apart, in
+ * [StoredCredentials], because they are the only part that has to be protected and thrown away.
+ */
+@Serializable
+data class SyncSettings(
+    /** Every space this device has linked, by local space id. */
     val bySpaceId: Map<String, RemoteSpaceLink> = emptyMap(),
+    val knownServers: List<KnownServer> = emptyList(),
 )
 
 /**
@@ -93,6 +127,6 @@ data class StoredCredentials(
  * throws away every token and keeps every link, so that signing back in reconnects the spaces the
  * user already had instead of asking them to set each one up again.
  */
-expect fun createRemoteSpaceLinkStore(): KStore<RemoteSpaceLinks>
+expect fun createRemoteSpaceLinkStore(): KStore<SyncSettings>
 
 expect fun createCredentialStore(): KStore<StoredCredentials>

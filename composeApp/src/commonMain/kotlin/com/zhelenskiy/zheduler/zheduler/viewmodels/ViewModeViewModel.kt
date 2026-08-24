@@ -2,6 +2,8 @@ package com.zhelenskiy.zheduler.zheduler.viewmodels
 
 import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaces
+import com.zhelenskiy.zheduler.zheduler.sync.CommitOutcome
 import com.zhelenskiy.zheduler.zheduler.ViewMode
 import com.zhelenskiy.zheduler.zheduler.paging.tagsPagingSource
 import com.zhelenskiy.zheduler.zheduler.screens.tasklist.viewmode.generateId
@@ -40,13 +42,22 @@ sealed interface ViewModeAction : MVIAction {
      * save could simply not happen, silently.
      */
     data object ViewModeSaved : ViewModeAction
+
+    /**
+     * The server would not take it, so it is not there — and the editor still has it on screen.
+     *
+     * Nothing is wrong with the view mode; the way out is to wait for the server.
+     */
+    data object ViewModeNotAccepted : ViewModeAction
 }
 
 private typealias ViewModePipelineContext = PipelineContext<ViewModeState, ViewModeIntent, ViewModeAction>
 
 class ViewModeContainer(
     private val repository: TaskRepository,
-    private val spaceId: String
+    private val spaceId: String,
+    /** Where a cloud space's changes have to be agreed. Null in a build with no sync. */
+    private val cloud: CloudSpaces? = null,
 ) : ScopedContainer(), Container<ViewModeState, ViewModeIntent, ViewModeAction> {
 
     override val store = store(ViewModeState(), scope) {
@@ -88,12 +99,19 @@ class ViewModeContainer(
         updateState { copy(activeViewMode = activeViewMode) }
     }
 
+    /** See [TaskEditContainer.saveTask] for why the write happens inside the commit. */
     private suspend fun ViewModePipelineContext.saveViewMode(viewMode: ViewMode) {
-        repository.saveViewMode(viewMode)
+        val write: suspend () -> Boolean = { repository.saveViewMode(viewMode); true }
+        val outcome = cloud?.commit(spaceId, write)
+            ?: run { write(); CommitOutcome.Accepted }
+
         val viewModes = repository.getAllViewModes(spaceId)
         val activeViewMode = repository.getActiveViewMode(spaceId)
         updateState { copy(viewModes = viewModes, activeViewMode = activeViewMode) }
-        action(ViewModeAction.ViewModeSaved)
+        action(
+            if (outcome == CommitOutcome.Accepted) ViewModeAction.ViewModeSaved
+            else ViewModeAction.ViewModeNotAccepted
+        )
     }
 
     private suspend fun ViewModePipelineContext.deleteViewMode(viewModeId: String) {

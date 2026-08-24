@@ -42,7 +42,7 @@ class SaveKeepsTheWholeDescriptionTest {
         setContent {
             MaterialTheme {
                 TaskEditScreen(
-                    container = TaskEditContainer(repository, spaceId, taskId, SavedStateHandle()),
+                    container = TaskEditContainer(repository, null, spaceId, taskId, SavedStateHandle()),
                     onNavigateBack = {},
                     onAddNewTaskWithConnection = { _, _ -> },
                     onTaskClick = {},

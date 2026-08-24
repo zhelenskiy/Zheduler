@@ -1112,93 +1112,182 @@ class RoomTaskRepository(
         return mutex.withLock {
             // An import is one space or none.
             database.withWriteTransaction {
-            val newPrefix = uniqueSpacePrefix(exportData.space.idPrefix) { dao.prefixExists(it) }
-            val newSpaceId = "space-${dao.countSpaces()}-$newPrefix"
-            val newSpace = Space(id = newSpaceId, name = exportData.space.name, idPrefix = newPrefix)
+                val newPrefix = uniqueSpacePrefix(exportData.space.idPrefix) { dao.prefixExists(it) }
+                val newSpaceId = "space-${dao.countSpaces()}-$newPrefix"
+                val newSpace = Space(id = newSpaceId, name = exportData.space.name, idPrefix = newPrefix)
 
-            dao.insertSpace(newSpaceId, newSpace.name, newPrefix)
+                dao.insertSpace(newSpaceId, newSpace.name, newPrefix)
+                fillSpaceUnsafe(newSpaceId, newPrefix, exportData, keepForeignIds = false)
 
-            val oldToNewTaskId = createTaskIdMapping(exportData.tasks, newPrefix)
-            dao.setNextId(newSpaceId, nextIdAfter(oldToNewTaskId.values, exportData.nextId).toLong())
-
-            exportData.tasks.forEach { task ->
-                val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
-
-                val remappedStatus = remapBlockedStatus(task.status, oldToNewTaskId)
-                val timeline = exportData.statusTimelines[task.id].orEmpty()
-
-                addTaskUnsafe(
-                    spaceId = newSpaceId,
-                    title = task.title,
-                    description = task.description,
-                    status = remappedStatus,
-                    dueDate = task.dueDate,
-                    priority = task.priority,
-                    estimatedTime = task.estimatedTime,
-                    tags = task.tags,
-                    connections = persistentSetOf(),
-                    notifications = task.notifications,
-                    customId = newTaskId,
-                    recurrenceRules = task.recurrenceRules,
-                    autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks,
-                    dueSound = task.dueSound,
-                    // Its own creation entry would date the task to the moment of the import.
-                    recordInitialStatusChange = timeline.isEmpty(),
-                    normalizeBlocked = false,
-                )
-
-                timeline.forEach { statusChange ->
-                    // Remapped like the current status. A Blocked entry names the tasks that
-                    // blocked it, and left as written those ids point into whatever space now
-                    // answers to the old prefix — so the history claimed the task had been
-                    // blocked by tasks it never had anything to do with.
-                    dao.insertStatusChange(
-                        taskId = newTaskId,
-                        timestamp = statusChange.timestamp.toEpochMilliseconds(),
-                        previousStatusJson = statusChange.previousStatus
-                            ?.let { remapBlockedStatus(it, oldToNewTaskId) }
-                            .toJsonOrNull(),
-                        newStatusJson = remapBlockedStatus(statusChange.newStatus, oldToNewTaskId).toJson(),
-                        automaticChangeReasonJson = statusChange.automaticChangeReason.toJsonOrNull()
-                    )
-                }
-            }
-
-            exportData.tasks.forEach { task ->
-                val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
-                task.connections.forEach { conn ->
-                    val newTargetId = oldToNewTaskId[conn.targetTaskId] ?: return@forEach
-                    addConnectionUnsafe(newTaskId, newTargetId, conn.type, cascadeParentStatus = false)
-                }
-            }
-
-            exportData.tags.forEach { dao.insertTagForSpace(newSpaceId, it) }
-
-            val (viewModes, filters) = importedSettings(exportData, newSpaceId, oldToNewTaskId)
-            viewModes.forEach { mode ->
-                dao.insertOrUpdateCustomViewMode(
-                    id = mode.id,
-                    spaceId = newSpaceId,
-                    name = mode.name,
-                    configJson = mode.toConfigJson(),
-                )
-            }
-            filters.forEach { filter ->
-                dao.insertOrUpdateSavedFilter(
-                    id = filter.id,
-                    spaceId = newSpaceId,
-                    name = filter.name,
-                    criteriaJson = filter.criteria.toJson(),
-                    viewModeId = filter.viewModeId,
-                )
-            }
-
-            // Now that every task exists, and not before.
-            unblockTasksWithOnlyResolvedBlockers(oldToNewTaskId.values)
-
-            newSpace
+                newSpace
             }.alsoNotifyIf { it != null }
         }
+    }
+
+    override suspend fun replaceSpaceFromJson(spaceId: String, jsonString: String): Boolean {
+        val exportData = try {
+            jsonCompact.decodeFromString<SpaceExportData>(jsonString)
+        } catch (e: Exception) {
+            return false
+        }
+
+        return mutex.withLock {
+            database.withWriteTransaction {
+                val existing = dao.getSpaceById(spaceId) ?: return@withWriteTransaction false
+
+                val taskIdsInSpace = dao.getTasksBySpace(spaceId).map { it.id }.toSet()
+                // Which ids the snapshot brings back. Ids are re-issued under this space's own
+                // prefix, and the mapping is a pure function of the snapshot, so this is the same
+                // answer the refill will arrive at.
+                val surviving = createTaskIdMapping(exportData.tasks, existing.idPrefix)
+                    .values
+                    .toSet()
+
+                // The cleanup a deletion does, but only for the tasks that are genuinely going.
+                // Doing it for all of them would cut a link from a task in another space every
+                // time this one merely caught up with its server — and re-cut it on every refresh
+                // after that, in a space the user was not even looking at.
+                val departing = taskIdsInSpace - surviving
+                if (departing.isNotEmpty()) {
+                    handleCrossSpaceRelationshipsOnSpaceDeletion(
+                        departing,
+                        // Tasks elsewhere only. Scanning this space's own would unblock and
+                        // re-parent tasks over a state the refill contradicts one statement later,
+                        // and could rewrite an auto-updating parent in another space to match it.
+                        getAllSpaces().filterNot { it.id == spaceId }.flatMap { getTasksInSpace(it.id) },
+                    )
+                }
+
+                // Read before the delete, restored after it. Both ends of a connection cascade,
+                // so emptying the space takes these rows with it even where the task at this end
+                // is about to come back under the very same id.
+                val pointingIn = dao.getConnectionsIntoSpace(spaceId)
+
+                // Emptied by cascade — every table that belongs to a space hangs off this row —
+                // and put back under the same id and prefix, so nothing outside the space has to
+                // learn a new name for it: navigation, per-space settings and the link to the
+                // server all key on the id.
+                dao.deleteSpace(spaceId)
+                dao.insertSpace(spaceId, exportData.space.name, existing.idPrefix)
+                fillSpaceUnsafe(spaceId, existing.idPrefix, exportData, keepForeignIds = true)
+
+                pointingIn
+                    .filter { it.targetTaskId in surviving }
+                    .forEach { dao.insertConnection(it.sourceTaskId, it.targetTaskId, it.type) }
+
+                true
+            }.alsoNotifyIf { it }
+        }
+    }
+
+    /**
+     * Writes a snapshot's contents into a space that already exists and is empty.
+     *
+     * Shared by importing and by replacing, which differ only in where the space came from. Task
+     * ids are re-issued under [prefix]: a snapshot carries whatever prefix it was written with,
+     * and two spaces may not hand out the same ids.
+     *
+     * Unsafe in the same sense as the rest of the family: the caller holds the mutex and is inside
+     * the write transaction.
+     */
+    private suspend fun fillSpaceUnsafe(
+        spaceId: String,
+        prefix: String,
+        exportData: SpaceExportData,
+        /**
+         * Whether ids the snapshot names that are not its own may point at tasks already here.
+         *
+         * True only when a space is being replaced by its own copy from the server: those ids are
+         * this device's, and dropping them would cut the space's outgoing links on every refresh.
+         * False on import, where the file was written somewhere else — the ids there mean nothing
+         * here, and honouring one that happened to match would wire a stranger's task to an
+         * unrelated task of the user's.
+         */
+        keepForeignIds: Boolean,
+    ) {
+        val reissued = createTaskIdMapping(exportData.tasks, prefix)
+        dao.setNextId(spaceId, nextIdAfter(reissued.values, exportData.nextId).toLong())
+
+        // A link out of the space keeps the id it already had, provided that task is really here.
+        val stillHere = if (!keepForeignIds) emptyList() else {
+            foreignIdsNamedBy(exportData, reissued.keys).filter { dao.getTaskById(it) != null }
+        }
+        val oldToNewTaskId = reissued + stillHere.associateWith { it }
+
+        exportData.tasks.forEach { task ->
+            val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
+
+            val remappedStatus = remapBlockedStatus(task.status, oldToNewTaskId)
+            val timeline = exportData.statusTimelines[task.id].orEmpty()
+
+            addTaskUnsafe(
+                spaceId = spaceId,
+                title = task.title,
+                description = task.description,
+                status = remappedStatus,
+                dueDate = task.dueDate,
+                priority = task.priority,
+                estimatedTime = task.estimatedTime,
+                tags = task.tags,
+                connections = persistentSetOf(),
+                notifications = task.notifications,
+                customId = newTaskId,
+                recurrenceRules = task.recurrenceRules,
+                autoUpdateStatusFromSubtasks = task.autoUpdateStatusFromSubtasks,
+                dueSound = task.dueSound,
+                // Its own creation entry would date the task to the moment of the import.
+                recordInitialStatusChange = timeline.isEmpty(),
+                normalizeBlocked = false,
+            )
+
+            timeline.forEach { statusChange ->
+                // Remapped like the current status. A Blocked entry names the tasks that
+                // blocked it, and left as written those ids point into whatever space now
+                // answers to the old prefix — so the history claimed the task had been
+                // blocked by tasks it never had anything to do with.
+                dao.insertStatusChange(
+                    taskId = newTaskId,
+                    timestamp = statusChange.timestamp.toEpochMilliseconds(),
+                    previousStatusJson = statusChange.previousStatus
+                        ?.let { remapBlockedStatus(it, oldToNewTaskId) }
+                        .toJsonOrNull(),
+                    newStatusJson = remapBlockedStatus(statusChange.newStatus, oldToNewTaskId).toJson(),
+                    automaticChangeReasonJson = statusChange.automaticChangeReason.toJsonOrNull()
+                )
+            }
+        }
+
+        exportData.tasks.forEach { task ->
+            val newTaskId = oldToNewTaskId[task.id] ?: return@forEach
+            task.connections.forEach { conn ->
+                val newTargetId = oldToNewTaskId[conn.targetTaskId] ?: return@forEach
+                addConnectionUnsafe(newTaskId, newTargetId, conn.type, cascadeParentStatus = false)
+            }
+        }
+
+        exportData.tags.forEach { dao.insertTagForSpace(spaceId, it) }
+
+        val (viewModes, filters) = importedSettings(exportData, spaceId, oldToNewTaskId)
+        viewModes.forEach { mode ->
+            dao.insertOrUpdateCustomViewMode(
+                id = mode.id,
+                spaceId = spaceId,
+                name = mode.name,
+                configJson = mode.toConfigJson(),
+            )
+        }
+        filters.forEach { filter ->
+            dao.insertOrUpdateSavedFilter(
+                id = filter.id,
+                spaceId = spaceId,
+                name = filter.name,
+                criteriaJson = filter.criteria.toJson(),
+                viewModeId = filter.viewModeId,
+            )
+        }
+
+        // Now that every task exists, and not before.
+        unblockTasksWithOnlyResolvedBlockers(oldToNewTaskId.values)
     }
 
     private suspend fun addTaskUnsafe(

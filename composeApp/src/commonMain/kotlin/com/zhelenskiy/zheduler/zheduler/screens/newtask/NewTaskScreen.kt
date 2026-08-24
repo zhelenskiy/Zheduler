@@ -27,6 +27,7 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.NewTaskIntent
 import kotlinx.collections.immutable.PersistentSet
 import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.ExperimentalTime
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
 
 @Composable
 fun NewTaskScreen(
@@ -50,6 +51,10 @@ fun NewTaskScreen(
             is NewTaskAction.TaskCreated -> onTaskCreated(action.task.id)
             // The save did not happen, so the screen stays and the button must work again.
             is NewTaskAction.TaskCreationFailed -> saving = false
+            // Nor did this one, and for a reason the user can wait out. The form keeps everything
+            // they typed; the banner above says why Save is off, and it comes back with the
+            // server. Leaving now would be the one way to actually lose the task.
+            is NewTaskAction.TaskNotAccepted -> saving = false
         }
     }
 
@@ -139,7 +144,9 @@ fun NewTaskScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
+        Column(modifier = Modifier.padding(padding)) {
+        CloudSpaceBanner()
+        Box {
             if (state.nextId != null) {
                 CompositionLocalProvider(LocalPendingEdits provides pendingEdits) {
                 TaskFormContent(
@@ -166,6 +173,7 @@ fun NewTaskScreen(
                 )
                 }
             }
+        }
         }
     }
 }

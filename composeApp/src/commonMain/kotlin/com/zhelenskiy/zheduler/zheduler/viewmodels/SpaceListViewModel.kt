@@ -4,7 +4,11 @@ import androidx.paging.PagingData
 import com.zhelenskiy.zheduler.zheduler.Space
 import com.zhelenskiy.zheduler.zheduler.TaskRepository
 import com.zhelenskiy.zheduler.zheduler.paging.spacesPagingSource
+import com.zhelenskiy.zheduler.zheduler.sync.ApiErrorCode
 import com.zhelenskiy.zheduler.zheduler.sync.AuthMode
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceStatus
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaces
+import com.zhelenskiy.zheduler.zheduler.sync.KnownServer
 import com.zhelenskiy.zheduler.zheduler.sync.Outcome
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteError
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetup
@@ -16,14 +20,20 @@ import com.zhelenskiy.zheduler.zheduler.sync.SignedInAccount
 import com.zhelenskiy.zheduler.zheduler.sync.SpaceSummary
 import com.zhelenskiy.zheduler.zheduler.sync.SpaceSyncService
 import com.zhelenskiy.zheduler.zheduler.sync.getOrNull
+import com.zhelenskiy.zheduler.zheduler.sync.onFailure
+import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toPersistentMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -105,6 +115,16 @@ data class SpaceListState(
      * single slot would show the second one's message against the first one's row.
      */
     val syncFailures: PersistentMap<String, RemoteError> = persistentMapOf(),
+    /**
+     * Where each cloud space stands with its server.
+     *
+     * A space absent from here belongs to this device alone. What the list shows for a cloud one
+     * is this and not the link: a link says which server holds it, this says whether the app has
+     * heard from that server.
+     */
+    val cloudStatus: PersistentMap<String, CloudSpaceStatus> = persistentMapOf(),
+    /** The servers this device already knows, offered so an address is typed once. */
+    val knownServers: PersistentList<KnownServer> = persistentListOf(),
     /** The space whose sign-in-again dialog is open, if one is. */
     val reauthSpaceId: String? = null,
     /**
@@ -159,11 +179,20 @@ sealed interface SpaceListIntent : MVIIntent {
     data object ClearImportResult : SpaceListIntent
 
     /** The server section of the new-space dialog reporting what the user typed or toggled. */
-    data class UpdateRemoteSetup(val setup: RemoteSetupState) : SpaceListIntent
+    /**
+     * Changes the server setup, by describing the change rather than the result.
+     *
+     * A whole replacement state was what this used to carry, and with intents running in parallel
+     * a keystroke could land after something else had moved the setup on — putting the old stage
+     * and the old seed token back, which reset the dialog's fields to what they held before. An
+     * edit applied to whatever the state is when it arrives cannot do that: it only ever touches
+     * what it was written to touch.
+     */
+    data class EditRemoteSetup(val edit: (RemoteSetupState) -> RemoteSetupState) : SpaceListIntent
 
-    data object CheckRemoteServer : SpaceListIntent
+    data class CheckRemoteServer(val addressText: String) : SpaceListIntent
 
-    data object AuthenticateRemote : SpaceListIntent
+    data class AuthenticateRemote(val username: String, val password: String) : SpaceListIntent
 
     /** Resets the server section, so the next new-space dialog does not open half filled in. */
     data object ClearRemoteSetup : SpaceListIntent
@@ -198,6 +227,24 @@ sealed interface SpaceListIntent : MVIIntent {
     data class BeginReauth(val spaceId: String) : SpaceListIntent
 
     data object CancelReauth : SpaceListIntent
+
+    /** Asks the server again what it has. What the offline banner's retry does. */
+    data class RefreshCloudSpace(val spaceId: String) : SpaceListIntent
+
+    /**
+     * Deletes a space here *and* on its server.
+     *
+     * Separate from [DeleteSpace], which only ever removes the local copy: for a space whose truth
+     * is on a server those are different acts, and one of them cannot be undone from another
+     * device.
+     */
+    data class DeleteSpaceEverywhere(val spaceId: String) : SpaceListIntent
+
+    /** Signs out of the account a space uses, leaving the space and the server's copy alone. */
+    data class SignOutOfSpace(val spaceId: String) : SpaceListIntent
+
+    /** Fills the new-space dialog in from a server this device already knows. */
+    data class UseKnownServer(val server: KnownServer) : SpaceListIntent
 }
 
 sealed interface SpaceListAction : MVIAction {
@@ -214,6 +261,8 @@ class SpaceListContainer(
     private val repository: TaskRepository,
     /** Null in a build with no sync; every remote intent then does nothing rather than crashing. */
     private val sync: SpaceSyncService? = null,
+    /** Keeps cloud spaces in step with their servers. Null wherever [sync] is. */
+    private val cloud: CloudSpaces? = null,
     /**
      * Where a new space's remote id comes from.
      *
@@ -236,9 +285,29 @@ class SpaceListContainer(
 
         whileSubscribed {
             loadSpaces()
-            sync?.let { service ->
-                service.linksBySpaceId.collect { links ->
-                    updateState { copy(remoteLinks = links.toPersistentMap()) }
+            if (sync == null) return@whileSubscribed
+
+            // Scoped to the subscription: three things to follow at once, all of which stop
+            // mattering the moment nobody is looking at the list.
+            coroutineScope {
+                // Asks every server what it has, before anything is shown as up to date. A space
+                // whose server has moved on is out of step from the moment this screen opens, and
+                // the list is where that has to be visible.
+                launch { cloud?.refreshAll() }
+                launch {
+                    cloud?.all?.collect { statuses ->
+                        updateState { copy(cloudStatus = statuses.toPersistentMap()) }
+                    }
+                }
+                launch {
+                    sync.knownServers.collect { servers ->
+                        updateState { copy(knownServers = servers.toPersistentList()) }
+                    }
+                }
+                launch {
+                    sync.linksBySpaceId.collect { links ->
+                        updateState { copy(remoteLinks = links.toPersistentMap()) }
+                    }
                 }
             }
         }
@@ -263,11 +332,13 @@ class SpaceListContainer(
                 is SpaceListIntent.DeleteTagFromSpace -> deleteTagFromSpace(intent.spaceId, intent.tag)
                 is SpaceListIntent.ClearExportResult -> updateState { copy(lastExportResult = null) }
                 is SpaceListIntent.ClearImportResult -> updateState { copy(lastImportResult = null) }
-                is SpaceListIntent.UpdateRemoteSetup -> updateState { copy(remoteSetup = intent.setup) }
+                is SpaceListIntent.EditRemoteSetup ->
+                    updateState { copy(remoteSetup = remoteSetup?.let(intent.edit)) }
                 is SpaceListIntent.ClearRemoteSetup ->
                     updateState { copy(remoteSetup = sync?.let { RemoteSetupState() }) }
-                is SpaceListIntent.CheckRemoteServer -> checkRemoteServer()
-                is SpaceListIntent.AuthenticateRemote -> authenticateRemote()
+                is SpaceListIntent.CheckRemoteServer -> checkRemoteServer(intent.addressText)
+                is SpaceListIntent.AuthenticateRemote ->
+                    authenticateRemote(intent.username, intent.password)
                 is SpaceListIntent.UploadSpace -> uploadSpace(intent.spaceId, overwrite = false)
                 is SpaceListIntent.BeginConflictResolution -> {
                     val name = repository.getSpaceById(intent.spaceId)?.name
@@ -283,10 +354,17 @@ class SpaceListContainer(
                 is SpaceListIntent.DownloadRemoteCopy -> downloadRemoteCopy(intent.spaceId)
                 is SpaceListIntent.ForgetRemoteLink -> {
                     sync?.unlink(intent.spaceId)
+                    // The status goes with the link. Left behind, a space that is now this
+                    // device's own would keep reporting the server it no longer answers to.
+                    cloud?.forget(intent.spaceId)
                     updateState { copy(syncFailures = syncFailures.remove(intent.spaceId)) }
                 }
                 is SpaceListIntent.DismissSyncFailure ->
                     updateState { copy(syncFailures = syncFailures.remove(intent.spaceId)) }
+                is SpaceListIntent.RefreshCloudSpace -> cloud?.refresh(intent.spaceId)
+                is SpaceListIntent.DeleteSpaceEverywhere -> deleteEverywhere(intent.spaceId)
+                is SpaceListIntent.SignOutOfSpace -> signOutOfSpace(intent.spaceId)
+                is SpaceListIntent.UseKnownServer -> useKnownServer(intent.server)
                 is SpaceListIntent.BeginReauth -> beginReauth(intent.spaceId)
                 is SpaceListIntent.CancelReauth -> updateState {
                     copy(reauthSpaceId = null, remoteSetup = sync?.let { RemoteSetupState() })
@@ -322,6 +400,7 @@ class SpaceListContainer(
         // the links arrive by flow, so one written a moment ago may not have landed yet, and a
         // token left behind would still open the user's spaces on the server.
         sync?.forgetEverything()
+        cloud?.forgetAll()
         updateState {
             copy(
                 tagsBySpace = persistentMapOf(),
@@ -387,7 +466,14 @@ class SpaceListContainer(
     ) {
         val service = sync ?: return
         updateState { copy(uploading = uploading.adding(spaceId)) }
-        val outcome = service.linkAndUpload(spaceId, account, newRemoteId())
+        val remoteSpaceId = newRemoteId()
+        // Through the cloud layer where there is one, so the space is claimed before a byte leaves
+        // and nothing else can start a second upload against the same remote id while this one is
+        // on the wire. A first upload can take half a minute, and opening the space during it used
+        // to begin another — refused as a conflict, leaving the user asked to choose between two
+        // identical copies of a space they had only just made.
+        val outcome = cloud?.putOnServer(spaceId, account, remoteSpaceId)
+            ?: service.linkAndUpload(spaceId, account, remoteSpaceId)
         updateState {
             // See uploadSpace: a claim that has been released means the space is gone.
             if (spaceId !in uploading) {
@@ -404,9 +490,18 @@ class SpaceListContainer(
         }
     }
 
-    private suspend fun SpaceListPipelineContext.checkRemoteServer() {
+    /**
+     * Checks the address the field currently holds.
+     *
+     * The text is carried in rather than read out of state, because state is not where the field
+     * keeps it: the box owns what is in it so that a fast typist's caret does not depend on how
+     * quickly this store agrees, and the edits that do arrive here run in parallel and so may
+     * arrive in any order. What was on screen when the button was pressed is the only text that
+     * can be trusted to be the one the user meant.
+     */
+    private suspend fun SpaceListPipelineContext.checkRemoteServer(addressText: String) {
         val service = sync ?: return
-        val setup = peek { remoteSetup } ?: return
+        val setup = (peek { remoteSetup } ?: return).copy(addressText = addressText)
         when (val address = RemoteSetup.parseAddress(setup)) {
             is Outcome.Failure ->
                 updateState { copy(remoteSetup = RemoteSetup.checkFailed(setup, address.error)) }
@@ -415,9 +510,10 @@ class SpaceListContainer(
                 updateState { copy(remoteSetup = RemoteSetup.checking(setup)) }
                 val checked = service.checkServer(address.value)
                 updateState {
-                    // Read back out of state rather than reusing `setup`: the user can keep typing
-                    // while the request is in flight, and writing the old text back would undo it.
-                    val current = remoteSetup ?: return@updateState this
+                    // Read back out of state rather than reusing `setup`: the stage can have moved
+                    // on while the request was in flight, and writing the old one back would undo it.
+                    val current = (remoteSetup ?: return@updateState this)
+                        .copy(addressText = addressText)
                     copy(
                         remoteSetup = when (checked) {
                             is Outcome.Success -> RemoteSetup.checkSucceeded(current, address.value)
@@ -429,9 +525,13 @@ class SpaceListContainer(
         }
     }
 
-    private suspend fun SpaceListPipelineContext.authenticateRemote() {
+    /** Signs in with what was in the boxes when the button was pressed. See [checkRemoteServer]. */
+    private suspend fun SpaceListPipelineContext.authenticateRemote(
+        username: String,
+        password: String,
+    ) {
         val service = sync ?: return
-        val setup = peek { remoteSetup } ?: return
+        val setup = (peek { remoteSetup } ?: return).copy(username = username, password = password)
         val stage = setup.stage as? RemoteSetupStage.Authenticating ?: return
         // Claimed the same way an upload is. Two taps before the button disables itself would
         // otherwise mint two tokens, and only the second would be filed — leaving the first live
@@ -440,11 +540,12 @@ class SpaceListContainer(
 
         updateState { copy(remoteSetup = RemoteSetup.authenticating(setup)) }
         val result = when (stage.mode) {
-            AuthMode.SignIn -> service.signIn(stage.address, setup.username, setup.password)
-            AuthMode.SignUp -> service.signUp(stage.address, setup.username, setup.password)
+            AuthMode.SignIn -> service.signIn(stage.address, username, password)
+            AuthMode.SignUp -> service.signUp(stage.address, username, password)
         }
         updateState {
-            val current = remoteSetup ?: return@updateState this
+            val current = (remoteSetup ?: return@updateState this)
+                .copy(username = username, password = password)
             copy(
                 remoteSetup = when (result) {
                     is Outcome.Success -> RemoteSetup.authenticated(current, result.value)
@@ -486,7 +587,9 @@ class SpaceListContainer(
             }
         }
         if (!started) return
-        val outcome = service.download(link.account, link.remoteSpaceId)
+        // Unlinked on purpose: the space it is being downloaded beside already owns that link,
+        // and the dialog promises this copy is one to keep and compare, not a second live one.
+        val outcome = service.download(link.account, link.remoteSpaceId, link = false)
         updateState {
             // See uploadSpace: a claim that has been released means the space is gone.
             if (spaceId !in uploading) {
@@ -505,19 +608,81 @@ class SpaceListContainer(
         if (outcome is Outcome.Success) loadSpaces()
     }
 
+    /**
+     * Removes a cloud space from its server and then from here.
+     *
+     * The server first, and only then the local copy: if the deletion is refused — a conflict, an
+     * expired session — the space is still here to try again from. The other order would leave the
+     * user with nothing locally and a copy on the server they can no longer reach from this app.
+     */
+    private suspend fun SpaceListPipelineContext.deleteEverywhere(spaceId: String) {
+        val service = sync ?: return
+        updateState { copy(uploading = uploading.adding(spaceId)) }
+        val removed = service.deleteRemote(spaceId)
+        updateState {
+            copy(
+                uploading = uploading.removing(spaceId),
+                syncFailures = when (removed) {
+                    is Outcome.Success -> syncFailures.remove(spaceId)
+                    is Outcome.Failure -> syncFailures.putting(spaceId, removed.error)
+                },
+            )
+        }
+        if (removed is Outcome.Success) {
+            cloud?.forget(spaceId)
+            deleteSpace(spaceId)
+        }
+    }
+
+    /**
+     * Signs out of the account a space belongs to.
+     *
+     * The space and the server's copy both stay. What changes is that this device no longer holds
+     * a token for it, so the space goes read-only until somebody signs in again — which is the
+     * honest state, not a failure.
+     */
+    private suspend fun SpaceListPipelineContext.signOutOfSpace(spaceId: String) {
+        val service = sync ?: return
+        val link = peek { remoteLinks[spaceId] } ?: return
+        service.signOut(link.account).onFailure { }
+        cloud?.refresh(spaceId)
+    }
+
+    private suspend fun SpaceListPipelineContext.useKnownServer(server: KnownServer) {
+        val address = ServerAddress.parse(server.url).getOrNull() ?: return
+        updateState {
+            copy(
+                remoteSetup = RemoteSetup.seeded(
+                    // Straight to the credentials: this address has answered before, and making
+                    // the user press Connect again to be told what they already know is a step
+                    // that only ever succeeds.
+                    state = (remoteSetup ?: RemoteSetupState()).copy(
+                        stage = RemoteSetupStage.Authenticating(address, AuthMode.SignIn),
+                    ),
+                    addressText = server.url,
+                    username = server.lastUsername.orEmpty(),
+                    password = "",
+                )
+            )
+        }
+    }
+
     private suspend fun SpaceListPipelineContext.beginReauth(spaceId: String) {
         val link = peek { remoteLinks[spaceId] } ?: return
         val address = ServerAddress.parse(link.account.serverUrl).getOrNull() ?: return
         updateState {
             copy(
                 reauthSpaceId = spaceId,
-                remoteSetup = RemoteSetupState(
+                remoteSetup = RemoteSetup.seeded(
                     // The username is filled in and the address is fixed: signing in again is
                     // about the password, and letting either be retyped here would let a space
                     // change account or server without ever saying so.
-                    stage = RemoteSetupStage.Authenticating(address, AuthMode.SignIn),
+                    state = (remoteSetup ?: RemoteSetupState()).copy(
+                        stage = RemoteSetupStage.Authenticating(address, AuthMode.SignIn),
+                    ),
                     addressText = link.account.serverUrl,
                     username = link.account.username,
+                    password = "",
                 ),
             )
         }
@@ -540,6 +705,10 @@ class SpaceListContainer(
         }
         if (!started) return
         val outcome = if (overwrite) service.uploadOverwriting(spaceId) else service.upload(spaceId)
+        // Told, not left to work it out. Nothing else clears a conflict, and after signing in
+        // again the space would otherwise stay read-only under a message about a session that has
+        // just been renewed.
+        if (outcome is Outcome.Success) cloud?.conflictResolved(spaceId)
         updateState {
             // The claim is gone if the space was deleted, or everything erased, while this was in
             // flight. Writing the result anyway would leave a failure filed against an id that is
@@ -573,6 +742,9 @@ class SpaceListContainer(
             // the link goes — left behind, it would reattach itself to whichever space next takes
             // the id, and that space's first upload would overwrite the deleted one's backup.
             sync?.unlink(prefix)
+            // For the same reason the link goes: a status left against a deleted id would be
+            // shown against whichever space next takes it.
+            cloud?.forget(prefix)
             updateState {
                 copy(
                     tagsBySpace = tagsBySpace.remove(prefix),

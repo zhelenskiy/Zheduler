@@ -37,6 +37,7 @@ import com.zhelenskiy.zheduler.zheduler.*
 import com.zhelenskiy.zheduler.zheduler.parseCompactTimeToPeriod
 import com.zhelenskiy.zheduler.zheduler.util.formatDueDate
 import kotlin.time.ExperimentalTime
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
 
 @Composable
 fun TaskSearchBar(
@@ -81,9 +82,13 @@ private fun SearchInputRow(
             modifier = Modifier.weight(1f),
         )
 
-        // Save filter button - appears when filters are active
+        // Save filter button - appears when filters are active. Filtering itself is this
+        // device's business and stays; keeping the filter is part of the space, and goes up with
+        // it, so it waits for a server that can be reached.
         AnimatedVisibility(
-            visible = filterState.hasActiveFilters && onSaveFilter != null,
+            visible = filterState.hasActiveFilters &&
+                onSaveFilter != null &&
+                LocalSpaceEditing.current.isEditable,
             enter = if (shouldAnimate) fadeIn() + expandHorizontally() else EnterTransition.None,
             exit = if (shouldAnimate) fadeOut() + shrinkHorizontally() else ExitTransition.None,
         ) {

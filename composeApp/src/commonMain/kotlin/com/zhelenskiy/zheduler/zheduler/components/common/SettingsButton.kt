@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -33,9 +34,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zhelenskiy.zheduler.zheduler.ColorSettings
+import com.zhelenskiy.zheduler.zheduler.components.dialogs.KnownServersDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.PlacesDialog
 import com.zhelenskiy.zheduler.zheduler.components.dialogs.SavedSignalsDialog
 import com.zhelenskiy.zheduler.zheduler.geo.SignalKind
+import com.zhelenskiy.zheduler.zheduler.sync.LocalKnownServers
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.theme.ThemeSettingsDialog
 import com.zhelenskiy.zheduler.zheduler.theme.themeIcon
@@ -123,6 +126,17 @@ fun SettingsButton(
                         onClick = { showing = SettingsPane.Sounds },
                     )
                 }
+                // Only once there is one to show: a device that has never used a server would be
+                // offered a page that can only ever say "none", which reads as a feature that is
+                // broken rather than one that is unused.
+                if (LocalKnownServers.current.servers.isNotEmpty()) {
+                    SettingsRow(
+                        label = "Servers",
+                        description = "The servers your cloud spaces live on",
+                        icon = Icons.Default.Dns,
+                        onClick = { showing = SettingsPane.Servers },
+                    )
+                }
                 SettingsRow(
                     label = "Theme",
                     description = "Light or dark, and the colour it is built from",
@@ -144,6 +158,7 @@ fun SettingsButton(
 
         SettingsPane.LocationChecks -> LocationChecksDialog(onDismiss = { showing = null })
         SettingsPane.Sounds -> NotificationSoundsDialog(onDismiss = { showing = null })
+        SettingsPane.Servers -> KnownServersDialog(onDismiss = { showing = null })
         SettingsPane.Theme -> ThemeSettingsDialog(
             onDismiss = { showing = null },
             themeMode = themeMode,
@@ -159,7 +174,7 @@ fun SettingsButton(
 }
 
 /** Which page is open over the list. Saved, so it survives a recreation. */
-private enum class SettingsPane { Places, Wifi, Bluetooth, LocationChecks, Sounds, Theme }
+private enum class SettingsPane { Places, Wifi, Bluetooth, LocationChecks, Sounds, Servers, Theme }
 
 @Composable
 private fun SettingsRow(

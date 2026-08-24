@@ -1,6 +1,8 @@
 package com.zhelenskiy.zheduler.zheduler.components.dialogs
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,12 +48,14 @@ import com.zhelenskiy.zheduler.zheduler.components.common.RemoteContentBox
 import com.zhelenskiy.zheduler.zheduler.components.common.RemoteContentState
 import com.zhelenskiy.zheduler.zheduler.components.common.RemoteFailure
 import com.zhelenskiy.zheduler.zheduler.sync.AuthMode
+import com.zhelenskiy.zheduler.zheduler.sync.KnownServer
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteError
 import com.zhelenskiy.zheduler.zheduler.sync.SpaceSummary
 import com.zhelenskiy.zheduler.zheduler.sync.Outcome
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetup
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupStage
 import com.zhelenskiy.zheduler.zheduler.sync.RemoteSetupState
+import com.zhelenskiy.zheduler.zheduler.sync.ServerAddress
 import com.zhelenskiy.zheduler.zheduler.sync.SyncProtocol
 
 /** Test tags, so the UI tests name the same widgets the user clicks. */
@@ -61,6 +67,8 @@ object RemoteSetupTags {
     const val PASSWORD = "remoteSetup:password"
     const val SUBMIT = "remoteSetup:submit"
     const val SIGNED_IN = "remoteSetup:signedIn"
+
+    fun knownServer(url: String) = "remoteSetup:known:$url"
 }
 
 /**
@@ -73,10 +81,12 @@ object RemoteSetupTags {
 @Composable
 fun RemoteServerSection(
     state: RemoteSetupState,
-    onStateChange: (RemoteSetupState) -> Unit,
-    onCheckServer: () -> Unit,
-    onAuthenticate: () -> Unit,
+    onEdit: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit,
+    onCheckServer: (addressText: String) -> Unit,
+    onAuthenticate: (username: String, password: String) -> Unit,
     modifier: Modifier = Modifier,
+    knownServers: List<KnownServer> = emptyList(),
+    onUseKnownServer: (KnownServer) -> Unit = {},
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -91,8 +101,12 @@ fun RemoteServerSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Keep this space on a server", style = MaterialTheme.typography.titleSmall)
+                // Says what it actually is now. "So it can be restored on another device" described
+                // a backup, and this is not one: the server holds the space, and this device shows
+                // a copy of it that stops being editable the moment the server is out of reach.
                 Text(
-                    text = "So it can be restored on another device.",
+                    text = "The server keeps the space. This device shows a copy, and can only " +
+                        "change it while the server can be reached.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -101,37 +115,96 @@ fun RemoteServerSection(
                 modifier = Modifier.testTag(RemoteSetupTags.TOGGLE),
                 checked = state.stage !is RemoteSetupStage.Off,
                 onCheckedChange = { on ->
-                    onStateChange(if (on) RemoteSetup.turnedOn(state) else RemoteSetup.turnedOff(state))
+                    onEdit { if (on) RemoteSetup.turnedOn(it) else RemoteSetup.turnedOff(it) }
                 },
             )
         }
 
         AnimatedVisibility(visible = state.stage !is RemoteSetupStage.Off) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                AddressField(state, onStateChange, onCheckServer)
-                RemoteCredentialsForm(state, onStateChange, onAuthenticate)
+                KnownServerChoices(knownServers, state, onUseKnownServer)
+                AddressField(state, onEdit, onCheckServer)
+                RemoteCredentialsForm(state, onEdit, onAuthenticate)
                 SignedInRow(state)
             }
         }
     }
 }
 
+/**
+ * The servers this device has used before, offered instead of the address field.
+ *
+ * Somebody who runs a server puts every space on it, and typing the address again each time is
+ * both tedious and the one step where a space ends up belonging to a server that does not exist.
+ * Choosing one goes straight to the password: the address has answered before.
+ */
+@Composable
+private fun KnownServerChoices(
+    servers: List<KnownServer>,
+    state: RemoteSetupState,
+    onUseKnownServer: (KnownServer) -> Unit,
+) {
+    if (servers.isEmpty()) return
+    val chosen = (state.stage as? RemoteSetupStage.Authenticating)?.address?.value
+        ?: (state.stage as? RemoteSetupStage.Ready)?.address?.value
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "Your servers",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            servers.forEach { server ->
+                FilterChip(
+                    selected = server.url == chosen,
+                    onClick = { onUseKnownServer(server) },
+                    modifier = Modifier.testTag(RemoteSetupTags.knownServer(server.url)),
+                    label = {
+                        Text(
+                            server.lastUsername
+                                ?.let { "${server.url} · $it" }
+                                ?: server.url
+                        )
+                    },
+                )
+            }
+        }
+        Text(
+            text = "…or type another address below.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun AddressField(
     state: RemoteSetupState,
-    onStateChange: (RemoteSetupState) -> Unit,
-    onCheckServer: () -> Unit,
+    onEdit: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit,
+    onCheckServer: (String) -> Unit,
 ) {
     val stage = state.stage
-    val parsed = RemoteSetup.parseAddress(state)
+    // What is in the box, which is not the same thing as what the store has caught up with. See
+    // [RemoteSetupState.seedToken] for why the box keeps its own copy.
+    var addressText by rememberSaveable(state.seedToken) { mutableStateOf(state.addressText) }
+    val parsed = ServerAddress.parse(addressText)
     // Only complained about once something has been typed, so the field does not open in red.
     val addressProblem = (parsed as? Outcome.Failure)
         ?.error
-        ?.takeIf { state.addressText.isNotBlank() }
+        ?.takeIf { addressText.isNotBlank() }
 
     OutlinedTextField(
-        value = state.addressText,
-        onValueChange = { onStateChange(RemoteSetup.addressEdited(state, it)) },
+        value = addressText,
+        onValueChange = {
+            addressText = it
+            // Still told, because editing the address has to drop a connection made with the old
+            // one. What comes back is not read here, so its timing no longer matters.
+            onEdit { current -> RemoteSetup.addressEdited(current, it) }
+        },
         label = { Text("Server address") },
         placeholder = { Text("https://sync.example.com") },
         modifier = Modifier.fillMaxWidth().testTag(RemoteSetupTags.ADDRESS),
@@ -153,10 +226,10 @@ private fun AddressField(
 
         is RemoteSetupStage.Addressing -> {
             stage.error?.let { error ->
-                RemoteFailure(error = error, onRetry = onCheckServer)
+                RemoteFailure(error = error, onRetry = { onCheckServer(addressText) })
             }
             Button(
-                onClick = onCheckServer,
+                onClick = { onCheckServer(addressText) },
                 enabled = parsed is Outcome.Success,
                 modifier = Modifier.testTag(RemoteSetupTags.CONNECT),
             ) {
@@ -181,8 +254,8 @@ private fun AddressField(
 @Composable
 fun RemoteCredentialsForm(
     state: RemoteSetupState,
-    onStateChange: (RemoteSetupState) -> Unit,
-    onAuthenticate: () -> Unit,
+    onEdit: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit,
+    onAuthenticate: (username: String, password: String) -> Unit,
     /**
      * Whether the username is fixed.
      *
@@ -195,13 +268,23 @@ fun RemoteCredentialsForm(
     val stage = state.stage as? RemoteSetupStage.Authenticating ?: return
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
 
+    // Held here rather than in the store, and this is the field the bug was reported against:
+    // every keystroke used to be an intent, intents run in parallel, and a fast typist's letters
+    // arrived out of order — the box jumped back a character and took the caret with it.
+    var username by rememberSaveable(state.seedToken) { mutableStateOf(state.username) }
+    // Remembered and not *saved*, unlike the username beside it. Saved state is written to disk by
+    // the platform and outlives the dialog — a password does not belong there, and the cost of
+    // keeping it out is that a recreation mid-typing clears this one box.
+    var password by remember(state.seedToken) { mutableStateOf(state.password) }
+
     val passwordTooShort = stage.mode == AuthMode.SignUp &&
-        state.password.isNotEmpty() &&
-        state.password.length < SyncProtocol.MIN_PASSWORD_LENGTH
+        password.isNotEmpty() &&
+        password.length < SyncProtocol.MIN_PASSWORD_LENGTH
     val canSubmit = !stage.busy &&
-        state.username.isNotBlank() &&
-        state.password.isNotEmpty() &&
+        username.isNotBlank() &&
+        password.isNotEmpty() &&
         !passwordTooShort
+    val submit = { if (canSubmit) onAuthenticate(username, password) }
 
     // Choosing between an existing account and a new one only makes sense where the account is
     // still open; signing in again is always to the one the space already belongs to.
@@ -210,7 +293,7 @@ fun RemoteCredentialsForm(
             AuthMode.entries.forEachIndexed { index, mode ->
                 SegmentedButton(
                     selected = stage.mode == mode,
-                    onClick = { onStateChange(RemoteSetup.modeChanged(state, mode)) },
+                    onClick = { onEdit { current -> RemoteSetup.modeChanged(current, mode) } },
                     shape = SegmentedButtonDefaults.itemShape(index, AuthMode.entries.size),
                     enabled = !stage.busy,
                 ) {
@@ -221,8 +304,11 @@ fun RemoteCredentialsForm(
     }
 
     OutlinedTextField(
-        value = state.username,
-        onValueChange = { onStateChange(RemoteSetup.usernameEdited(state, it)) },
+        value = username,
+        onValueChange = {
+            username = it
+            onEdit { current -> RemoteSetup.usernameEdited(current, it) }
+        },
         label = { Text("Username") },
         modifier = Modifier.fillMaxWidth().testTag(RemoteSetupTags.USERNAME),
         singleLine = true,
@@ -232,8 +318,11 @@ fun RemoteCredentialsForm(
     )
 
     OutlinedTextField(
-        value = state.password,
-        onValueChange = { onStateChange(RemoteSetup.passwordEdited(state, it)) },
+        value = password,
+        onValueChange = {
+            password = it
+            onEdit { current -> RemoteSetup.passwordEdited(current, it) }
+        },
         label = { Text("Password") },
         modifier = Modifier.fillMaxWidth().testTag(RemoteSetupTags.PASSWORD),
         singleLine = true,
@@ -265,7 +354,7 @@ fun RemoteCredentialsForm(
     stage.error?.let { error ->
         RemoteFailure(
             error = error,
-            onRetry = onAuthenticate,
+            onRetry = submit,
             isRetrying = stage.busy,
             onReviewSettings = null,
         )
@@ -277,7 +366,7 @@ fun RemoteCredentialsForm(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Button(
-            onClick = onAuthenticate,
+            onClick = submit,
             enabled = canSubmit,
             modifier = Modifier.testTag(RemoteSetupTags.SUBMIT),
         ) {
@@ -426,8 +515,8 @@ object SyncConflictTags {
 fun RemoteSignInDialog(
     serverUrl: String,
     state: RemoteSetupState,
-    onStateChange: (RemoteSetupState) -> Unit,
-    onAuthenticate: () -> Unit,
+    onEdit: (edit: (RemoteSetupState) -> RemoteSetupState) -> Unit,
+    onAuthenticate: (username: String, password: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     androidx.compose.material3.AlertDialog(
@@ -439,7 +528,7 @@ fun RemoteSignInDialog(
                     text = "Your session on $serverUrl has ended.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                RemoteCredentialsForm(state, onStateChange, onAuthenticate, usernameLocked = true)
+                RemoteCredentialsForm(state, onEdit, onAuthenticate, usernameLocked = true)
             }
         },
         confirmButton = {},

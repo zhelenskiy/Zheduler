@@ -32,6 +32,8 @@ import com.zhelenskiy.zheduler.zheduler.theme.ThemeMode
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeContainer
 import com.zhelenskiy.zheduler.zheduler.viewmodels.ViewModeIntent
 import pro.respawn.flowmvi.compose.dsl.subscribe
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
 
 /**
  * A screen for selecting and managing view modes.
@@ -82,11 +84,20 @@ fun ViewModeManagementScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onCreateNew) {
-                Icon(Icons.Default.Add, contentDescription = "Create new view mode")
+            // View modes belong to the space, so they travel to the server with it. One written
+            // while the server is out of reach would be taken back at the next refresh.
+            if (LocalSpaceEditing.current.isEditable) {
+                FloatingActionButton(onClick = onCreateNew) {
+                    Icon(Icons.Default.Add, contentDescription = "Create new view mode")
+                }
             }
         }
     ) { padding ->
+        Column(modifier = Modifier.padding(padding)) {
+        // Said here too. These are a space's own settings and go up with it, so the buttons vanish
+        // when the server is out of reach — and a screen of missing buttons with nothing to
+        // explain them reads as the app being broken.
+        CloudSpaceBanner()
         AnimatedContent(
             targetState = state.viewModes,
             transitionSpec = {
@@ -97,7 +108,6 @@ fun ViewModeManagementScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)
@@ -114,6 +124,7 @@ fun ViewModeManagementScreen(
                     )
                 }
             }
+        }
         }
     }
 
@@ -195,16 +206,18 @@ private fun ViewModeCard(
                     }
                 }
 
-                Row {
-                    IconButton(onClick = onCopy) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
-                    }
-                    if (!viewMode.isBuiltIn) {
-                        IconButton(onClick = onEdit) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit")
+                if (LocalSpaceEditing.current.isEditable) {
+                    Row {
+                        IconButton(onClick = onCopy) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
                         }
-                        IconButton(onClick = onDelete) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                        if (!viewMode.isBuiltIn) {
+                            IconButton(onClick = onEdit) {
+                                Icon(Icons.Default.Edit, contentDescription = "Edit")
+                            }
+                            IconButton(onClick = onDelete) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete")
+                            }
                         }
                     }
                 }

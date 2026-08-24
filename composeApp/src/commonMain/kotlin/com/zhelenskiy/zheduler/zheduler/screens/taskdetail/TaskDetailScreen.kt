@@ -47,6 +47,8 @@ import com.zhelenskiy.zheduler.zheduler.viewmodels.TaskDetailState
 import pro.respawn.flowmvi.compose.dsl.subscribe
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
+import com.zhelenskiy.zheduler.zheduler.sync.CloudSpaceBanner
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,7 +83,7 @@ private fun TaskDetailTopAppBar(
             }
         },
         actions = {
-            if (taskId != null) {
+            if (taskId != null && LocalSpaceEditing.current.isEditable) {
                 IconButton(onClick = onStartEditing) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit")
                 }
@@ -678,17 +680,21 @@ fun TaskDetailScreen(
             )
         }
     ) { padding ->
+        // Above the branch, not inside it. A task the server refused is taken back out of the
+        // local copy, which lands the reader on "this task no longer exists" — the one screen
+        // where the explanation matters most is the one that used to have no room for it.
+        Column(modifier = Modifier.padding(padding)) {
+        CloudSpaceBanner()
         if (task != null) {
             TaskReadOnlyView(
                 task = task,
                 state = state,
                 loadTask = loadTask,
                 onTaskClick = onTaskClick,
-                modifier = Modifier.padding(padding)
             )
         } else {
             Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 // A task that is not there never stops loading. Descriptions linkify every id
@@ -700,6 +706,7 @@ fun TaskDetailScreen(
                     CircularProgressIndicator()
                 }
             }
+        }
         }
     }
 }

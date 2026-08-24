@@ -27,6 +27,7 @@ import com.zhelenskiy.zheduler.zheduler.TaskWithTotals
 import com.zhelenskiy.zheduler.zheduler.util.LocalNow
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
+import com.zhelenskiy.zheduler.zheduler.sync.LocalSpaceEditing
 
 @Composable
 fun TaskCard(
@@ -53,14 +54,18 @@ fun TaskCard(
             // Main content column
             TaskOverview(task, taskWithTotals)
 
-            // Action buttons on the right
-            Row {
-                IconButton(onClick = onCopy) {
-                    // It opens a prefilled new-task form; nothing reaches the clipboard.
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate task")
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete task")
+            // Action buttons on the right, and only while the space can be changed: in a space
+            // whose server is out of reach both of these would write something the server never
+            // agreed to, which the next refresh would take back.
+            if (LocalSpaceEditing.current.isEditable) {
+                Row {
+                    IconButton(onClick = onCopy) {
+                        // It opens a prefilled new-task form; nothing reaches the clipboard.
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate task")
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete task")
+                    }
                 }
             }
         }

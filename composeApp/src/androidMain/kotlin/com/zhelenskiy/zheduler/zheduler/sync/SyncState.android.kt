@@ -6,8 +6,8 @@ import io.github.xxfast.kstore.file.storeOf
 import kotlinx.io.files.Path
 import java.io.File
 
-actual fun createRemoteSpaceLinkStore(): KStore<RemoteSpaceLinks> =
-    storeOf(Path("${syncDataDir()}/remote_spaces.json"), default = RemoteSpaceLinks())
+actual fun createRemoteSpaceLinkStore(): KStore<SyncSettings> =
+    storeOf(Path("${syncDataDir()}/remote_spaces.json"), default = SyncSettings())
 
 /**
  * The token file, in the app's own data directory.

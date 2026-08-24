@@ -3,8 +3,8 @@ package com.zhelenskiy.zheduler.zheduler.sync
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.storage.storeOf
 
-actual fun createRemoteSpaceLinkStore(): KStore<RemoteSpaceLinks> =
-    storeOf(key = "remote_spaces", default = RemoteSpaceLinks())
+actual fun createRemoteSpaceLinkStore(): KStore<SyncSettings> =
+    storeOf(key = "remote_spaces", default = SyncSettings())
 
 /**
  * The token, in the browser's local storage.

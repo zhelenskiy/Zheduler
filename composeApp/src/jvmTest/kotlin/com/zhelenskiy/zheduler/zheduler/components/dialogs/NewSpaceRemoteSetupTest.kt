@@ -55,15 +55,15 @@ class NewSpaceRemoteSetupTest {
     private fun DialogUnderTest(
         initial: RemoteSetupState?,
         onCreated: (String, String, SignedInAccount?) -> Unit = { _, _, _ -> },
-        onCheckServer: () -> Unit = {},
-        onAuthenticate: () -> Unit = {},
+        onCheckServer: (String) -> Unit = {},
+        onAuthenticate: (String, String) -> Unit = { _, _ -> },
     ) {
         var setup by remember { mutableStateOf(initial) }
         NewSpaceDialog(
             onDismiss = {},
             onSpaceCreated = onCreated,
             remoteSetup = setup,
-            onRemoteSetupChange = { setup = it },
+            onRemoteSetupChange = { edit -> setup = setup?.let(edit) },
             onCheckServer = onCheckServer,
             onAuthenticate = onAuthenticate,
         )
@@ -180,7 +180,7 @@ class NewSpaceRemoteSetupTest {
     @Test
     fun theCredentialsAppearOnceTheServerHasAnswered() = runComposeUiTest {
         var authentications = 0
-        setContent { DialogUnderTest(initial = answered(), onAuthenticate = { authentications++ }) }
+        setContent { DialogUnderTest(initial = answered(), onAuthenticate = { _, _ -> authentications++ }) }
         waitForIdle()
 
         onNodeWithTag(RemoteSetupTags.USERNAME).assertIsDisplayed()
