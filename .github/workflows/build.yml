@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [master, sqldelight-to-room]
+    branches: [master]
     tags: ['v*']
   pull_request:
   # Any other branch builds on request rather than on every push: a run that packages every
@@ -11,7 +11,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request supersedes its own earlier run. A push to master is the thing someone
+  # wants binaries from, and the next push must not take it down an hour in.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -20,6 +22,7 @@ jobs:
   desktop:
     name: Desktop ${{ matrix.format }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -27,15 +30,15 @@ jobs:
           - os: ubuntu-latest
             format: deb
             path: composeApp/build/compose/binaries/main/deb/*.deb
+            heap: 'org.gradle.jvmargs=-Xmx4g\nkotlin.daemon.jvmargs=-Xmx6g\n'
           - os: windows-latest
             format: msi
             path: composeApp/build/compose/binaries/main/msi/*.msi
+            heap: 'org.gradle.jvmargs=-Xmx4g\nkotlin.daemon.jvmargs=-Xmx6g\n'
           - os: macos-latest
             format: dmg
             path: composeApp/build/compose/binaries/main/dmg/*.dmg
-            # The macOS runners have 7 GB against the 10 GB gradle.properties asks for on a
-            # developer machine. Left at the project default on the 16 GB Linux and Windows ones.
-            memory: -Dorg.gradle.jvmargs=-Xmx5g -Dkotlin.daemon.jvmargs=-Xmx4g
+            heap: 'org.gradle.jvmargs=-Xmx3g\nkotlin.daemon.jvmargs=-Xmx3g\n'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -43,9 +46,19 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # gradle.properties asks for 10 GB of heap and then another 10 for the Kotlin daemon, which
+      # a developer machine can promise and a runner cannot: 16 GB on Linux and Windows, 7 on
+      # macOS, and node and AGP's dexing workers want their share of it too. Overcommitting gets
+      # the runner killed, which arrives as a cancelled job rather than as an error. This file is
+      # the one Gradle reads ahead of the project's, and a nested run reads it too.
+      - name: Fit Gradle to the runner
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          printf '${{ matrix.heap }}' >> ~/.gradle/gradle.properties
       - name: Package
         shell: bash
-        run: ./gradlew :composeApp:packageDistributionForCurrentOS ${{ matrix.memory }}
+        run: ./gradlew :composeApp:packageDistributionForCurrentOS
       - uses: actions/upload-artifact@v4
         with:
           name: zheduler-desktop-${{ matrix.format }}
@@ -55,6 +68,7 @@ jobs:
   android:
     name: Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -62,6 +76,19 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # See the desktop job. Dexing a release build is the hungriest thing this repository asks
+      # of a runner, and it runs in worker processes outside these two heaps.
+      - name: Fit Gradle to the runner
+        run: |
+          mkdir -p ~/.gradle
+          printf 'org.gradle.jvmargs=-Xmx4g\nkotlin.daemon.jvmargs=-Xmx6g\n' >> ~/.gradle/gradle.properties
+      # A runner has 14 GB of disk, and an Android build wants the SDK, the Gradle cache and its
+      # own outputs inside it. None of these toolchains are ours; the df is left in the log so a
+      # future failure here can be told apart from one about memory.
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android/sdk/ndk
+          df -h /
       # The project holds no signing config, so the release APK comes out unsigned and only the
       # debug one installs as-is. Both are built to keep the release path honest.
       - name: Assemble
@@ -75,6 +102,7 @@ jobs:
   ios:
     name: iOS simulator app
     runs-on: macos-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -88,13 +116,12 @@ jobs:
           newest="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)"
           [ -n "$newest" ] && sudo xcode-select -s "$newest"
           xcodebuild -version
-      # The same 7 GB ceiling as the desktop macOS job. It goes in the Gradle user home because
-      # xcodebuild is what starts Gradle here, through the "Compile Kotlin Framework" phase —
-      # there is no command line of ours to put it on, and this file outranks the project's.
+      # See the desktop job — and here there is no command line of ours to put it on, since
+      # xcodebuild is what starts Gradle, through the "Compile Kotlin Framework" phase.
       - name: Fit Gradle to the runner
         run: |
           mkdir -p ~/.gradle
-          printf 'org.gradle.jvmargs=-Xmx5g\nkotlin.daemon.jvmargs=-Xmx4g\n' >> ~/.gradle/gradle.properties
+          printf 'org.gradle.jvmargs=-Xmx3g\nkotlin.daemon.jvmargs=-Xmx3g\n' >> ~/.gradle/gradle.properties
       # A device build needs a signing certificate this repository has no way to hold, so the
       # artifact is the simulator app — the one iOS binary CI can produce and anyone can run.
       # The project shares no scheme, so the target is named directly, and that rules out
@@ -123,6 +150,7 @@ jobs:
   web:
     name: Web bundles
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -130,6 +158,19 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # See the desktop job. Webpack minifies both bundles in a node process of its own, beside
+      # whatever Gradle and the Kotlin daemon are holding.
+      - name: Fit Gradle to the runner
+        run: |
+          mkdir -p ~/.gradle
+          printf 'org.gradle.jvmargs=-Xmx4g\nkotlin.daemon.jvmargs=-Xmx6g\n' >> ~/.gradle/gradle.properties
+      # See the Android job — node_modules and two bundles land on the same 14 GB.
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android/sdk/ndk
+          df -h /
+      # "Cannot rewrite paths in JavaScript source maps" in this job's log is a warning, not a
+      # failure: the plugin copies the map through with its original paths and carries on.
       - name: Bundle
         run: ./gradlew :composeApp:wasmJsBrowserDistribution :composeApp:jsBrowserDistribution
       - uses: actions/upload-artifact@v4
@@ -146,6 +187,7 @@ jobs:
   server:
     name: Server jar
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -153,6 +195,10 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      - name: Fit Gradle to the runner
+        run: |
+          mkdir -p ~/.gradle
+          printf 'org.gradle.jvmargs=-Xmx4g\nkotlin.daemon.jvmargs=-Xmx6g\n' >> ~/.gradle/gradle.properties
       - name: Build the fat jar
         run: ./gradlew :server:buildFatJar
       - uses: actions/upload-artifact@v4
