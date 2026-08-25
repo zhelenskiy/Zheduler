@@ -362,6 +362,18 @@ WebAssembly and fail in ways that look like nothing in particular.
 To build and run the development version of the iOS app, use the run configuration from the run widget
 in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
 
+### Executables from CI
+
+[.github/workflows/build.yml](./.github/workflows/build.yml) builds one of everything on each push to
+`master` and on every pull request, and leaves the results as artifacts on the run: the `.deb`, `.msi`
+and `.dmg` desktop installers, both Android APKs, the JavaScript and WebAssembly bundles, the server's
+fat jar, and an iOS app for the simulator. Any other branch builds from the Actions tab on request.
+
+Each desktop installer is built on its own operating system because jpackage only ever produces a
+package for the machine it runs on. Nothing that leaves CI is signed, which is as far as a repository
+that holds no certificates can go: the release APK installs only after you sign it, the installers
+will be met by Gatekeeper and SmartScreen, and iOS is the simulator build rather than a device one.
+
 ---
 
 Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),

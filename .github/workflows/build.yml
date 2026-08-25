@@ -1,0 +1,162 @@
+name: Build
+
+on:
+  push:
+    branches: [master, sqldelight-to-room]
+    tags: ['v*']
+  pull_request:
+  # Any other branch builds on request rather than on every push: a run that packages every
+  # platform is expensive, and the work branches here are pushed often.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Desktop ${{ matrix.format }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            format: deb
+            path: composeApp/build/compose/binaries/main/deb/*.deb
+          - os: windows-latest
+            format: msi
+            path: composeApp/build/compose/binaries/main/msi/*.msi
+          - os: macos-latest
+            format: dmg
+            path: composeApp/build/compose/binaries/main/dmg/*.dmg
+            # The macOS runners have 7 GB against the 10 GB gradle.properties asks for on a
+            # developer machine. Left at the project default on the 16 GB Linux and Windows ones.
+            memory: -Dorg.gradle.jvmargs=-Xmx5g -Dkotlin.daemon.jvmargs=-Xmx4g
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Package
+        shell: bash
+        run: ./gradlew :composeApp:packageDistributionForCurrentOS ${{ matrix.memory }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zheduler-desktop-${{ matrix.format }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      # The project holds no signing config, so the release APK comes out unsigned and only the
+      # debug one installs as-is. Both are built to keep the release path honest.
+      - name: Assemble
+        run: ./gradlew :androidApp:assembleDebug :androidApp:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zheduler-android
+          path: androidApp/build/outputs/apk/*/*.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS simulator app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      # The image default is several majors behind the Xcode this project is developed against.
+      - name: Use the newest Xcode on the image
+        run: |
+          newest="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)"
+          [ -n "$newest" ] && sudo xcode-select -s "$newest"
+          xcodebuild -version
+      # The same 7 GB ceiling as the desktop macOS job. It goes in the Gradle user home because
+      # xcodebuild is what starts Gradle here, through the "Compile Kotlin Framework" phase —
+      # there is no command line of ours to put it on, and this file outranks the project's.
+      - name: Fit Gradle to the runner
+        run: |
+          mkdir -p ~/.gradle
+          printf 'org.gradle.jvmargs=-Xmx5g\nkotlin.daemon.jvmargs=-Xmx4g\n' >> ~/.gradle/gradle.properties
+      # A device build needs a signing certificate this repository has no way to hold, so the
+      # artifact is the simulator app — the one iOS binary CI can produce and anyone can run.
+      # The project shares no scheme, so the target is named directly, and that rules out
+      # -derivedDataPath: xcodebuild takes it only alongside -scheme.
+      - name: Build
+        run: |
+          xcodebuild \
+            -project iosApp/iosApp.xcodeproj \
+            -target iosApp \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -arch arm64 \
+            CONFIGURATION_BUILD_DIR="$PWD/build/ios" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+      - name: Zip the app bundle
+        run: |
+          app="$(find build/ios -maxdepth 1 -name '*.app' -print -quit)"
+          ditto -c -k --keepParent "$app" zheduler-ios-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zheduler-ios-simulator
+          path: zheduler-ios-simulator.zip
+          if-no-files-found: error
+
+  web:
+    name: Web bundles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Bundle
+        run: ./gradlew :composeApp:wasmJsBrowserDistribution :composeApp:jsBrowserDistribution
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zheduler-web-wasm
+          path: composeApp/build/dist/wasmJs/productionExecutable
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zheduler-web-js
+          path: composeApp/build/dist/js/productionExecutable
+          if-no-files-found: error
+
+  server:
+    name: Server jar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the fat jar
+        run: ./gradlew :server:buildFatJar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zheduler-server
+          path: server/build/libs/*-all.jar
+          if-no-files-found: error
