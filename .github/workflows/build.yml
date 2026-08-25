@@ -47,10 +47,12 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       # gradle.properties asks for 10 GB of heap and then another 10 for the Kotlin daemon, which
-      # a developer machine can promise and a runner cannot: 16 GB on Linux and Windows, 7 on
-      # macOS, and node and AGP's dexing workers want their share of it too. Overcommitting gets
-      # the runner killed, which arrives as a cancelled job rather than as an error. This file is
-      # the one Gradle reads ahead of the project's, and a nested run reads it too.
+      # a developer machine can promise and a runner cannot: this one reports 7937 MB and two
+      # cores, and AGP's dexing workers want their share of that too. The published table says
+      # 16 GB, which is the public-repository runner; a private repository gets this one.
+      # Overcommitting gets the runner killed, which arrives as a cancelled job rather than as
+      # an error. This file is the one Gradle reads ahead of the project's, and a nested run
+      # reads it too.
       - name: Fit Gradle to the runner
         shell: bash
         run: |
@@ -160,9 +162,11 @@ jobs:
       matrix:
         include:
           - target: wasm
+            compile: wasmJsProductionExecutableCompileSync
             task: wasmJsBrowserDistribution
             dist: wasmJs
           - target: js
+            compile: jsProductionExecutableCompileSync
             task: jsBrowserDistribution
             dist: js
     steps:
@@ -172,24 +176,26 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      # See the desktop job. Measured on a developer machine, webpack settles at about 4 GB and
-      # the JVMs together at under 2, so the ceiling here is headroom rather than a diet: node
-      # left alone stops at roughly 4 GB too, which is its working set with nothing to spare.
+      # The runner has 7937 MB, about a gigabyte of which is gone before the build starts. That
+      # is the whole budget, and webpack wants roughly 4 GB of it to minify the JS bundle, so
+      # the JVMs are held down to what the compile actually uses rather than what it might.
       - name: Fit Gradle to the runner
         run: |
           mkdir -p ~/.gradle
-          printf 'org.gradle.jvmargs=-Xmx3g\nkotlin.daemon.jvmargs=-Xmx4g\n' >> ~/.gradle/gradle.properties
+          printf 'org.gradle.jvmargs=-Xmx1500m\nkotlin.daemon.jvmargs=-Xmx2500m\n' >> ~/.gradle/gradle.properties
       # "Cannot rewrite paths in JavaScript source maps" in this job's log is a warning, not a
       # failure: the plugin copies the map through with its original paths and carries on.
       #
-      # Minifying the JS bundle is a long silence — half an hour on a machine with four times
-      # these cores — and the job has died inside that silence twice with nothing in the log to
-      # say why. The loop prints what is left every half minute, so a runner that goes down
-      # names its reason on the way.
+      # Two invocations with a stop between them, because the compile and the bundle want the
+      # memory one after the other rather than together: once Kotlin has finished there is no
+      # reason for its daemon to keep holding a couple of gigabytes while node asks for four.
+      # The loop prints what is left every half minute — minifying is a silence long enough
+      # that the job died inside it three times without saying why, and this is what finally
+      # said it: 7907 of 7937 MB used, 29 MB free.
       - name: Bundle
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
-        # A core left to the runner's own agent, which is what has to keep answering.
+          NODE_OPTIONS: --max-old-space-size=4096
+        # Two cores on this runner, one of which the agent needs to keep answering.
         run: |
           ( while true; do
               echo "$(date -u +%H:%M:%S)  $(free -m | awk '/^Mem:/ {print $3"/"$2" MB used, "$7" MB avail"}')  $(df -h / | awk 'NR==2 {print $4" disk free"}')"
@@ -197,7 +203,9 @@ jobs:
             done ) &
           watcher=$!
           trap 'kill $watcher 2>/dev/null || true' EXIT
-          ./gradlew :composeApp:${{ matrix.task }} --max-workers=3
+          ./gradlew :composeApp:${{ matrix.compile }} --max-workers=2
+          ./gradlew --stop
+          ./gradlew :composeApp:${{ matrix.task }} --max-workers=2
       - uses: actions/upload-artifact@v4
         with:
           name: zheduler-web-${{ matrix.target }}
