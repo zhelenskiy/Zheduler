@@ -82,13 +82,6 @@ jobs:
         run: |
           mkdir -p ~/.gradle
           printf 'org.gradle.jvmargs=-Xmx4g\nkotlin.daemon.jvmargs=-Xmx6g\n' >> ~/.gradle/gradle.properties
-      # A runner has 14 GB of disk, and an Android build wants the SDK, the Gradle cache and its
-      # own outputs inside it. None of these toolchains are ours; the df is left in the log so a
-      # future failure here can be told apart from one about memory.
-      - name: Make room
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android/sdk/ndk
-          df -h /
       # The project holds no signing config, so the release APK comes out unsigned and only the
       # debug one installs as-is. Both are built to keep the release path honest.
       - name: Assemble
@@ -155,7 +148,9 @@ jobs:
   web:
     name: Web ${{ matrix.target }} bundle
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Minifying the JS bundle takes half an hour on sixteen cores; the runner has four. The
+    # wasm half is done in thirteen minutes, so the headroom costs nothing there.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       # One webpack per runner. Built together, the two of them took 55 minutes and then the
@@ -177,25 +172,32 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      # See the desktop job, with node given a ceiling of its own: left alone it sizes its heap
-      # against the whole machine, and it is the process that grows here. Bounded, an oversized
-      # bundle fails as a node out-of-memory we can read instead of taking the runner down.
+      # See the desktop job. Measured on a developer machine, webpack settles at about 4 GB and
+      # the JVMs together at under 2, so the ceiling here is headroom rather than a diet: node
+      # left alone stops at roughly 4 GB too, which is its working set with nothing to spare.
       - name: Fit Gradle to the runner
         run: |
           mkdir -p ~/.gradle
           printf 'org.gradle.jvmargs=-Xmx3g\nkotlin.daemon.jvmargs=-Xmx4g\n' >> ~/.gradle/gradle.properties
-      # See the Android job.
-      - name: Make room
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android/sdk/ndk
-          df -h /
       # "Cannot rewrite paths in JavaScript source maps" in this job's log is a warning, not a
       # failure: the plugin copies the map through with its original paths and carries on.
+      #
+      # Minifying the JS bundle is a long silence — half an hour on a machine with four times
+      # these cores — and the job has died inside that silence twice with nothing in the log to
+      # say why. The loop prints what is left every half minute, so a runner that goes down
+      # names its reason on the way.
       - name: Bundle
         env:
-          NODE_OPTIONS: --max-old-space-size=4096
+          NODE_OPTIONS: --max-old-space-size=6144
         # A core left to the runner's own agent, which is what has to keep answering.
-        run: ./gradlew :composeApp:${{ matrix.task }} --max-workers=3
+        run: |
+          ( while true; do
+              echo "$(date -u +%H:%M:%S)  $(free -m | awk '/^Mem:/ {print $3"/"$2" MB used, "$7" MB avail"}')  $(df -h / | awk 'NR==2 {print $4" disk free"}')"
+              sleep 30
+            done ) &
+          watcher=$!
+          trap 'kill $watcher 2>/dev/null || true' EXIT
+          ./gradlew :composeApp:${{ matrix.task }} --max-workers=3
       - uses: actions/upload-artifact@v4
         with:
           name: zheduler-web-${{ matrix.target }}
