@@ -38,7 +38,7 @@ jobs:
           - os: macos-latest
             format: dmg
             path: composeApp/build/compose/binaries/main/dmg/*.dmg
-            heap: 'org.gradle.jvmargs=-Xmx3g\nkotlin.daemon.jvmargs=-Xmx3g\n'
+            heap: 'org.gradle.jvmargs=-Xmx5g\nkotlin.daemon.jvmargs=-Xmx4g\n'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -118,10 +118,15 @@ jobs:
           xcodebuild -version
       # See the desktop job — and here there is no command line of ours to put it on, since
       # xcodebuild is what starts Gradle, through the "Compile Kotlin Framework" phase.
+      #
+      # Do not lower these without watching this job. Linking the release framework runs
+      # Kotlin/Native's devirtualization pass over the whole Compose graph, and it is the one
+      # compilation in this repository that genuinely wants the room: at 3g it dies with
+      # "Compilation failed: Java heap space".
       - name: Fit Gradle to the runner
         run: |
           mkdir -p ~/.gradle
-          printf 'org.gradle.jvmargs=-Xmx3g\nkotlin.daemon.jvmargs=-Xmx3g\n' >> ~/.gradle/gradle.properties
+          printf 'org.gradle.jvmargs=-Xmx5g\nkotlin.daemon.jvmargs=-Xmx4g\n' >> ~/.gradle/gradle.properties
       # A device build needs a signing certificate this repository has no way to hold, so the
       # artifact is the simulator app — the one iOS binary CI can produce and anyone can run.
       # The project shares no scheme, so the target is named directly, and that rules out
@@ -148,9 +153,23 @@ jobs:
           if-no-files-found: error
 
   web:
-    name: Web bundles
+    name: Web ${{ matrix.target }} bundle
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      # One webpack per runner. Built together, the two of them took 55 minutes and then the
+      # runner stopped answering the server — the failure GitHub reports when something starves
+      # it. Terser over a Compose bundle is the expensive half, and doing one at a time keeps
+      # each job to roughly half the work and half the exposure.
+      matrix:
+        include:
+          - target: wasm
+            task: wasmJsBrowserDistribution
+            dist: wasmJs
+          - target: js
+            task: jsBrowserDistribution
+            dist: js
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -158,13 +177,14 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      # See the desktop job. Webpack minifies both bundles in a node process of its own, beside
-      # whatever Gradle and the Kotlin daemon are holding.
+      # See the desktop job, with node given a ceiling of its own: left alone it sizes its heap
+      # against the whole machine, and it is the process that grows here. Bounded, an oversized
+      # bundle fails as a node out-of-memory we can read instead of taking the runner down.
       - name: Fit Gradle to the runner
         run: |
           mkdir -p ~/.gradle
-          printf 'org.gradle.jvmargs=-Xmx4g\nkotlin.daemon.jvmargs=-Xmx6g\n' >> ~/.gradle/gradle.properties
-      # See the Android job — node_modules and two bundles land on the same 14 GB.
+          printf 'org.gradle.jvmargs=-Xmx3g\nkotlin.daemon.jvmargs=-Xmx4g\n' >> ~/.gradle/gradle.properties
+      # See the Android job.
       - name: Make room
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android/sdk/ndk
@@ -172,16 +192,14 @@ jobs:
       # "Cannot rewrite paths in JavaScript source maps" in this job's log is a warning, not a
       # failure: the plugin copies the map through with its original paths and carries on.
       - name: Bundle
-        run: ./gradlew :composeApp:wasmJsBrowserDistribution :composeApp:jsBrowserDistribution
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        # A core left to the runner's own agent, which is what has to keep answering.
+        run: ./gradlew :composeApp:${{ matrix.task }} --max-workers=3
       - uses: actions/upload-artifact@v4
         with:
-          name: zheduler-web-wasm
-          path: composeApp/build/dist/wasmJs/productionExecutable
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: zheduler-web-js
-          path: composeApp/build/dist/js/productionExecutable
+          name: zheduler-web-${{ matrix.target }}
+          path: composeApp/build/dist/${{ matrix.dist }}/productionExecutable
           if-no-files-found: error
 
   server:
